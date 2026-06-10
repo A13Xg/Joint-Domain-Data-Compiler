@@ -38,6 +38,83 @@ interface PreviewPoint {
 
 type MapDisplayMode = 'both' | 'path' | 'points'
 
+interface FieldHelpContent {
+  title: string
+  description: string
+  examples: string[]
+}
+
+const FIELD_HELP: Record<string, FieldHelpContent> = {
+  latitude: {
+    title: 'Latitude Column',
+    description: 'North/south position in decimal degrees. Valid range is -90 to 90.',
+    examples: ['47.620500', '-33.868820', '51,507351 (comma decimals are accepted)'],
+  },
+  longitude: {
+    title: 'Longitude Column',
+    description: 'East/west position in decimal degrees. Valid range is -180 to 180.',
+    examples: ['-122.349300', '151.209300', '0.127758'],
+  },
+  elevation: {
+    title: 'Elevation Column',
+    description: 'Height value for each point. Values are exported to GPX in meters.',
+    examples: ['132.4 (meters)', '548.2 (feet, when unit is set to Feet)'],
+  },
+  elevationUnit: {
+    title: 'Elevation Unit',
+    description: 'Unit used by your CSV elevation values before GPX conversion.',
+    examples: ['Meters: 132.4 -> 132.4 m', 'Feet: 548.2 -> 167.091 m'],
+  },
+  timestamp: {
+    title: 'Timestamp Column',
+    description: 'Date/time value per point. Pair this with the correct timestamp format.',
+    examples: ['2026-06-10T14:35:22Z', '1718036122', '1718036122000', '45450.52431'],
+  },
+  timeUnit: {
+    title: 'Timestamp Format',
+    description: 'How timestamp values are interpreted. Epoch is sometimes written as EPOC.',
+    examples: [
+      'ISO 8601: 2026-06-10T14:35:22Z',
+      'Epoch seconds (EPOC): 1718036122',
+      'Epoch milliseconds (EPOC ms): 1718036122000',
+      'Excel serial: 45450.52431',
+    ],
+  },
+  name: {
+    title: 'Name Column',
+    description: 'Optional short point title. Exported to GPX as point name.',
+    examples: ['Checkpoint 12', 'Trailhead', 'WP-0007'],
+  },
+  description: {
+    title: 'Description Column',
+    description: 'Optional detailed note for each point. Exported as GPX desc/cmt text.',
+    examples: ['Gate near tower', 'Surface changed to gravel at km 3.2'],
+  },
+}
+
+function FieldHelp({ helpKey }: { helpKey: keyof typeof FIELD_HELP }) {
+  const help = FIELD_HELP[helpKey]
+
+  return (
+    <span className="field-help">
+      <button
+        type="button"
+        className="field-help-trigger"
+        aria-label={`${help.title} help`}
+      >
+        i
+      </button>
+      <span className="field-help-popover" role="tooltip">
+        <strong>{help.title}</strong>
+        <span>{help.description}</span>
+        {help.examples.map((example) => (
+          <span key={`${helpKey}-${example}`}>{example}</span>
+        ))}
+      </span>
+    </span>
+  )
+}
+
 const INITIAL_MAPPING: MappingState = {
   latitude: '',
   longitude: '',
@@ -602,7 +679,10 @@ function App() {
         )}
         <div className="mapping-grid">
           <label>
-            Latitude Column
+            <span className="field-label-line">
+              Latitude Column
+              <FieldHelp helpKey="latitude" />
+            </span>
             <select
               value={mapping.latitude}
               onChange={(event) => updateMapping('latitude', event.target.value)}
@@ -616,7 +696,10 @@ function App() {
             </select>
           </label>
           <label>
-            Longitude Column
+            <span className="field-label-line">
+              Longitude Column
+              <FieldHelp helpKey="longitude" />
+            </span>
             <select
               value={mapping.longitude}
               onChange={(event) => updateMapping('longitude', event.target.value)}
@@ -630,7 +713,10 @@ function App() {
             </select>
           </label>
           <label>
-            Elevation Column (Optional)
+            <span className="field-label-line">
+              Elevation Column (Optional)
+              <FieldHelp helpKey="elevation" />
+            </span>
             <select
               value={mapping.elevation}
               onChange={(event) => updateMapping('elevation', event.target.value)}
@@ -644,7 +730,10 @@ function App() {
             </select>
           </label>
           <label>
-            Elevation Unit
+            <span className="field-label-line">
+              Elevation Unit
+              <FieldHelp helpKey="elevationUnit" />
+            </span>
             <select
               value={mapping.elevationUnit}
               onChange={(event) => updateElevationUnit(event.target.value as ElevationUnit)}
@@ -654,7 +743,10 @@ function App() {
             </select>
           </label>
           <label>
-            Timestamp Column (Optional)
+            <span className="field-label-line">
+              Timestamp Column (Optional)
+              <FieldHelp helpKey="timestamp" />
+            </span>
             <select
               value={mapping.timestamp}
               onChange={(event) => updateMapping('timestamp', event.target.value)}
@@ -668,7 +760,10 @@ function App() {
             </select>
           </label>
           <label>
-            Timestamp Format
+            <span className="field-label-line">
+              Timestamp Format
+              <FieldHelp helpKey="timeUnit" />
+            </span>
             <select
               value={mapping.timeUnit}
               onChange={(event) => updateTimeUnit(event.target.value as TimeUnit)}
@@ -680,7 +775,10 @@ function App() {
             </select>
           </label>
           <label>
-            Name Column (Optional)
+            <span className="field-label-line">
+              Name Column (Optional)
+              <FieldHelp helpKey="name" />
+            </span>
             <select
               value={mapping.name}
               onChange={(event) => updateMapping('name', event.target.value)}
@@ -694,7 +792,10 @@ function App() {
             </select>
           </label>
           <label>
-            Description Column (Optional)
+            <span className="field-label-line">
+              Description Column (Optional)
+              <FieldHelp helpKey="description" />
+            </span>
             <select
               value={mapping.description}
               onChange={(event) => updateMapping('description', event.target.value)}

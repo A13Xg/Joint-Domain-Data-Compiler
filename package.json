@@ -1,7 +1,12 @@
 {
   "name": "joint-domain-data-compiler",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Local-first desktop app for converting CSV geospatial data into GPX.",
+  "author": {
+    "name": "A13Xg",
+    "email": "a13xg@users.noreply.github.com"
+  },
   "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
@@ -10,9 +15,42 @@
     "electron": "wait-on tcp:5173 && electron .",
     "build": "tsc -b && vite build",
     "build:web": "npm run build",
-    "build:desktop": "npm run build && echo \"Desktop packaging hook ready. Integrate electron-builder/electron-forge next.\"",
+    "build:desktop": "npm run build && electron-builder --publish never",
+    "build:desktop:linux": "npm run build && electron-builder --linux AppImage deb --publish never",
     "lint": "eslint .",
     "preview": "vite preview"
+  },
+  "build": {
+    "appId": "com.a13xg.jointdomaindatacompiler",
+    "productName": "Joint Domain Data Compiler",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "electron/**",
+      "package.json"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.utilities"
+    }
   },
   "dependencies": {
     "leaflet": "^1.9.4",
@@ -31,6 +69,7 @@
     "@vitejs/plugin-react": "^6.0.1",
     "concurrently": "^10.0.3",
     "electron": "^42.4.0",
+    "electron-builder": "^26.15.2",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",

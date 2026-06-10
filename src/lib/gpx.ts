@@ -14,6 +14,7 @@ interface PointBuildResult {
   outOfRangeCoordinates: boolean
   hasElevation: boolean
   hasTimestamp: boolean
+  timestampIso: string | null
 }
 
 function escapeXml(input: string): string {
@@ -81,6 +82,16 @@ function parseTime(rawValue: string | undefined, unit: TimeUnit): string | null 
   return Number.isNaN(excelDate.valueOf()) ? null : excelDate.toISOString()
 }
 
+function toGpxDateTime(isoLikeValue: string): string | null {
+  const date = new Date(isoLikeValue)
+  if (Number.isNaN(date.valueOf())) {
+    return null
+  }
+
+  // GPX consumers commonly expect UTC timestamps without milliseconds.
+  return date.toISOString().replace(/\.\d{3}Z$/, 'Z')
+}
+
 function buildTrackPoint(row: CsvRow, options: CsvToGpxOptions): PointBuildResult {
   const latitude = parseNumber(row[options.mapping.latitude])
   const longitude = parseNumber(row[options.mapping.longitude])
@@ -92,6 +103,7 @@ function buildTrackPoint(row: CsvRow, options: CsvToGpxOptions): PointBuildResul
       outOfRangeCoordinates: false,
       hasElevation: false,
       hasTimestamp: false,
+      timestampIso: null,
     }
   }
 
@@ -102,6 +114,7 @@ function buildTrackPoint(row: CsvRow, options: CsvToGpxOptions): PointBuildResul
       outOfRangeCoordinates: true,
       hasElevation: false,
       hasTimestamp: false,
+      timestampIso: null,
     }
   }
 
@@ -121,11 +134,14 @@ function buildTrackPoint(row: CsvRow, options: CsvToGpxOptions): PointBuildResul
   }
 
   let hasTimestamp = false
+  let timestampIso: string | null = null
   if (options.mapping.timestamp) {
-    const timeString = parseTime(row[options.mapping.timestamp], options.mapping.timeUnit)
+    const parsedTime = parseTime(row[options.mapping.timestamp], options.mapping.timeUnit)
+    const timeString = parsedTime ? toGpxDateTime(parsedTime) : null
     if (timeString) {
       pointParts.push(`<time>${escapeXml(timeString)}</time>`)
       hasTimestamp = true
+      timestampIso = timeString
     }
   }
 
@@ -134,7 +150,9 @@ function buildTrackPoint(row: CsvRow, options: CsvToGpxOptions): PointBuildResul
   }
 
   if (options.mapping.description && row[options.mapping.description]) {
-    pointParts.push(`<cmt>${escapeXml(row[options.mapping.description] ?? '')}</cmt>`)
+    const description = escapeXml(row[options.mapping.description] ?? '')
+    pointParts.push(`<desc>${description}</desc>`)
+    pointParts.push(`<cmt>${description}</cmt>`)
   }
 
   pointParts.push('</trkpt>')
@@ -144,6 +162,7 @@ function buildTrackPoint(row: CsvRow, options: CsvToGpxOptions): PointBuildResul
     outOfRangeCoordinates: false,
     hasElevation,
     hasTimestamp,
+    timestampIso,
   }
 }
 
@@ -156,6 +175,7 @@ export function convertCsvToGpx(options: CsvToGpxOptions): Promise<CsvToGpxResul
     let skippedOutOfRangeCoordinates = 0
     let includedElevation = 0
     let includedTimestamp = 0
+    let firstTimestampIso: string | null = null
 
     Papa.parse<CsvRow>(options.file, {
       header: true,
@@ -184,6 +204,9 @@ export function convertCsvToGpx(options: CsvToGpxOptions): Promise<CsvToGpxResul
             }
             if (point.hasTimestamp) {
               includedTimestamp += 1
+              if (!firstTimestampIso && point.timestampIso) {
+                firstTimestampIso = point.timestampIso
+              }
             }
           }
         }
@@ -200,7 +223,10 @@ export function convertCsvToGpx(options: CsvToGpxOptions): Promise<CsvToGpxResul
         }
 
         const body = pointChunks.join('')
-        const gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Joint Domain Data Compiler" xmlns="http://www.topografix.com/GPX/1/1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">\n  <metadata>\n    <name>${escapeXml(options.trackName)}</name>\n  </metadata>\n  <trk>\n    <name>${escapeXml(options.trackName)}</name>\n    <trkseg>${body}</trkseg>\n  </trk>\n</gpx>`
+        const metadataTime = firstTimestampIso
+          ? `\n    <time>${escapeXml(firstTimestampIso)}</time>`
+          : ''
+        const gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Joint Domain Data Compiler" xmlns="http://www.topografix.com/GPX/1/1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">\n  <metadata>\n    <name>${escapeXml(options.trackName)}</name>${metadataTime}\n  </metadata>\n  <trk>\n    <name>${escapeXml(options.trackName)}</name>\n    <trkseg>${body}</trkseg>\n  </trk>\n</gpx>`
 
         resolve({
           pointCount,

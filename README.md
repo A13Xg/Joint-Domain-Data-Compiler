@@ -42,7 +42,33 @@ This starts Vite and then launches Electron against the local web app.
 npm run build
 ```
 
-`npm run build:desktop` currently runs the web build and leaves a packaging hook message. You can integrate electron-builder or electron-forge next.
+Desktop packaging now uses electron-builder:
+
+```bash
+npm run build:desktop
+```
+
+Release artifacts are generated in `release/`.
+
+Platform-specific local build (Linux):
+
+```bash
+npm run build:desktop:linux
+```
+
+## GitHub Releases
+
+Publishing is automated with GitHub Actions in `.github/workflows/release.yml`.
+
+1. Create and push a version tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+2. The workflow builds installers on Linux, Windows, and macOS.
+3. Build artifacts are uploaded to the GitHub Release for that tag.
 
 ## Converter Workflow
 
