@@ -92,28 +92,41 @@ export function buildPointsFromCsvRows(
   return { points, warnings, channels: Array.from(channelSet) }
 }
 
-/** Fully parse a CSV File into rows (used at export time, off the sample). */
+/** Fully parse a CSV File into rows, skipping the first dataStartRow raw rows. */
 export function parseCsvFile(
   file: File,
   delimiter: string | undefined,
+  columnNames: string[],
+  dataStartRow: number,
   onProgress?: (fraction: number) => void,
 ): Promise<{ rows: CsvRow[]; columns: string[] }> {
   return new Promise((resolve, reject) => {
     const rows: CsvRow[] = []
-    let columns: string[] = []
-    Papa.parse<CsvRow>(file, {
-      header: true,
+    let rawRowsSeen = 0
+
+    Papa.parse<string[]>(file, {
+      header: false,
       skipEmptyLines: 'greedy',
       delimiter: delimiter || undefined,
       chunkSize: 1024 * 1024,
-      chunk: (result: Papa.ParseResult<CsvRow>) => {
-        if (result.meta.fields && columns.length === 0) columns = result.meta.fields
-        for (const row of result.data) rows.push(row)
+      chunk: (result: Papa.ParseResult<string[]>) => {
+        for (const raw of result.data) {
+          if (rawRowsSeen < dataStartRow) {
+            rawRowsSeen++
+            continue
+          }
+          rawRowsSeen++
+          const row: CsvRow = {}
+          for (let i = 0; i < columnNames.length; i++) {
+            row[columnNames[i]] = raw[i] ?? ''
+          }
+          rows.push(row)
+        }
         if (onProgress && result.meta.cursor && file.size) {
           onProgress(Math.min(1, result.meta.cursor / file.size))
         }
       },
-      complete: () => resolve({ rows, columns }),
+      complete: () => resolve({ rows, columns: columnNames }),
       error: (err: Error) => reject(err),
     })
   })

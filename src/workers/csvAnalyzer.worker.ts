@@ -10,8 +10,6 @@ import {
   type KnownField,
 } from '../types/converter'
 
-type CsvRow = Record<string, string | undefined>
-
 interface AnalyzeMessage {
   type: 'analyze'
   payload: {
@@ -293,29 +291,98 @@ function scoreByValues(values: string[], field: KnownField): number {
   return descriptive / nonEmpty.length
 }
 
-function buildColumns(rows: CsvRow[], fields: string[]): DetectedColumn[] {
-  return fields.map((fieldName, index) => {
-    const allValues = rows.map((row) => row[fieldName] ?? '')
-    const sampleValues = allValues
-      .filter((value) => value.trim().length > 0)
-      .slice(0, 6)
+const MAX_HEADER_ROWS = 5
+
+/** A row counts toward the header block if it has at least one non-empty cell
+ *  and fewer than half of its non-empty cells look numeric. */
+function isHeaderLikeRow(row: string[]): boolean {
+  const nonEmpty = row.filter((cell) => cell.trim().length > 0)
+  if (nonEmpty.length === 0) return false // fully blank row: stop the header block here
+  const numeric = nonEmpty.filter((cell) => parseNumber(cell) !== null).length
+  return numeric / nonEmpty.length < 0.5
+}
+
+/** Walk up to MAX_HEADER_ROWS leading rows; count how many are "header-like".
+ *  Stops at the first row that is NOT header-like (including fully-empty rows).
+ *  Returns 0 if row 0 already looks like data (no header at all). */
+function detectDataStartRow(rawRows: string[][]): number {
+  const limit = Math.min(MAX_HEADER_ROWS, rawRows.length)
+  let count = 0
+  for (let i = 0; i < limit; i++) {
+    if (!isHeaderLikeRow(rawRows[i])) break
+    count++
+  }
+  return count
+}
+
+function buildHeaderCandidatesForColumn(
+  rawRows: string[][],
+  colIndex: number,
+  dataStartRow: number,
+): string[] {
+  const seen = new Set<string>()
+  const candidates: string[] = []
+  for (let r = 0; r < dataStartRow; r++) {
+    const raw = (rawRows[r]?.[colIndex] ?? '').trim()
+    if (!raw || seen.has(raw)) continue
+    seen.add(raw)
+    candidates.push(raw)
+  }
+  return candidates
+}
+
+function buildColumns(rawRows: string[][], dataStartRow: number): DetectedColumn[] {
+  const maxCols = rawRows.reduce((max, row) => Math.max(max, row.length), 0)
+  const dataRows = rawRows.slice(dataStartRow)
+
+  // Pass 1: compute raw headerCandidates + provisional name per column.
+  const provisional = Array.from({ length: maxCols }, (_, index) => {
+    const headerCandidates = buildHeaderCandidatesForColumn(rawRows, index, dataStartRow)
+    const provisionalName = headerCandidates[0] || `Column ${index + 1}`
+    return { index, headerCandidates, provisionalName }
+  })
+
+  // Pass 2: dedup provisional names -> final `name`. Two columns sharing the
+  // same headerCandidates[0] (e.g. repeated "VALUE" header) get `_2`, `_3`, ...
+  const seenNames = new Map<string, number>()
+  const finalized = provisional.map(({ index, headerCandidates, provisionalName }) => {
+    const count = seenNames.get(provisionalName) ?? 0
+    seenNames.set(provisionalName, count + 1)
+    const name = count === 0 ? provisionalName : `${provisionalName}_${count + 1}`
+    // headerCandidates[0] must match `name` for FieldSelect/ sampleRows lookups
+    // to be consistent; if we suffixed, replace/seed headerCandidates[0].
+    const finalHeaderCandidates =
+      headerCandidates.length > 0
+        ? [name, ...headerCandidates.slice(1)]
+        : [name]
+    return { index, name, headerCandidates: finalHeaderCandidates }
+  })
+
+  // Pass 3: per-column stats/patterns/candidates from data rows.
+  return finalized.map(({ index, name, headerCandidates }) => {
+    const allValues = dataRows.map((row) => row[index] ?? '')
+    const sampleValues = allValues.filter((v) => v.trim().length > 0).slice(0, 6)
     const stats = buildStats(allValues)
-    const patterns = detectPatterns(sampleValues, fieldName)
+    const headerForMatching = headerCandidates.join(' ')
+    const patterns = detectPatterns(sampleValues, headerForMatching)
 
     const candidates = KNOWN_FIELDS.map((field) => ({
       field,
-      score:
-        Math.min(1, scoreByHeader(fieldName, field) * 0.7 + scoreByValues(allValues, field) * 0.8),
+      score: Math.min(
+        1,
+        scoreByHeader(headerForMatching, field) * 0.7 + scoreByValues(allValues, field) * 0.8,
+      ),
     }))
-      .filter((candidate) => candidate.score >= 0.2)
+      .filter((c) => c.score >= 0.2)
       .sort((a, b) => b.score - a.score)
       .slice(0, 3)
 
     const estimated = inferEstimatedType(stats, patterns, candidates)
 
     return {
-      name: fieldName,
+      name,
       index,
+      headerCandidates,
       sampleValues,
       estimatedType: estimated.type,
       estimatedConfidence: estimated.confidence,
@@ -326,11 +393,11 @@ function buildColumns(rows: CsvRow[], fields: string[]): DetectedColumn[] {
   })
 }
 
-function normalizeRows(rows: CsvRow[], fields: string[]): CsvSampleRow[] {
-  return rows.map((row) => {
+function normalizeRows(dataRows: string[][], columns: DetectedColumn[]): CsvSampleRow[] {
+  return dataRows.map((row) => {
     const normalized: CsvSampleRow = {}
-    for (const field of fields) {
-      normalized[field] = row[field]?.toString() ?? ''
+    for (const col of columns) {
+      normalized[col.name] = row[col.index] ?? ''
     }
     return normalized
   })
@@ -342,67 +409,47 @@ self.onmessage = (event: MessageEvent<AnalyzeMessage>) => {
   }
 
   const { file, sampleLimit } = event.data.payload
-  const rows: CsvRow[] = []
-  let fields: string[] = []
+  const rawRows: string[][] = []
   let delimiter = ','
 
-  Papa.parse<CsvRow>(file, {
-    header: true,
+  Papa.parse<string[]>(file, {
+    header: false,
     skipEmptyLines: 'greedy',
     chunkSize: 1024 * 1024,
-    chunk: (result: Papa.ParseResult<CsvRow>, parser: Papa.Parser) => {
-      if (result.meta.fields && fields.length === 0) {
-        fields = result.meta.fields
-      }
-
-      if (result.meta.delimiter) {
-        delimiter = result.meta.delimiter
-      }
+    chunk: (result: Papa.ParseResult<string[]>, parser: Papa.Parser) => {
+      if (result.meta.delimiter) delimiter = result.meta.delimiter
 
       for (const row of result.data) {
-        if (rows.length < sampleLimit) {
-          rows.push(row)
-        }
+        if (rawRows.length < sampleLimit) rawRows.push(row)
       }
 
       const progress = result.meta.cursor
         ? Math.min(100, (result.meta.cursor / file.size) * 100)
         : 0
-
-      const progressMessage: ProgressMessage = {
+      self.postMessage({
         type: 'progress',
-        payload: {
-          progress,
-          sampled: rows.length,
-        },
-      }
-      self.postMessage(progressMessage)
+        payload: { progress, sampled: rawRows.length },
+      } satisfies ProgressMessage)
 
-      if (rows.length >= sampleLimit) {
-        parser.abort()
-      }
+      if (rawRows.length >= sampleLimit) parser.abort()
     },
     complete: () => {
-      const completeMessage: CompleteMessage = {
+      const dataStartRow = detectDataStartRow(rawRows)
+      const columns = buildColumns(rawRows, dataStartRow)
+      const dataRows = rawRows.slice(dataStartRow)
+      self.postMessage({
         type: 'complete',
         payload: {
           delimiter,
-          rowCountSampled: rows.length,
-          sampleRows: normalizeRows(rows, fields),
-          columns: buildColumns(rows, fields),
+          rowCountSampled: dataRows.length,
+          dataStartRow,
+          sampleRows: normalizeRows(dataRows, columns),
+          columns,
         },
-      }
-
-      self.postMessage(completeMessage)
+      } satisfies CompleteMessage)
     },
     error: (error: Error) => {
-      const errorMessage: ErrorMessage = {
-        type: 'error',
-        payload: {
-          message: error.message,
-        },
-      }
-      self.postMessage(errorMessage)
+      self.postMessage({ type: 'error', payload: { message: error.message } } satisfies ErrorMessage)
     },
   })
 }

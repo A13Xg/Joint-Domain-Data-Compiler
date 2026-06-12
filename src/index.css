@@ -321,6 +321,35 @@ code { font-family: var(--mono); background: var(--bg-3); padding: 1px 5px; bord
 .build-btn, .export-btn { background: linear-gradient(135deg, var(--accent-2), #0a6e57); border: none; font-weight: 600; padding: 10px 18px; align-self: flex-start; }
 .build-btn:hover, .export-btn:hover { background: linear-gradient(135deg, #14a584, #0c8268); }
 
+.header-compat-toggle { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-dim); }
+.header-compat-toggle input { margin: 0; }
+
+.map-field-label { display: flex; align-items: center; gap: 5px; }
+
+.info-tooltip-wrap { position: relative; display: inline-flex; align-items: center; }
+.info-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--accent-2); color: #fff;
+  font-size: 9px; font-style: italic; font-weight: 700;
+  cursor: default; line-height: 1; user-select: none;
+}
+.info-tooltip-box {
+  display: none; position: absolute; left: 18px; top: -6px; z-index: 100;
+  flex-direction: column; gap: 2px;
+  min-width: 180px; max-width: 280px;
+  background: var(--bg-2); border: 1px solid var(--border); border-radius: 5px;
+  padding: 8px 10px; font-size: 11px; color: var(--text);
+  white-space: normal; pointer-events: none;
+}
+.info-tooltip-wrap:hover .info-tooltip-box,
+.info-tooltip-wrap:focus .info-tooltip-box,
+.info-tooltip-wrap:focus-within .info-tooltip-box {
+  display: flex;
+}
+.info-tooltip-type { color: var(--text-dim); }
+.info-tooltip-samples { color: var(--text-dim); word-break: break-word; }
+
 /* ---------- Export ---------- */
 .export-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .export-config { display: flex; flex-direction: column; gap: 14px; }

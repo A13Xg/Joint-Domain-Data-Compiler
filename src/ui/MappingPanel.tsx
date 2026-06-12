@@ -7,11 +7,14 @@ import type { CsvAnalysisResult, DetectedColumn } from '../types/converter'
 import type { CsvMapping } from '../core/parsers/csv'
 import { buildPointsFromCsvRows } from '../core/parsers/csv'
 import type { ElevationUnit, TimeFormat } from '../core/format'
+import { InfoTooltip } from './InfoTooltip'
 
 interface Props {
   analysis: CsvAnalysisResult
   mapping: CsvMapping
   onChange: (mapping: CsvMapping) => void
+  additionalHeaders: boolean
+  onToggleAdditionalHeaders: (v: boolean) => void
   onBuild: () => void
   building: boolean
 }
@@ -25,7 +28,7 @@ const TIME_FORMATS: Array<{ id: TimeFormat; label: string }> = [
   { id: 'excel_serial', label: 'Excel serial date' },
 ]
 
-export function MappingPanel({ analysis, mapping, onChange, onBuild, building }: Props) {
+export function MappingPanel({ analysis, mapping, onChange, additionalHeaders, onToggleAdditionalHeaders, onBuild, building }: Props) {
   const columns = analysis.columns
   const rows = analysis.sampleRows
 
@@ -53,6 +56,19 @@ export function MappingPanel({ analysis, mapping, onChange, onBuild, building }:
         <span className={validCount > 0 ? 'ok' : 'warn'}>{validCount.toLocaleString()} valid in sample</span>
       </div>
 
+      <label className="header-compat-toggle">
+        <input
+          type="checkbox"
+          checked={additionalHeaders}
+          onChange={(e) => onToggleAdditionalHeaders(e.target.checked)}
+        />
+        <span>Additional header compatibility</span>
+        <span className="muted small">
+          {' '}— treat rows 1-{Math.max(1, analysis.dataStartRow)} as possible headers
+          (handles files with extra unit/label rows).
+        </span>
+      </label>
+
       {suggestSwap && (
         <div className="swap-hint">
           ⚠ Reversing latitude/longitude yields more valid points ({swappedCount} vs {validCount}).
@@ -63,9 +79,9 @@ export function MappingPanel({ analysis, mapping, onChange, onBuild, building }:
       )}
 
       <div className="mapping-fields">
-        <FieldSelect label="Latitude *" columns={columns} value={mapping.latitude} field="latitude" onChange={(v) => set({ latitude: v })} />
-        <FieldSelect label="Longitude *" columns={columns} value={mapping.longitude} field="longitude" onChange={(v) => set({ longitude: v })} />
-        <FieldSelect label="Elevation" columns={columns} value={mapping.elevation} field="elevation" optional onChange={(v) => set({ elevation: v })} />
+        <FieldSelect label="Latitude *" columns={columns} value={mapping.latitude} field="latitude" additionalHeaders={additionalHeaders} onChange={(v) => set({ latitude: v })} />
+        <FieldSelect label="Longitude *" columns={columns} value={mapping.longitude} field="longitude" additionalHeaders={additionalHeaders} onChange={(v) => set({ longitude: v })} />
+        <FieldSelect label="Elevation" columns={columns} value={mapping.elevation} field="elevation" optional additionalHeaders={additionalHeaders} onChange={(v) => set({ elevation: v })} />
         <label className="map-field">
           <span>Elevation unit</span>
           <select value={mapping.elevationUnit} onChange={(e) => set({ elevationUnit: e.target.value as ElevationUnit })}>
@@ -73,7 +89,7 @@ export function MappingPanel({ analysis, mapping, onChange, onBuild, building }:
             <option value="feet">Feet</option>
           </select>
         </label>
-        <FieldSelect label="Timestamp" columns={columns} value={mapping.timestamp} field="timestamp" optional onChange={(v) => set({ timestamp: v })} />
+        <FieldSelect label="Timestamp" columns={columns} value={mapping.timestamp} field="timestamp" optional additionalHeaders={additionalHeaders} onChange={(v) => set({ timestamp: v })} />
         <label className="map-field">
           <span>Timestamp format</span>
           <select value={mapping.timeFormat} onChange={(e) => set({ timeFormat: e.target.value as TimeFormat })}>
@@ -82,8 +98,8 @@ export function MappingPanel({ analysis, mapping, onChange, onBuild, building }:
             ))}
           </select>
         </label>
-        <FieldSelect label="Name" columns={columns} value={mapping.name} field="name" optional onChange={(v) => set({ name: v })} />
-        <FieldSelect label="Description" columns={columns} value={mapping.description} field="description" optional onChange={(v) => set({ description: v })} />
+        <FieldSelect label="Name" columns={columns} value={mapping.name} field="name" optional additionalHeaders={additionalHeaders} onChange={(v) => set({ name: v })} />
+        <FieldSelect label="Description" columns={columns} value={mapping.description} field="description" optional additionalHeaders={additionalHeaders} onChange={(v) => set({ description: v })} />
       </div>
 
       <p className="muted small">
@@ -104,6 +120,7 @@ function FieldSelect({
   value,
   field,
   optional,
+  additionalHeaders,
   onChange,
 }: {
   label: string
@@ -111,18 +128,26 @@ function FieldSelect({
   value: string
   field: string
   optional?: boolean
+  additionalHeaders: boolean
   onChange: (v: string) => void
 }) {
+  const selected = columns.find((c) => c.name === value)
   return (
     <label className="map-field">
-      <span>{label}</span>
+      <span className="map-field-label">
+        <span>{label}</span>
+        <InfoTooltip column={selected} />
+      </span>
       <select value={value} onChange={(e) => onChange(e.target.value)}>
         <option value="">{optional ? 'None' : 'Select column'}</option>
         {columns.map((c) => {
           const score = c.candidates.find((cand) => cand.field === field)?.score
+          const optionLabel = additionalHeaders && c.headerCandidates.length > 1
+            ? c.headerCandidates.join(' / ')
+            : c.name
           return (
             <option key={c.name} value={c.name}>
-              {c.name}
+              {optionLabel}
               {score && score >= 0.45 ? ` (${Math.round(score * 100)}%)` : ''}
             </option>
           )

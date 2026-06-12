@@ -27,6 +27,7 @@ interface PendingCsv {
   file: File
   analysis: CsvAnalysisResult
   mapping: CsvMapping
+  additionalHeaders: boolean
 }
 
 const CSV_SAMPLE_LIMIT = 5000
@@ -110,7 +111,7 @@ export default function App() {
       } else if (msg.type === 'complete') {
         const analysis = msg.payload as CsvAnalysisResult
         logger.success('import', `Analyzed ${file.name}: ${analysis.columns.length} columns`)
-        setPendingCsv({ file, analysis, mapping: defaultMapping(analysis) })
+        setPendingCsv({ file, analysis, mapping: defaultMapping(analysis), additionalHeaders: false })
         setBusy(null)
         setProgress(null)
         setTab('mapping')
@@ -132,7 +133,13 @@ export default function App() {
     setProgress(0)
     try {
       const { rows, columns } = await logger.time('import', `Full CSV parse ${pendingCsv.file.name}`, () =>
-        parseCsvFile(pendingCsv.file, pendingCsv.analysis.delimiter, (f) => setProgress(f * 100)),
+        parseCsvFile(
+          pendingCsv.file,
+          pendingCsv.analysis.delimiter,
+          pendingCsv.analysis.columns.map((c) => c.name),
+          pendingCsv.analysis.dataStartRow,
+          (f) => setProgress(f * 100),
+        ),
       )
       const result = buildPointsFromCsvRows(rows, pendingCsv.mapping, columns)
       for (const w of result.warnings) logger.warn('import', `${pendingCsv.file.name}: ${w}`)
@@ -365,6 +372,10 @@ export default function App() {
                 analysis={pendingCsv.analysis}
                 mapping={pendingCsv.mapping}
                 onChange={(m) => setPendingCsv((p) => (p ? { ...p, mapping: m } : p))}
+                additionalHeaders={pendingCsv.additionalHeaders}
+                onToggleAdditionalHeaders={(v) =>
+                  setPendingCsv((p) => (p ? { ...p, additionalHeaders: v } : p))
+                }
                 onBuild={buildCsvDataset}
                 building={building}
               />
