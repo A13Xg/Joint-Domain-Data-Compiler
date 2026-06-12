@@ -1,883 +1,452 @@
-import { useEffect, useMemo, useState } from 'react'
-import type { LatLngBoundsExpression, LatLngTuple } from 'leaflet'
-import { CircleMarker, MapContainer, Polyline, TileLayer, Tooltip, useMap } from 'react-leaflet'
-import { convertCsvToGpx } from './lib/gpx'
-import type {
-  CsvAnalysisResult,
-  DetectedColumn,
-  ElevationUnit,
-  MappingState,
-  TimeUnit,
-} from './types/converter'
+import { useCallback, useMemo, useRef, useState } from 'react'
+import type { CsvAnalysisResult, DetectedColumn } from './types/converter'
+import type { Dataset, TrackPoint } from './core/model'
+import { withPoints } from './core/transforms'
+import { detectFormat, makeDataset, parseFileToDataset, INPUT_FORMATS } from './core/parsers'
+import { buildPointsFromCsvRows, parseCsvFile, type CsvMapping } from './core/parsers/csv'
+import { logger } from './core/logger'
+import { formatBytes } from './core/format'
+import { Spinner, ProgressBar } from './ui/Spinner'
+import { LogConsole } from './ui/LogConsole'
+import { MapView } from './ui/MapView'
+import { TimeSeriesChart } from './ui/TimeSeriesChart'
+import { DataTable } from './ui/DataTable'
+import { StatsPanel } from './ui/StatsPanel'
+import { TransformPanel } from './ui/TransformPanel'
+import { ExportPanel } from './ui/ExportPanel'
+import { MappingPanel } from './ui/MappingPanel'
 
-type WorkerMessage =
-  | {
-      type: 'progress'
-      payload: {
-        progress: number
-        sampled: number
-      }
-    }
-  | {
-      type: 'complete'
-      payload: CsvAnalysisResult
-    }
-  | {
-      type: 'error'
-      payload: {
-        message: string
-      }
-    }
+type Tab = 'import' | 'mapping' | 'overview' | 'map' | 'charts' | 'table' | 'transform' | 'export'
 
-interface PreviewPoint {
-  lat: number
-  lon: number
-  label: string
-  timestamp: number | null
+interface History {
+  past: Dataset[]
+  future: Dataset[]
 }
 
-type MapDisplayMode = 'both' | 'path' | 'points'
-
-interface FieldHelpContent {
-  title: string
-  description: string
-  examples: string[]
+interface PendingCsv {
+  file: File
+  analysis: CsvAnalysisResult
+  mapping: CsvMapping
 }
 
-const FIELD_HELP: Record<string, FieldHelpContent> = {
-  latitude: {
-    title: 'Latitude Column',
-    description: 'North/south position in decimal degrees. Valid range is -90 to 90.',
-    examples: ['47.620500', '-33.868820', '51,507351 (comma decimals are accepted)'],
-  },
-  longitude: {
-    title: 'Longitude Column',
-    description: 'East/west position in decimal degrees. Valid range is -180 to 180.',
-    examples: ['-122.349300', '151.209300', '0.127758'],
-  },
-  elevation: {
-    title: 'Elevation Column',
-    description: 'Height value for each point. Values are exported to GPX in meters.',
-    examples: ['132.4 (meters)', '548.2 (feet, when unit is set to Feet)'],
-  },
-  elevationUnit: {
-    title: 'Elevation Unit',
-    description: 'Unit used by your CSV elevation values before GPX conversion.',
-    examples: ['Meters: 132.4 -> 132.4 m', 'Feet: 548.2 -> 167.091 m'],
-  },
-  timestamp: {
-    title: 'Timestamp Column',
-    description: 'Date/time value per point. Pair this with the correct timestamp format.',
-    examples: ['2026-06-10T14:35:22Z', '1718036122', '1718036122000', '45450.52431'],
-  },
-  timeUnit: {
-    title: 'Timestamp Format',
-    description: 'How timestamp values are interpreted. Epoch is sometimes written as EPOC.',
-    examples: [
-      'ISO 8601: 2026-06-10T14:35:22Z',
-      'Epoch seconds (EPOC): 1718036122',
-      'Epoch milliseconds (EPOC ms): 1718036122000',
-      'Excel serial: 45450.52431',
-    ],
-  },
-  name: {
-    title: 'Name Column',
-    description: 'Optional short point title. Exported to GPX as point name.',
-    examples: ['Checkpoint 12', 'Trailhead', 'WP-0007'],
-  },
-  description: {
-    title: 'Description Column',
-    description: 'Optional detailed note for each point. Exported as GPX desc/cmt text.',
-    examples: ['Gate near tower', 'Surface changed to gravel at km 3.2'],
-  },
-}
+const CSV_SAMPLE_LIMIT = 5000
 
-function FieldHelp({ helpKey }: { helpKey: keyof typeof FIELD_HELP }) {
-  const help = FIELD_HELP[helpKey]
-
-  return (
-    <span className="field-help">
-      <button
-        type="button"
-        className="field-help-trigger"
-        aria-label={`${help.title} help`}
-      >
-        i
-      </button>
-      <span className="field-help-popover" role="tooltip">
-        <strong>{help.title}</strong>
-        <span>{help.description}</span>
-        {help.examples.map((example) => (
-          <span key={`${helpKey}-${example}`}>{example}</span>
-        ))}
-      </span>
-    </span>
-  )
-}
-
-const INITIAL_MAPPING: MappingState = {
-  latitude: '',
-  longitude: '',
-  elevation: '',
-  timestamp: '',
-  name: '',
-  description: '',
-  elevationUnit: 'meters',
-  timeUnit: 'iso',
-}
-
-function normalizeFileStem(fileName: string): string {
-  const withoutExt = fileName.replace(/\.[^.]+$/, '')
-  return withoutExt || 'converted-track'
-}
-
-function createDownload(blob: Blob, fileName: string): void {
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = fileName
-  anchor.click()
-  URL.revokeObjectURL(url)
-}
-
-function parseNumber(rawValue: string): number | null {
-  const value = rawValue.trim()
-  if (!value) {
-    return null
-  }
-
-  const normalized = /^-?\d+,\d+$/.test(value)
-    ? value.replace(',', '.')
-    : value.replaceAll(',', '')
-
-  const parsed = Number(normalized)
-  return Number.isFinite(parsed) ? parsed : null
-}
-
-function parseTimestamp(rawValue: string, mode: TimeUnit): number | null {
-  const value = rawValue.trim()
-  if (!value) {
-    return null
-  }
-
-  if (mode === 'iso') {
-    const date = new Date(value)
-    return Number.isNaN(date.valueOf()) ? null : date.valueOf()
-  }
-
-  const numeric = Number(value)
-  if (!Number.isFinite(numeric)) {
-    return null
-  }
-
-  if (mode === 'epoch_seconds') {
-    return numeric * 1000
-  }
-
-  if (mode === 'epoch_milliseconds') {
-    return numeric
-  }
-
-  return (numeric - 25569) * 86400 * 1000
-}
-
-function suggestedColumn(columns: DetectedColumn[], field: string): string {
-  const winner = columns
-    .map((column) => ({
-      name: column.name,
-      score: column.candidates.find((candidate) => candidate.field === field)?.score ?? 0,
-    }))
-    .sort((a, b) => b.score - a.score)[0]
-
-  return winner && winner.score >= 0.45 ? winner.name : ''
-}
-
-function computePreviewPoints(
-  analysis: CsvAnalysisResult | null,
-  mapping: MappingState,
-): { points: PreviewPoint[]; validCount: number } {
-  if (!analysis || !mapping.latitude || !mapping.longitude) {
-    return {
-      points: [],
-      validCount: 0,
+function suggestColumn(columns: DetectedColumn[], field: string, threshold = 0.45): string {
+  let best = ''
+  let bestScore = 0
+  for (const c of columns) {
+    const s = c.candidates.find((cand) => cand.field === field)?.score ?? 0
+    if (s > bestScore) {
+      bestScore = s
+      best = c.name
     }
   }
+  return bestScore >= threshold ? best : ''
+}
 
-  const previewPoints: PreviewPoint[] = []
-
-  for (const row of analysis.sampleRows) {
-    const latitude = parseNumber(row[mapping.latitude] ?? '')
-    const longitude = parseNumber(row[mapping.longitude] ?? '')
-
-    if (latitude === null || longitude === null) {
-      continue
-    }
-
-    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
-      continue
-    }
-
-    const label = mapping.name ? (row[mapping.name] ?? '') : ''
-    const timestamp = mapping.timestamp
-      ? parseTimestamp(row[mapping.timestamp] ?? '', mapping.timeUnit)
-      : null
-
-    previewPoints.push({
-      lat: latitude,
-      lon: longitude,
-      label,
-      timestamp,
-    })
-  }
-
-  const sorted = mapping.timestamp
-    ? [...previewPoints].sort((a, b) => {
-        if (a.timestamp === null && b.timestamp === null) {
-          return 0
-        }
-
-        if (a.timestamp === null) {
-          return 1
-        }
-
-        if (b.timestamp === null) {
-          return -1
-        }
-
-        return a.timestamp - b.timestamp
-      })
-    : previewPoints
-
-  if (sorted.length <= 1600) {
-    return {
-      points: sorted,
-      validCount: sorted.length,
-    }
-  }
-
-  const step = Math.ceil(sorted.length / 1600)
-  const reduced = sorted.filter((_, index) => index % step === 0)
-
+function defaultMapping(analysis: CsvAnalysisResult): CsvMapping {
   return {
-    points: reduced,
-    validCount: sorted.length,
+    latitude: suggestColumn(analysis.columns, 'latitude'),
+    longitude: suggestColumn(analysis.columns, 'longitude'),
+    elevation: suggestColumn(analysis.columns, 'elevation'),
+    timestamp: suggestColumn(analysis.columns, 'timestamp'),
+    name: suggestColumn(analysis.columns, 'name'),
+    description: suggestColumn(analysis.columns, 'description'),
+    elevationUnit: 'meters',
+    timeFormat: 'auto',
   }
 }
 
-function countValidCoordinatesForColumns(
-  analysis: CsvAnalysisResult | null,
-  latitudeColumn: string,
-  longitudeColumn: string,
-): number {
-  if (!analysis || !latitudeColumn || !longitudeColumn) {
-    return 0
-  }
+export default function App() {
+  const [datasets, setDatasets] = useState<Dataset[]>([])
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [histories, setHistories] = useState<Record<string, History>>({})
+  const [tab, setTab] = useState<Tab>('import')
+  const [busy, setBusy] = useState<string | null>(null)
+  const [progress, setProgress] = useState<number | null>(null)
+  const [pendingCsv, setPendingCsv] = useState<PendingCsv | null>(null)
+  const [building, setBuilding] = useState(false)
+  const [dragActive, setDragActive] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  let validCount = 0
+  const active = useMemo(() => datasets.find((d) => d.id === activeId) ?? null, [datasets, activeId])
+  const history = activeId ? histories[activeId] : undefined
 
-  for (const row of analysis.sampleRows) {
-    const latitude = parseNumber(row[latitudeColumn] ?? '')
-    const longitude = parseNumber(row[longitudeColumn] ?? '')
+  const flashToast = useCallback((msg: string) => {
+    setToast(msg)
+    window.setTimeout(() => setToast((t) => (t === msg ? null : t)), 3200)
+  }, [])
 
-    if (latitude === null || longitude === null) {
-      continue
-    }
-
-    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
-      continue
-    }
-
-    validCount += 1
-  }
-
-  return validCount
-}
-
-function FitPreviewBounds({ points }: { points: LatLngTuple[] }) {
-  const map = useMap()
-
-  useEffect(() => {
-    if (points.length === 0) {
-      return
-    }
-
-    const bounds: LatLngBoundsExpression = points
-    map.fitBounds(bounds, {
-      padding: [24, 24],
-      maxZoom: 15,
-    })
-  }, [map, points])
-
-  return null
-}
-
-function App() {
-  const [file, setFile] = useState<File | null>(null)
-  const [analysis, setAnalysis] = useState<CsvAnalysisResult | null>(null)
-  const [mapping, setMapping] = useState<MappingState>(INITIAL_MAPPING)
-  const [analyzing, setAnalyzing] = useState(false)
-  const [analysisProgress, setAnalysisProgress] = useState(0)
-  const [sampledRows, setSampledRows] = useState(0)
-  const [error, setError] = useState('')
-  const [exporting, setExporting] = useState(false)
-  const [exportProgress, setExportProgress] = useState(0)
-  const [lastExport, setLastExport] = useState('')
-  const [mapMode, setMapMode] = useState<MapDisplayMode>('both')
-  const [trackNameOverride, setTrackNameOverride] = useState('')
-  const [lastExportStats, setLastExportStats] = useState<{
-    processedRows: number
-    skippedMissingCoordinates: number
-    skippedOutOfRangeCoordinates: number
-    includedElevation: number
-    includedTimestamp: number
-  } | null>(null)
-
-  const columnOptions = analysis?.columns ?? []
-  const canExport = Boolean(file && mapping.latitude && mapping.longitude)
-
-  const previewResult = useMemo(() => computePreviewPoints(analysis, mapping), [analysis, mapping])
-  const swappedValidCount = useMemo(
-    () => countValidCoordinatesForColumns(analysis, mapping.longitude, mapping.latitude),
-    [analysis, mapping.latitude, mapping.longitude],
-  )
-  const mappingDiagnostics = useMemo(() => {
-    const currentValidCount = previewResult.validCount
-    const suggestedSwap =
-      currentValidCount > 0 &&
-      swappedValidCount >= Math.max(14, Math.round(currentValidCount * 1.6))
-
-    return {
-      currentValidCount,
-      swappedValidCount,
-      suggestedSwap,
-    }
-  }, [previewResult.validCount, swappedValidCount])
-  const mapPositions = useMemo<LatLngTuple[]>(
-    () => previewResult.points.map((point) => [point.lat, point.lon]),
-    [previewResult.points],
+  const addDataset = useCallback(
+    (dataset: Dataset) => {
+      setDatasets((prev) => [...prev, dataset])
+      setActiveId(dataset.id)
+      setHistories((prev) => ({ ...prev, [dataset.id]: { past: [], future: [] } }))
+      setTab('overview')
+      flashToast(`Loaded ${dataset.points.length.toLocaleString()} points from ${dataset.name}`)
+    },
+    [flashToast],
   )
 
-  const delimiterLabel = useMemo(() => {
-    if (!analysis?.delimiter) {
-      return 'Auto'
-    }
-
-    if (analysis.delimiter === ',') {
-      return 'Comma (,)'
-    }
-
-    if (analysis.delimiter === ';') {
-      return 'Semicolon (;)'
-    }
-
-    if (analysis.delimiter === '\t') {
-      return 'Tab (\\t)'
-    }
-
-    return `Custom (${analysis.delimiter})`
-  }, [analysis])
-
-  const onFileSelected = (nextFile: File | null) => {
-    setFile(nextFile)
-    setAnalysis(null)
-    setMapping(INITIAL_MAPPING)
-    setAnalysisProgress(0)
-    setSampledRows(0)
-    setError('')
-    setLastExport('')
-    setLastExportStats(null)
-    setTrackNameOverride(nextFile ? normalizeFileStem(nextFile.name) : '')
-
-    if (!nextFile) {
-      return
-    }
-
-    setAnalyzing(true)
-
+  // --- CSV analysis via web worker -----------------------------------------
+  const analyzeCsv = useCallback((file: File) => {
+    setBusy(`Analyzing ${file.name}`)
+    setProgress(0)
+    logger.info('import', `Analyzing CSV ${file.name} (${formatBytes(file.size)})`)
     const worker = new Worker(new URL('./workers/csvAnalyzer.worker.ts', import.meta.url), {
       type: 'module',
     })
-
-    worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
-      const message = event.data
-
-      if (message.type === 'progress') {
-        setAnalysisProgress(message.payload.progress)
-        setSampledRows(message.payload.sampled)
-      }
-
-      if (message.type === 'error') {
-        setError(message.payload.message)
-        setAnalyzing(false)
+    worker.onmessage = (event: MessageEvent) => {
+      const msg = event.data
+      if (msg.type === 'progress') {
+        setProgress(msg.payload.progress)
+      } else if (msg.type === 'error') {
+        logger.error('import', `CSV analysis failed: ${msg.payload.message}`)
+        flashToast(`CSV analysis failed: ${msg.payload.message}`)
+        setBusy(null)
+        setProgress(null)
         worker.terminate()
-      }
-
-      if (message.type === 'complete') {
-        setAnalysis(message.payload)
-        setAnalyzing(false)
-        setMapping((current) => ({
-          ...current,
-          latitude: suggestedColumn(message.payload.columns, 'latitude'),
-          longitude: suggestedColumn(message.payload.columns, 'longitude'),
-          elevation: suggestedColumn(message.payload.columns, 'elevation'),
-          timestamp: suggestedColumn(message.payload.columns, 'timestamp'),
-          name: suggestedColumn(message.payload.columns, 'name'),
-          description: suggestedColumn(message.payload.columns, 'description'),
-        }))
+      } else if (msg.type === 'complete') {
+        const analysis = msg.payload as CsvAnalysisResult
+        logger.success('import', `Analyzed ${file.name}: ${analysis.columns.length} columns`)
+        setPendingCsv({ file, analysis, mapping: defaultMapping(analysis) })
+        setBusy(null)
+        setProgress(null)
+        setTab('mapping')
         worker.terminate()
       }
     }
-
-    worker.postMessage({
-      type: 'analyze',
-      payload: {
-        file: nextFile,
-        sampleLimit: 5000,
-      },
-    })
-  }
-
-  const updateMapping = (key: keyof MappingState, value: string) => {
-    setMapping((current) => ({
-      ...current,
-      [key]: value,
-    }))
-  }
-
-  const updateElevationUnit = (value: ElevationUnit) => {
-    setMapping((current) => ({
-      ...current,
-      elevationUnit: value,
-    }))
-  }
-
-  const updateTimeUnit = (value: TimeUnit) => {
-    setMapping((current) => ({
-      ...current,
-      timeUnit: value,
-    }))
-  }
-
-  const runExport = async () => {
-    if (!file || !canExport) {
-      return
+    worker.onerror = (err) => {
+      logger.error('import', `Worker error: ${err.message}`)
+      setBusy(null)
+      setProgress(null)
     }
+    worker.postMessage({ type: 'analyze', payload: { file, sampleLimit: CSV_SAMPLE_LIMIT } })
+  }, [flashToast])
 
-    setExporting(true)
-    setError('')
-    setLastExport('')
-    setLastExportStats(null)
-
+  const buildCsvDataset = useCallback(async () => {
+    if (!pendingCsv) return
+    setBuilding(true)
+    setBusy(`Building dataset from ${pendingCsv.file.name}`)
+    setProgress(0)
     try {
-      const defaultTrackName = normalizeFileStem(file.name)
-      const trackName = trackNameOverride.trim() || defaultTrackName
-      const result = await convertCsvToGpx({
-        file,
-        mapping,
-        delimiter: analysis?.delimiter,
-        trackName,
-        onProgress: setExportProgress,
-      })
-
-      const outputName = `${trackName}.gpx`
-      createDownload(result.blob, outputName)
-      setLastExport(`Exported ${result.pointCount.toLocaleString()} points to ${outputName}`)
-      setLastExportStats(result.stats)
-      setExportProgress(100)
-    } catch (conversionError) {
-      if (conversionError instanceof Error) {
-        setError(conversionError.message)
-      } else {
-        setError('Conversion failed for an unknown reason.')
-      }
+      const { rows, columns } = await logger.time('import', `Full CSV parse ${pendingCsv.file.name}`, () =>
+        parseCsvFile(pendingCsv.file, pendingCsv.analysis.delimiter, (f) => setProgress(f * 100)),
+      )
+      const result = buildPointsFromCsvRows(rows, pendingCsv.mapping, columns)
+      for (const w of result.warnings) logger.warn('import', `${pendingCsv.file.name}: ${w}`)
+      const dataset = makeDataset(pendingCsv.file.name, 'csv', result, pendingCsv.file.size)
+      logger.success('import', `Built ${dataset.points.length.toLocaleString()} points from ${pendingCsv.file.name}`)
+      setPendingCsv(null)
+      addDataset(dataset)
+    } catch (err) {
+      logger.error('import', `CSV build failed: ${(err as Error).message}`)
+      flashToast(`CSV build failed: ${(err as Error).message}`)
     } finally {
-      setExporting(false)
+      setBuilding(false)
+      setBusy(null)
+      setProgress(null)
     }
-  }
+  }, [pendingCsv, addDataset, flashToast])
+
+  // --- generic file ingest --------------------------------------------------
+  const ingestFile = useCallback(
+    async (file: File) => {
+      const format = detectFormat(file.name)
+      if (!format) {
+        logger.error('import', `Unsupported file type: ${file.name}`)
+        flashToast(`Unsupported file type: ${file.name}`)
+        return
+      }
+      if (format.needsMapping) {
+        analyzeCsv(file)
+        return
+      }
+      setBusy(`Parsing ${file.name}`)
+      setProgress(null)
+      try {
+        const dataset = await parseFileToDataset(file, format)
+        addDataset(dataset)
+      } catch (err) {
+        logger.error('import', `Failed to parse ${file.name}: ${(err as Error).message}`)
+        flashToast(`Failed to parse ${file.name}: ${(err as Error).message}`)
+      } finally {
+        setBusy(null)
+      }
+    },
+    [analyzeCsv, addDataset, flashToast],
+  )
+
+  const onFiles = useCallback(
+    (files: FileList | null) => {
+      if (!files) return
+      for (const file of Array.from(files)) void ingestFile(file)
+    },
+    [ingestFile],
+  )
+
+  // --- transforms with undo/redo -------------------------------------------
+  const applyTransform = useCallback(
+    (points: TrackPoint[], summary: string) => {
+      if (!active) return
+      const next = withPoints(active, points)
+      setDatasets((prev) => prev.map((d) => (d.id === active.id ? next : d)))
+      setHistories((prev) => {
+        const h = prev[active.id] ?? { past: [], future: [] }
+        return { ...prev, [active.id]: { past: [...h.past, active], future: [] } }
+      })
+      flashToast(summary)
+    },
+    [active, flashToast],
+  )
+
+  const undo = useCallback(() => {
+    if (!active || !history || history.past.length === 0) return
+    const prevDataset = history.past[history.past.length - 1]
+    setDatasets((prev) => prev.map((d) => (d.id === active.id ? prevDataset : d)))
+    setHistories((prev) => {
+      const h = prev[active.id]
+      return { ...prev, [active.id]: { past: h.past.slice(0, -1), future: [active, ...h.future] } }
+    })
+    logger.info('transform', 'Undo')
+  }, [active, history])
+
+  const redo = useCallback(() => {
+    if (!active || !history || history.future.length === 0) return
+    const nextDataset = history.future[0]
+    setDatasets((prev) => prev.map((d) => (d.id === active.id ? nextDataset : d)))
+    setHistories((prev) => {
+      const h = prev[active.id]
+      return { ...prev, [active.id]: { past: [...h.past, active], future: h.future.slice(1) } }
+    })
+    logger.info('transform', 'Redo')
+  }, [active, history])
+
+  const removeDataset = useCallback(
+    (id: string) => {
+      setDatasets((prev) => prev.filter((d) => d.id !== id))
+      setHistories((prev) => {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+      if (activeId === id) {
+        const remaining = datasets.filter((d) => d.id !== id)
+        setActiveId(remaining.length ? remaining[0].id : null)
+      }
+    },
+    [activeId, datasets],
+  )
+
+  const tabs: Array<{ id: Tab; label: string; enabled: boolean }> = [
+    { id: 'import', label: 'Import', enabled: true },
+    { id: 'mapping', label: 'CSV Mapping', enabled: !!pendingCsv },
+    { id: 'overview', label: 'Overview', enabled: !!active },
+    { id: 'map', label: 'Map', enabled: !!active },
+    { id: 'charts', label: 'Charts', enabled: !!active },
+    { id: 'table', label: 'Table', enabled: !!active },
+    { id: 'transform', label: 'Transform', enabled: !!active },
+    { id: 'export', label: 'Export', enabled: !!active },
+  ]
 
   return (
-    <main className="app-shell noir">
-      <section className="hero-panel compact-hero">
-        <div>
-          <p className="kicker noir-accent">Joint-Domain Data Compiler</p>
-          <h1>Universal CSV to GPX Converter</h1>
-        </div>
-        <p className="hero-copy">
-          Dense local workflow for profiling large CSVs, validating mappings, previewing routes,
-          and exporting GPX without freezing the UI.
-        </p>
-      </section>
-
-      <section className="dashboard-grid">
-        <section className="panel compact-panel">
-          <div className="panel-title-row">
-            <h2>1. Source File</h2>
-            {file && <span className="status-pill">{file.name}</span>}
+    <div className="app">
+      <header className="app-header">
+        <div className="brand">
+          <span className="brand-mark">JD</span>
+          <div>
+            <h1>Joint Domain Data Compiler</h1>
+            <p>TSPI flight-data conversion &amp; analysis workbench</p>
           </div>
-          <label className="file-input-wrap">
-            <span>Select CSV File</span>
-            <input
-              type="file"
-              accept=".csv,text/csv"
-              onChange={(event) => onFileSelected(event.target.files?.[0] ?? null)}
-            />
-          </label>
-          {analyzing && (
-            <div className="progress-wrap compact-progress">
-              <p>Profiling {sampledRows.toLocaleString()} sampled rows</p>
-              <progress value={analysisProgress} max={100}></progress>
-            </div>
-          )}
-          {analysis && (
-            <div className="inline-meta-grid">
-              <span>delimiter <strong>{delimiterLabel}</strong></span>
-              <span>sampled <strong>{analysis.rowCountSampled.toLocaleString()}</strong></span>
-              <span>columns <strong>{analysis.columns.length.toLocaleString()}</strong></span>
-            </div>
-          )}
-        </section>
-
-        <section className="panel compact-panel panel-actions">
-          <h2>5. Export GPX</h2>
-          <label className="track-name-field">
-            Track Name
-            <input
-              type="text"
-              value={trackNameOverride}
-              onChange={(event) => setTrackNameOverride(event.target.value)}
-              placeholder={file ? normalizeFileStem(file.name) : 'converted-track'}
-            />
-          </label>
-          <p className="compact-copy">
-            Requires latitude + longitude. Optional values are injected only when valid.
-          </p>
-          <button type="button" disabled={!canExport || exporting} onClick={runExport}>
-            {exporting ? 'Converting...' : 'Export Universal GPX'}
-          </button>
-          {exporting && (
-            <div className="progress-wrap compact-progress">
-              <p>Building GPX from streamed chunks</p>
-              <progress value={exportProgress} max={100}></progress>
-            </div>
-          )}
-          {lastExport && <p className="success-line">{lastExport}</p>}
-          {lastExportStats && (
-            <div className="export-stats compact-export-stats">
-              <span>rows processed {lastExportStats.processedRows.toLocaleString()}</span>
-              <span>missing coords skipped {lastExportStats.skippedMissingCoordinates.toLocaleString()}</span>
-              <span>out-of-range skipped {lastExportStats.skippedOutOfRangeCoordinates.toLocaleString()}</span>
-              <span>elevation included {lastExportStats.includedElevation.toLocaleString()}</span>
-              <span>timestamps included {lastExportStats.includedTimestamp.toLocaleString()}</span>
-            </div>
-          )}
-          {error && <p className="error-line">{error}</p>}
-        </section>
-      </section>
-
-      <details className="panel compact-panel collapsible-panel">
-        <summary className="collapsible-summary">
-          <span>2. Column Intelligence</span>
-          {analysis ? (
-            <span className="summary-meta">
-              {analysis.columns.length} fields analyzed, hover sample badges for values
-            </span>
+        </div>
+        <div className="header-status">
+          {busy ? (
+            <Spinner label={busy} />
           ) : (
-            <span className="summary-meta">Upload a CSV to inspect types and field guesses</span>
+            <span className="muted small">{datasets.length} dataset{datasets.length === 1 ? '' : 's'} loaded</span>
           )}
-        </summary>
-        {!analysis && <p className="compact-copy">Upload a CSV file to analyze headers and value patterns.</p>}
-        {analysis && (
-          <div className="table-wrap dense-table-wrap">
-            <table className="dense-table">
-              <thead>
-                <tr>
-                  <th>Column</th>
-                  <th>Sample</th>
-                  <th>Likely Meaning</th>
-                  <th>Estimated</th>
-                  <th>Patterns</th>
-                  <th>Stats</th>
-                </tr>
-              </thead>
-              <tbody>
-                {analysis.columns.map((column) => (
-                  <tr key={column.name}>
-                    <td className="column-name-cell">{column.name}</td>
-                    <td>
-                      <div className="sample-hover-card">
-                        <span className="sample-trigger noir-accent">hover sample</span>
-                        <div className="sample-popover">
-                          {column.sampleValues.length === 0 && <span>No sample values</span>}
-                          {column.sampleValues.map((value, index) => (
-                            <span key={`${column.name}-sample-${index}`}>{value}</span>
-                          ))}
-                        </div>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="candidate-list compact-candidates">
-                        {column.candidates.length === 0 && <span className="candidate">Unknown</span>}
-                        {column.candidates.map((candidate) => (
-                          <span key={`${column.name}-${candidate.field}`} className="candidate">
-                            {candidate.field} ({Math.round(candidate.score * 100)}%)
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td>
-                      <span className="candidate">
-                        {column.estimatedType} ({Math.round(column.estimatedConfidence * 100)}%)
-                      </span>
-                    </td>
-                    <td>
-                      <div className="candidate-list compact-candidates">
-                        {column.patterns.length === 0 && <span className="candidate">No pattern</span>}
-                        {column.patterns.map((pattern) => (
-                          <span key={`${column.name}-${pattern}`} className="candidate">
-                            {pattern}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td>
-                      <div className="stat-grid compact-stats">
-                        <span>filled {Math.round(column.stats.nonEmptyRatio * 100)}%</span>
-                        <span>unique {Math.round(column.stats.uniqueRatio * 100)}%</span>
-                        <span>numeric {Math.round(column.stats.numericRatio * 100)}%</span>
-                        <span>datetime {Math.round(column.stats.datetimeRatio * 100)}%</span>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </details>
-
-      <section className="panel compact-panel">
-        <h2>3. Mapping and Units</h2>
-        {mappingDiagnostics.suggestedSwap && (
-          <p className="warn-line">
-            Mapping warning: reversing latitude and longitude would produce more valid points in
-            this sample ({mappingDiagnostics.swappedValidCount.toLocaleString()} vs{' '}
-            {mappingDiagnostics.currentValidCount.toLocaleString()}).
-            <button
-              type="button"
-              className="inline-action"
-              onClick={() => {
-                setMapping((current) => ({
-                  ...current,
-                  latitude: current.longitude,
-                  longitude: current.latitude,
-                }))
-              }}
-            >
-              Swap now
-            </button>
-          </p>
-        )}
-        <div className="mapping-grid">
-          <label>
-            <span className="field-label-line">
-              Latitude Column
-              <FieldHelp helpKey="latitude" />
-            </span>
-            <select
-              value={mapping.latitude}
-              onChange={(event) => updateMapping('latitude', event.target.value)}
-            >
-              <option value="">Select column</option>
-              {columnOptions.map((column) => (
-                <option key={`lat-${column.name}`} value={column.name}>
-                  {column.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span className="field-label-line">
-              Longitude Column
-              <FieldHelp helpKey="longitude" />
-            </span>
-            <select
-              value={mapping.longitude}
-              onChange={(event) => updateMapping('longitude', event.target.value)}
-            >
-              <option value="">Select column</option>
-              {columnOptions.map((column) => (
-                <option key={`lon-${column.name}`} value={column.name}>
-                  {column.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span className="field-label-line">
-              Elevation Column (Optional)
-              <FieldHelp helpKey="elevation" />
-            </span>
-            <select
-              value={mapping.elevation}
-              onChange={(event) => updateMapping('elevation', event.target.value)}
-            >
-              <option value="">None</option>
-              {columnOptions.map((column) => (
-                <option key={`ele-${column.name}`} value={column.name}>
-                  {column.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span className="field-label-line">
-              Elevation Unit
-              <FieldHelp helpKey="elevationUnit" />
-            </span>
-            <select
-              value={mapping.elevationUnit}
-              onChange={(event) => updateElevationUnit(event.target.value as ElevationUnit)}
-            >
-              <option value="meters">Meters</option>
-              <option value="feet">Feet</option>
-            </select>
-          </label>
-          <label>
-            <span className="field-label-line">
-              Timestamp Column (Optional)
-              <FieldHelp helpKey="timestamp" />
-            </span>
-            <select
-              value={mapping.timestamp}
-              onChange={(event) => updateMapping('timestamp', event.target.value)}
-            >
-              <option value="">None</option>
-              {columnOptions.map((column) => (
-                <option key={`time-${column.name}`} value={column.name}>
-                  {column.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span className="field-label-line">
-              Timestamp Format
-              <FieldHelp helpKey="timeUnit" />
-            </span>
-            <select
-              value={mapping.timeUnit}
-              onChange={(event) => updateTimeUnit(event.target.value as TimeUnit)}
-            >
-              <option value="iso">ISO 8601</option>
-              <option value="epoch_seconds">Epoch Seconds</option>
-              <option value="epoch_milliseconds">Epoch Milliseconds</option>
-              <option value="excel_serial">Excel Serial Date</option>
-            </select>
-          </label>
-          <label>
-            <span className="field-label-line">
-              Name Column (Optional)
-              <FieldHelp helpKey="name" />
-            </span>
-            <select
-              value={mapping.name}
-              onChange={(event) => updateMapping('name', event.target.value)}
-            >
-              <option value="">None</option>
-              {columnOptions.map((column) => (
-                <option key={`name-${column.name}`} value={column.name}>
-                  {column.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span className="field-label-line">
-              Description Column (Optional)
-              <FieldHelp helpKey="description" />
-            </span>
-            <select
-              value={mapping.description}
-              onChange={(event) => updateMapping('description', event.target.value)}
-            >
-              <option value="">None</option>
-              {columnOptions.map((column) => (
-                <option key={`desc-${column.name}`} value={column.name}>
-                  {column.name}
-                </option>
-              ))}
-            </select>
-          </label>
         </div>
-      </section>
+      </header>
 
-      <section className="panel compact-panel">
-        <h2>4. Live Map Preview</h2>
-        {!analysis && <p>Upload and analyze a CSV file to enable map preview.</p>}
-        {analysis && !mapping.latitude && !mapping.longitude && (
-          <p>Select latitude and longitude columns to display the route.</p>
-        )}
-        {analysis && (mapping.latitude || mapping.longitude) && (
-          <>
-            <div className="map-toolbar">
-              <label>
-                Display Mode
-                <select
-                  value={mapMode}
-                  onChange={(event) => setMapMode(event.target.value as MapDisplayMode)}
+      <div className="app-body">
+        <aside className="sidebar">
+          <button type="button" className="primary-action" onClick={() => fileInputRef.current?.click()}>
+            + Load data
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden-input"
+            accept=".csv,.tsv,.txt,.gpx,.geojson,.json,.kml,.nmea,.gps,.log,.gpb,.bin"
+            onChange={(e) => {
+              onFiles(e.target.files)
+              e.target.value = ''
+            }}
+          />
+          <div className="dataset-list">
+            {datasets.length === 0 && <p className="muted small pad">No datasets yet.</p>}
+            {datasets.map((d) => (
+              <div
+                key={d.id}
+                className={`dataset-item${d.id === activeId ? ' active' : ''}`}
+                onClick={() => {
+                  setActiveId(d.id)
+                  if (tab === 'import' || tab === 'mapping') setTab('overview')
+                }}
+              >
+                <div className="dataset-item-main">
+                  <span className="dataset-name">{d.name}</span>
+                  <span className="dataset-sub mono">
+                    {d.sourceFormat} · {d.points.length.toLocaleString()} pts
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="dataset-remove"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    removeDataset(d.id)
+                  }}
+                  aria-label="Remove dataset"
                 >
-                  <option value="both">Path + Points</option>
-                  <option value="path">Path only</option>
-                  <option value="points">Points only</option>
-                </select>
-              </label>
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="sidebar-foot">
+            <span className="muted small">Supported in:</span>
+            <div className="format-badges">
+              {INPUT_FORMATS.map((f) => (
+                <span key={f.id} className="badge" title={f.description}>{f.label}</span>
+              ))}
             </div>
-            <p className="meta-line">
-              Plotted sample points: <strong>{previewResult.points.length.toLocaleString()}</strong>
-              {' '}
-              from valid coordinates:{' '}
-              <strong>{previewResult.validCount.toLocaleString()}</strong>
-            </p>
-            {previewResult.points.length === 0 && (
-              <p className="error-line small-line">
-                No valid coordinates found for the current column selections.
-              </p>
+          </div>
+        </aside>
+
+        <main className="workspace">
+          <nav className="tab-bar">
+            {tabs.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                disabled={!t.enabled}
+                className={`tab${tab === t.id ? ' active' : ''}`}
+                onClick={() => setTab(t.id)}
+              >
+                {t.label}
+              </button>
+            ))}
+            {active && (
+              <span className="tab-active-name mono">{active.name}</span>
             )}
-            {previewResult.points.length > 0 && (
-              <div className="map-wrap">
-                <MapContainer center={mapPositions[0]} zoom={8} className="map-canvas" scrollWheelZoom>
-                  <TileLayer
-                    attribution="&copy; OpenStreetMap contributors"
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                  />
-                  {mapMode !== 'points' && (
-                    <Polyline positions={mapPositions} pathOptions={{ color: '#ea4f2f', weight: 3 }} />
-                  )}
-                  {mapMode !== 'path' &&
-                    previewResult.points.map((point, index) => (
-                      <CircleMarker
-                        key={`${point.lat}-${point.lon}-${index}`}
-                        center={[point.lat, point.lon]}
-                        radius={2.6}
-                        pathOptions={{
-                          color: '#0f8c6f',
-                          fillColor: '#0f8c6f',
-                          fillOpacity: 0.68,
-                          weight: 0,
-                        }}
-                      >
-                        {point.label && <Tooltip>{point.label}</Tooltip>}
-                      </CircleMarker>
-                    ))}
-                  <FitPreviewBounds points={mapPositions} />
-                </MapContainer>
+          </nav>
+
+          <section className="tab-content">
+            {progress !== null && (
+              <div className="global-progress">
+                <ProgressBar value={progress} label={busy ?? 'Working'} />
               </div>
             )}
-          </>
-        )}
+
+            {tab === 'import' && (
+              <ImportView
+                dragActive={dragActive}
+                setDragActive={setDragActive}
+                onFiles={onFiles}
+                openPicker={() => fileInputRef.current?.click()}
+              />
+            )}
+
+            {tab === 'mapping' && pendingCsv && (
+              <MappingPanel
+                analysis={pendingCsv.analysis}
+                mapping={pendingCsv.mapping}
+                onChange={(m) => setPendingCsv((p) => (p ? { ...p, mapping: m } : p))}
+                onBuild={buildCsvDataset}
+                building={building}
+              />
+            )}
+
+            {tab === 'overview' && active && <StatsPanel dataset={active} />}
+            {tab === 'map' && active && <MapView points={active.points} channels={active.channels} />}
+            {tab === 'charts' && active && <TimeSeriesChart points={active.points} channels={active.channels} />}
+            {tab === 'table' && active && <DataTable points={active.points} channels={active.channels} />}
+            {tab === 'transform' && active && (
+              <TransformPanel
+                dataset={active}
+                onApply={applyTransform}
+                onUndo={undo}
+                onRedo={redo}
+                canUndo={!!history && history.past.length > 0}
+                canRedo={!!history && history.future.length > 0}
+              />
+            )}
+            {tab === 'export' && active && <ExportPanel dataset={active} />}
+          </section>
+        </main>
+      </div>
+
+      <section className="log-dock">
+        <LogConsole />
       </section>
-    </main>
+
+      {toast && <div className="toast">{toast}</div>}
+    </div>
   )
 }
 
-export default App
+function ImportView({
+  dragActive,
+  setDragActive,
+  onFiles,
+  openPicker,
+}: {
+  dragActive: boolean
+  setDragActive: (v: boolean) => void
+  onFiles: (files: FileList | null) => void
+  openPicker: () => void
+}) {
+  return (
+    <div className="import-view">
+      <div
+        className={`dropzone${dragActive ? ' drag' : ''}`}
+        onDragOver={(e) => {
+          e.preventDefault()
+          setDragActive(true)
+        }}
+        onDragLeave={() => setDragActive(false)}
+        onDrop={(e) => {
+          e.preventDefault()
+          setDragActive(false)
+          onFiles(e.dataTransfer.files)
+        }}
+        onClick={openPicker}
+      >
+        <div className="dropzone-inner">
+          <div className="dropzone-icon">⬇</div>
+          <h2>Drop TSPI data here</h2>
+          <p>or click to browse</p>
+          <div className="dropzone-formats">
+            {INPUT_FORMATS.map((f) => (
+              <span key={f.id} className="format-pill">
+                <strong>{f.label}</strong>
+                <span>.{f.extensions[0]}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="import-notes">
+        <h3>Conversion matrix</h3>
+        <p className="muted small">
+          Any input format normalizes into a unified point model and can be exported to GPX, CSV,
+          GeoJSON, KML, or the lossless GPB binary container. Coordinates accept decimal degrees, DMS,
+          and comma decimals; timestamps auto-detect epoch s/ms/µs, Excel serial, and ISO-8601.
+        </p>
+      </div>
+    </div>
+  )
+}

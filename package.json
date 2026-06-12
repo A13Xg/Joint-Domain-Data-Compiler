@@ -2,7 +2,7 @@
   "name": "joint-domain-data-compiler",
   "private": true,
   "version": "0.1.0",
-  "description": "Local-first desktop app for converting CSV geospatial data into GPX.",
+  "description": "Local-first TSPI flight-data workbench: convert, visualize, correct, and massage CSV/GPX/GeoJSON/KML/NMEA/GPB tracks with schema-valid multi-format export.",
   "author": {
     "name": "A13Xg",
     "email": "a13xg@users.noreply.github.com"
@@ -17,6 +17,8 @@
     "build:web": "npm run build",
     "build:desktop": "npm run build && electron-builder --publish never",
     "build:desktop:linux": "npm run build && electron-builder --linux AppImage deb --publish never",
+    "build:desktop:win": "npm run build && electron-builder --win nsis --publish never",
+    "test": "esbuild test/validate.ts --bundle --platform=node --format=esm --outfile=.test-build/validate.mjs && node .test-build/validate.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -37,12 +39,22 @@
         "AppImage",
         "deb"
       ],
-      "category": "Utility"
+      "category": "Utility",
+      "icon": "build/icon.png",
+      "maintainer": "A13Xg <a13xg@users.noreply.github.com>"
     },
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
     },
     "mac": {
       "target": [
@@ -70,6 +82,7 @@
     "concurrently": "^10.0.3",
     "electron": "^42.4.0",
     "electron-builder": "^26.15.2",
+    "esbuild": "^0.28.1",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
