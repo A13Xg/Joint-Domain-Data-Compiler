@@ -4,6 +4,7 @@ import type { Dataset, TrackPoint } from './core/model'
 import { withPoints } from './core/transforms'
 import { detectFormat, makeDataset, parseFileToDataset, INPUT_FORMATS } from './core/parsers'
 import { buildPointsFromCsvRows, parseCsvFile, type CsvMapping } from './core/parsers/csv'
+import { analyzeRawRows } from './core/csvAnalysis'
 import { logger } from './core/logger'
 import { formatBytes } from './core/format'
 import { Spinner, ProgressBar } from './ui/Spinner'
@@ -25,8 +26,12 @@ interface History {
 
 interface PendingCsv {
   file: File
+  rawRows: string[][]
   analysis: CsvAnalysisResult
   mapping: CsvMapping
+  additionalHeaders: boolean
+  /** Manual header-row count override (null = auto-detect) when additionalHeaders is on. */
+  headerRowsOverride: number | null
 }
 
 const CSV_SAMPLE_LIMIT = 5000
@@ -45,16 +50,34 @@ function suggestColumn(columns: DetectedColumn[], field: string, threshold = 0.4
 }
 
 function defaultMapping(analysis: CsvAnalysisResult): CsvMapping {
+  const elevation = suggestColumn(analysis.columns, 'elevation')
+  const elevationColumn = analysis.columns.find((c) => c.name === elevation)
+  const elevationLabels = elevationColumn?.headerCandidates.join(' ') ?? ''
   return {
     latitude: suggestColumn(analysis.columns, 'latitude'),
     longitude: suggestColumn(analysis.columns, 'longitude'),
-    elevation: suggestColumn(analysis.columns, 'elevation'),
+    elevation,
     timestamp: suggestColumn(analysis.columns, 'timestamp'),
     name: suggestColumn(analysis.columns, 'name'),
     description: suggestColumn(analysis.columns, 'description'),
-    elevationUnit: 'meters',
+    elevationUnit: /\bf(?:ee|oo)?t\b|_ft\b|\bft_/i.test(elevationLabels) ? 'feet' : 'meters',
     timeFormat: 'auto',
   }
+}
+
+/** Re-default the mapping for a fresh analysis, keeping any user selections
+ *  that still resolve to a column in the new analysis. */
+function carryMapping(prev: CsvMapping, analysis: CsvAnalysisResult): CsvMapping {
+  const next = defaultMapping(analysis)
+  const names = new Set(analysis.columns.map((c) => c.name))
+  for (const field of ['latitude', 'longitude', 'elevation', 'timestamp', 'name', 'description'] as const) {
+    if (prev[field] && names.has(prev[field])) next[field] = prev[field]
+  }
+  // Keep the user's unit when their elevation column survived; otherwise trust
+  // the fresh suggestion (which reads the new column's header labels).
+  if (next.elevation === prev.elevation) next.elevationUnit = prev.elevationUnit
+  next.timeFormat = prev.timeFormat
+  return next
 }
 
 export default function App() {
@@ -110,7 +133,7 @@ export default function App() {
       } else if (msg.type === 'complete') {
         const analysis = msg.payload as CsvAnalysisResult
         logger.success('import', `Analyzed ${file.name}: ${analysis.columns.length} columns`)
-        setPendingCsv({ file, analysis, mapping: defaultMapping(analysis) })
+        setPendingCsv({ file, analysis, mapping: defaultMapping(analysis), additionalHeaders: false })
         setBusy(null)
         setProgress(null)
         setTab('mapping')
@@ -132,7 +155,13 @@ export default function App() {
     setProgress(0)
     try {
       const { rows, columns } = await logger.time('import', `Full CSV parse ${pendingCsv.file.name}`, () =>
-        parseCsvFile(pendingCsv.file, pendingCsv.analysis.delimiter, (f) => setProgress(f * 100)),
+        parseCsvFile(
+          pendingCsv.file,
+          pendingCsv.analysis.delimiter,
+          pendingCsv.analysis.columns.map((c) => c.name),
+          pendingCsv.analysis.dataStartRow,
+          (f) => setProgress(f * 100),
+        ),
       )
       const result = buildPointsFromCsvRows(rows, pendingCsv.mapping, columns)
       for (const w of result.warnings) logger.warn('import', `${pendingCsv.file.name}: ${w}`)
@@ -365,6 +394,10 @@ export default function App() {
                 analysis={pendingCsv.analysis}
                 mapping={pendingCsv.mapping}
                 onChange={(m) => setPendingCsv((p) => (p ? { ...p, mapping: m } : p))}
+                additionalHeaders={pendingCsv.additionalHeaders}
+                onToggleAdditionalHeaders={(v) =>
+                  setPendingCsv((p) => (p ? { ...p, additionalHeaders: v } : p))
+                }
                 onBuild={buildCsvDataset}
                 building={building}
               />

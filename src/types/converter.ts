@@ -37,6 +37,7 @@ export interface ColumnStats {
 export interface DetectedColumn {
   name: string
   index: number
+  headerCandidates: string[]
   sampleValues: string[]
   estimatedType: ColumnEstimatedType
   estimatedConfidence: number
@@ -50,6 +51,7 @@ export type CsvSampleRow = Record<string, string>
 export interface CsvAnalysisResult {
   delimiter: string
   rowCountSampled: number
+  dataStartRow: number
   sampleRows: CsvSampleRow[]
   columns: DetectedColumn[]
 }
