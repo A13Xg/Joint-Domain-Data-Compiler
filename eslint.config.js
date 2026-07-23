@@ -20,6 +20,15 @@ export default defineConfig([
     },
   },
   {
+    files: ['src/App.tsx'],
+    rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { varsIgnorePattern: '^(analyzeRawRows|carryMapping)$' },
+      ],
+    },
+  },
+  {
     files: ['test/**/*.ts'],
     extends: [
       js.configs.recommended,
