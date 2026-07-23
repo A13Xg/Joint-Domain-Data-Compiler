@@ -53,7 +53,14 @@ export function runDerivation(id: string, dataset: Dataset): DerivationResult {
 }
 
 function validateRequirements(definition: DerivedChannelDefinition, dataset: Dataset): void {
-  const available = new Set(['latitude', 'longitude', 'elevation', 'time', ...dataset.channels])
+  const available = new Set(dataset.channels)
+  if (dataset.points.length > 0) {
+    available.add('latitude')
+    available.add('longitude')
+  }
+  if (dataset.points.some((point) => point.ele !== undefined)) available.add('elevation')
+  if (dataset.points.some((point) => point.time !== undefined)) available.add('time')
+
   const missing = definition.requiredInputs.filter((input) => !available.has(input))
   if (missing.length > 0) {
     throw new Error(`Derivation ${definition.id} requires missing inputs: ${missing.join(', ')}`)
