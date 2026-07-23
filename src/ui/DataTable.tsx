@@ -136,11 +136,11 @@ export function DataTable({ points, channels }: { points: TrackPoint[]; channels
   )
 }
 
-function fmtCell(value: number | string | undefined): string {
+function fmtCell(value: number | string | boolean | undefined): string {
   if (value === undefined) return ''
   if (typeof value === 'number') {
     if (Number.isInteger(value)) return String(value)
     return value.toFixed(Math.abs(value) < 1 ? 6 : 5)
   }
-  return value
+  return String(value)
 }
