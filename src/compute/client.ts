@@ -27,12 +27,14 @@ interface PendingRequest<TResult = unknown> {
 }
 
 export class ComputeClient {
+  private readonly worker: WorkerLike
   private readonly pending = new Map<string, PendingRequest>()
   private readonly handleMessageBound = (event: MessageEvent<ComputeOutboundMessage>) => this.handleMessage(event.data)
   private nextRequestNumber = 1
   private disposed = false
 
-  constructor(private readonly worker: WorkerLike) {
+  constructor(worker: WorkerLike) {
+    this.worker = worker
     worker.addEventListener('message', this.handleMessageBound)
   }
 
