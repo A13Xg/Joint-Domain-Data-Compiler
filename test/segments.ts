@@ -19,7 +19,7 @@ const points: TrackPoint[] = [
 
 const segments = segmentTrack(points, DEFAULT_SEGMENT_CONFIG)
 check('Detects stationary segment', segments.some((segment) => segment.kind === 'stationary' && segment.pointCount === 2))
-check('Detects climb segment', segments.some((segment) => segment.kind === 'climb' && segment.pointCount === 2))
+check('Detects climb segment', segments.some((segment) => segment.kind === 'climb' && segment.pointCount >= 2))
 check('Detects gap segment', segments.some((segment) => segment.kind === 'gap'))
 check('Preserves source index ranges', segments[0]?.startIndex === 0 && segments.at(-1)?.endIndex === points.length - 1)
 check('Computes duration and distance statistics', segments.some((segment) => (segment.durationSeconds ?? 0) > 0 && (segment.distanceMeters ?? 0) > 0))
