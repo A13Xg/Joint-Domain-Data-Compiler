@@ -72,14 +72,22 @@ new = """  for (let i = 0; i < out.length; i++) {
     current.ext = ext
   }
 """
-if old not in text:
-    raise RuntimeError('Expected deriveKinematics block not found')
-transforms.write_text(text.replace(old, new), encoding='utf-8')
+if old in text:
+    text = text.replace(old, new)
+transforms.write_text(text, encoding='utf-8')
 
 table = root / 'src' / 'ui' / 'DataTable.tsx'
 text = table.read_text(encoding='utf-8')
-old = 'get: (p: TrackPoint) => number | string | undefined'
-new = 'get: (p: TrackPoint) => number | string | boolean | undefined'
-if old not in text:
-    raise RuntimeError('Expected DataTable column type not found')
-table.write_text(text.replace(old, new), encoding='utf-8')
+text = text.replace(
+    'get: (p: TrackPoint) => number | string | undefined',
+    'get: (p: TrackPoint) => number | string | boolean | undefined',
+)
+text = text.replace(
+    'function fmtCell(value: number | string | undefined): string {',
+    'function fmtCell(value: number | string | boolean | undefined): string {',
+)
+text = text.replace(
+    '  return value\n}',
+    "  return String(value)\n}",
+)
+table.write_text(text, encoding='utf-8')
