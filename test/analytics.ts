@@ -52,7 +52,8 @@ check('Duplicate derivation registration is rejected', duplicateRejected)
 
 let missingInputRejected = false
 try {
-  runDerivation('standard-kinematics', { ...dataset, points: dataset.points.map(({ time: _time, ...point }) => point) })
+  const untimedPoints = dataset.points.map((point) => ({ lat: point.lat, lon: point.lon, ele: point.ele }))
+  runDerivation('standard-kinematics', { ...dataset, points: untimedPoints })
 } catch {
   missingInputRejected = true
 }
