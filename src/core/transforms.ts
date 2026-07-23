@@ -150,27 +150,30 @@ export function deriveKinematics(points: TrackPoint[]): TransformResult {
   const out = clone(points)
   let cumDist = 0
   for (let i = 0; i < out.length; i++) {
-    const ext = out[i].ext ?? {}
+    const current = out[i]
+    if (!current) continue
+    const ext = current.ext ?? {}
     if (i === 0) {
       ext.distance_m = 0
       ext.speed_mps = 0
     } else {
       const prev = out[i - 1]
-      const d = haversineMeters(prev.lat, prev.lon, out[i].lat, out[i].lon)
+      if (!prev) continue
+      const d = haversineMeters(prev.lat, prev.lon, current.lat, current.lon)
       cumDist += d
       ext.distance_m = Math.round(cumDist * 1000) / 1000
-      if (out[i].time !== undefined && prev.time !== undefined) {
-        const dt = (out[i].time - prev.time) / 1000
+      if (current.time !== undefined && prev.time !== undefined) {
+        const dt = (current.time - prev.time) / 1000
         if (dt > 0) {
           ext.speed_mps = Math.round((d / dt) * 1000) / 1000
         } else {
           delete ext.speed_mps
-          addQualityFlag(out[i], dt === 0 ? 'duplicate_timestamp' : 'non_monotonic_timestamp')
+          addQualityFlag(current, dt === 0 ? 'duplicate_timestamp' : 'non_monotonic_timestamp')
         }
       }
-      ext.heading_deg = Math.round(bearing(prev, out[i]) * 100) / 100
+      ext.heading_deg = Math.round(bearing(prev, current) * 100) / 100
     }
-    out[i].ext = ext
+    current.ext = ext
   }
   return { points: out, summary: 'Derived distance, speed, and heading channels; flagged invalid time deltas' }
 }

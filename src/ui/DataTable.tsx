@@ -13,7 +13,7 @@ type SortDir = 'asc' | 'desc' | null
 interface Column {
   key: string
   label: string
-  get: (p: TrackPoint) => number | string | undefined
+  get: (p: TrackPoint) => number | string | boolean | undefined
 }
 
 export function DataTable({ points, channels }: { points: TrackPoint[]; channels: string[] }) {
