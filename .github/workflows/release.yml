@@ -16,21 +16,27 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
+            platform_name: Linux
             build_command: npm run build:desktop:linux
             artifact_glob: |
               release/*.AppImage
               release/*.deb
+              release/JDDC-SBOM-Linux.cdx.json
           - os: windows-latest
+            platform_name: Windows
             build_command: npm run build:desktop:win
             artifact_glob: |
               release/*Windows*x64*Setup.exe
               release/*Windows*x64*Portable.exe
               release/SHA256SUMS-Windows.txt
+              release/JDDC-SBOM-Windows.cdx.json
           - os: macos-latest
+            platform_name: macOS
             build_command: npm run build:desktop
             artifact_glob: |
               release/*.dmg
               release/*.zip
+              release/JDDC-SBOM-macOS.cdx.json
 
     runs-on: ${{ matrix.os }}
 
@@ -93,6 +99,14 @@ jobs:
               "$hash  $($_.Name)"
             } | Set-Content -Path release/SHA256SUMS-Windows.txt -Encoding ascii
 
+      - name: Generate platform CycloneDX SBOM
+        shell: bash
+        run: npm sbom --sbom-format=cyclonedx > "release/JDDC-SBOM-${{ matrix.platform_name }}.cdx.json"
+
+      - name: Validate platform SBOM
+        shell: bash
+        run: node -e "const fs=require('fs');const p='release/JDDC-SBOM-${{ matrix.platform_name }}.cdx.json';const x=JSON.parse(fs.readFileSync(p,'utf8'));if(x.bomFormat!=='CycloneDX'||!Array.isArray(x.components))process.exit(1)"
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -118,11 +132,25 @@ jobs:
           echo "Files to publish:"
           find release -maxdepth 1 -type f -printf '%f\n' | sort
 
-      - name: Verify release contains Windows binaries
+      - name: Verify release bundle
         run: |
           find release -maxdepth 1 -type f -name '*Windows*x64*Setup.exe' | grep -q .
           find release -maxdepth 1 -type f -name '*Windows*x64*Portable.exe' | grep -q .
+          find release -maxdepth 1 -type f -name '*.AppImage' | grep -q .
+          find release -maxdepth 1 -type f -name '*.deb' | grep -q .
+          find release -maxdepth 1 -type f -name '*.dmg' | grep -q .
           test -f release/SHA256SUMS-Windows.txt
+          test -f release/JDDC-SBOM-Linux.cdx.json
+          test -f release/JDDC-SBOM-Windows.cdx.json
+          test -f release/JDDC-SBOM-macOS.cdx.json
+
+      - name: Generate complete release checksums
+        run: |
+          cd release
+          find . -maxdepth 1 -type f ! -name 'SHA256SUMS.txt' -printf '%f\n' \
+            | sort \
+            | xargs sha256sum > SHA256SUMS.txt
+          sha256sum --check SHA256SUMS.txt
 
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2
