@@ -52,4 +52,21 @@ jobs:
         run: npm test
 
       - name: Build web application
-        run: npm run build
+        id: build
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee build-report.txt
+
+      - name: Upload build report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-report
+          path: build-report.txt
+          if-no-files-found: error
+
+      - name: Enforce build result
+        if: steps.build.outcome == 'failure'
+        run: exit 1
