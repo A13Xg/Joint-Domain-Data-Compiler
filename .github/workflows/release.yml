@@ -16,11 +16,21 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            artifact_glob: "release/*.AppImage\nrelease/*.deb"
+            build_command: npm run build:desktop:linux
+            artifact_glob: |
+              release/*.AppImage
+              release/*.deb
           - os: windows-latest
-            artifact_glob: "release/*.exe"
+            build_command: npm run build:desktop:win
+            artifact_glob: |
+              release/*Windows*x64*Setup.exe
+              release/*Windows*x64*Portable.exe
+              release/SHA256SUMS-Windows.txt
           - os: macos-latest
-            artifact_glob: "release/*.dmg\nrelease/*.zip"
+            build_command: npm run build:desktop
+            artifact_glob: |
+              release/*.dmg
+              release/*.zip
 
     runs-on: ${{ matrix.os }}
 
@@ -59,15 +69,39 @@ jobs:
         run: npm test
 
       - name: Build and package app
-        run: npm run build:desktop
+        run: ${{ matrix.build_command }}
+
+      - name: Verify Windows executables
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem -Path release -Filter "*Windows*x64*Setup.exe"
+          $portable = Get-ChildItem -Path release -Filter "*Windows*x64*Portable.exe"
+          if ($setup.Count -ne 1) { throw "Expected exactly one Windows NSIS setup executable, found $($setup.Count)." }
+          if ($portable.Count -ne 1) { throw "Expected exactly one Windows portable executable, found $($portable.Count)." }
+          if ($setup[0].Length -lt 1MB) { throw "Windows setup executable is unexpectedly small." }
+          if ($portable[0].Length -lt 1MB) { throw "Windows portable executable is unexpectedly small." }
+
+      - name: Generate Windows SHA-256 checksums
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path release -Filter "*.exe" |
+            Sort-Object Name |
+            ForEach-Object {
+              $hash = (Get-FileHash -Path $_.FullName -Algorithm SHA256).Hash.ToLower()
+              "$hash  $($_.Name)"
+            } | Set-Content -Path release/SHA256SUMS-Windows.txt -Encoding ascii
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.os }}
           path: ${{ matrix.artifact_glob }}
+          if-no-files-found: error
 
   publish-release:
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: build-and-release
     runs-on: ubuntu-latest
 
@@ -81,11 +115,20 @@ jobs:
         run: |
           mkdir -p release
           find release-bundle -type f -exec cp {} release/ \;
+          echo "Files to publish:"
+          find release -maxdepth 1 -type f -printf '%f\n' | sort
+
+      - name: Verify release contains Windows binaries
+        run: |
+          find release -maxdepth 1 -type f -name '*Windows*x64*Setup.exe' | grep -q .
+          find release -maxdepth 1 -type f -name '*Windows*x64*Portable.exe' | grep -q .
+          test -f release/SHA256SUMS-Windows.txt
 
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: release/*
+          fail_on_unmatched_files: true
           draft: false
           prerelease: false
           generate_release_notes: true
