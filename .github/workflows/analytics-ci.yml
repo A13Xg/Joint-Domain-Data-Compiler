@@ -27,4 +27,20 @@ jobs:
       - name: Lint analytics implementation
         run: npx eslint src/core/analytics test/analytics.ts
       - name: Run analytics checks
-        run: npx esbuild test/analytics.ts --bundle --platform=node --format=esm --outfile=.test-build/analytics.mjs && node .test-build/analytics.mjs
+        id: analytics
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          npx esbuild test/analytics.ts --bundle --platform=node --format=esm --outfile=.test-build/analytics.mjs 2>&1 | tee analytics-report.txt
+          node .test-build/analytics.mjs 2>&1 | tee -a analytics-report.txt
+      - name: Upload analytics report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: analytics-report
+          path: analytics-report.txt
+          if-no-files-found: error
+      - name: Enforce analytics result
+        if: steps.analytics.outcome == 'failure'
+        run: exit 1
