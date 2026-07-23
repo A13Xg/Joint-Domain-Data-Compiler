@@ -1,0 +1,30 @@
+name: Geodesy checks
+
+on:
+  pull_request:
+    paths:
+      - 'src/core/geodesy.ts'
+      - 'test/geodesy.ts'
+      - '.github/workflows/geodesy-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  geodesy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint geodesy implementation
+        run: npx eslint src/core/geodesy.ts test/geodesy.ts
+      - name: Run geodesy checks
+        run: npx esbuild test/geodesy.ts --bundle --platform=node --format=esm --outfile=.test-build/geodesy.mjs && node .test-build/geodesy.mjs
