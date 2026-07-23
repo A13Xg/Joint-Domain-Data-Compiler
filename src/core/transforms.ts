@@ -1,19 +1,30 @@
 // Data manipulation primitives — the "correct & massage" half of the app.
-// Every transform is pure (returns new points) so the UI can preview, stack,
-// and undo operations deterministically.
+// Every transform is pure so the UI can preview, stack, and undo operations deterministically.
 import { collectChannels, haversineMeters, isValidLat, isValidLon, type Dataset, type TrackPoint } from './model'
 
 export interface TransformResult {
   points: TrackPoint[]
-  /** Human-readable summary of what changed (logged + shown as a toast). */
   summary: string
 }
 
+export type UntimedPointPolicy = 'keep' | 'drop'
+
 function clone(points: TrackPoint[]): TrackPoint[] {
-  return points.map((p) => ({ ...p, ext: p.ext ? { ...p.ext } : undefined }))
+  return points.map((p) => ({
+    ...p,
+    ext: p.ext ? { ...p.ext } : undefined,
+    provenance: p.provenance
+      ? { ...p.provenance, qualityFlags: p.provenance.qualityFlags ? [...p.provenance.qualityFlags] : undefined }
+      : undefined,
+  }))
 }
 
-/** Sort ascending by timestamp; points without time keep relative order at end. */
+function addQualityFlag(point: TrackPoint, flag: string): void {
+  const flags = new Set(point.provenance?.qualityFlags ?? [])
+  flags.add(flag)
+  point.provenance = { ...point.provenance, qualityFlags: [...flags] }
+}
+
 export function sortByTime(points: TrackPoint[]): TransformResult {
   const out = clone(points).sort((a, b) => {
     if (a.time === undefined && b.time === undefined) return 0
@@ -24,19 +35,15 @@ export function sortByTime(points: TrackPoint[]): TransformResult {
   return { points: out, summary: 'Sorted points by ascending time' }
 }
 
-/** Swap latitude and longitude on every point (fixes transposed exports). */
 export function swapLatLon(points: TrackPoint[]): TransformResult {
-  const out = clone(points).map((p) => ({ ...p, lat: p.lon, lon: p.lat }))
-  return { points: out, summary: 'Swapped latitude and longitude' }
+  return { points: clone(points).map((p) => ({ ...p, lat: p.lon, lon: p.lat })), summary: 'Swapped latitude and longitude' }
 }
 
-/** Drop points whose coordinates are invalid or out of range. */
 export function dropInvalid(points: TrackPoint[]): TransformResult {
   const out = points.filter((p) => isValidLat(p.lat) && isValidLon(p.lon))
   return { points: clone(out), summary: `Removed ${points.length - out.length} invalid points` }
 }
 
-/** Remove consecutive duplicate coordinates (optionally within a tolerance). */
 export function dedupe(points: TrackPoint[], toleranceMeters = 0): TransformResult {
   const out: TrackPoint[] = []
   let removed = 0
@@ -46,42 +53,39 @@ export function dedupe(points: TrackPoint[], toleranceMeters = 0): TransformResu
       removed++
       continue
     }
-    out.push({ ...p, ext: p.ext ? { ...p.ext } : undefined })
+    out.push(clone([p])[0])
   }
-  return { points: out, summary: `Removed ${removed} duplicate points (≤ ${toleranceMeters} m)` }
+  return { points: out, summary: `Removed ${removed} consecutive duplicate points (≤ ${toleranceMeters} m)` }
 }
 
-/** Keep every Nth point — fast decimation for very dense tracks. */
 export function decimate(points: TrackPoint[], factor: number): TransformResult {
   const f = Math.max(1, Math.floor(factor))
   const out = clone(points).filter((_, i) => i % f === 0)
   return { points: out, summary: `Decimated to every ${f}th point (${out.length} kept)` }
 }
 
-/**
- * Douglas–Peucker simplification in lon/lat space — removes redundant points
- * while preserving track shape within an epsilon (degrees).
- */
+/** Douglas–Peucker simplification in a local equirectangular projection measured in meters. */
 export function simplify(points: TrackPoint[], epsilonMeters: number): TransformResult {
   if (points.length < 3) return { points: clone(points), summary: 'Too few points to simplify' }
-  const epsDeg = epsilonMeters / 111_320 // rough meters→degrees at equator
+  const referenceLat = points.reduce((sum, p) => sum + p.lat, 0) / points.length
+  const projected = points.map((p) => projectMeters(p, referenceLat))
   const keep = new Uint8Array(points.length)
   keep[0] = 1
   keep[points.length - 1] = 1
-
   const stack: Array<[number, number]> = [[0, points.length - 1]]
+
   while (stack.length) {
     const [start, end] = stack.pop()!
     let maxDist = 0
     let index = -1
     for (let i = start + 1; i < end; i++) {
-      const d = perpendicularDistance(points[i], points[start], points[end])
+      const d = perpendicularDistance(projected[i], projected[start], projected[end])
       if (d > maxDist) {
         maxDist = d
         index = i
       }
     }
-    if (maxDist > epsDeg && index !== -1) {
+    if (maxDist > Math.max(0, epsilonMeters) && index !== -1) {
       keep[index] = 1
       stack.push([start, index], [index, end])
     }
@@ -91,117 +95,135 @@ export function simplify(points: TrackPoint[], epsilonMeters: number): Transform
   return { points: out, summary: `Simplified ${points.length} → ${out.length} points (ε=${epsilonMeters} m)` }
 }
 
-function perpendicularDistance(p: TrackPoint, a: TrackPoint, b: TrackPoint): number {
-  const dx = b.lon - a.lon
-  const dy = b.lat - a.lat
-  const mag = Math.hypot(dx, dy)
-  if (mag === 0) return Math.hypot(p.lon - a.lon, p.lat - a.lat)
-  const u = ((p.lon - a.lon) * dx + (p.lat - a.lat) * dy) / (mag * mag)
-  const projX = a.lon + u * dx
-  const projY = a.lat + u * dy
-  return Math.hypot(p.lon - projX, p.lat - projY)
+interface XY { x: number; y: number }
+
+function projectMeters(p: TrackPoint, referenceLat: number): XY {
+  const rad = Math.PI / 180
+  return {
+    x: p.lon * rad * 6371008.8 * Math.cos(referenceLat * rad),
+    y: p.lat * rad * 6371008.8,
+  }
 }
 
-/** Moving-average smoothing over a window for elevation and/or coordinates. */
-export function smooth(
-  points: TrackPoint[],
-  window: number,
-  targets: { coords: boolean; elevation: boolean },
-): TransformResult {
+function perpendicularDistance(p: XY, a: XY, b: XY): number {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const mag2 = dx * dx + dy * dy
+  if (mag2 === 0) return Math.hypot(p.x - a.x, p.y - a.y)
+  const u = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / mag2))
+  return Math.hypot(p.x - (a.x + u * dx), p.y - (a.y + u * dy))
+}
+
+/** Moving-average smoothing using ECEF vectors for antimeridian-safe coordinates. */
+export function smooth(points: TrackPoint[], window: number, targets: { coords: boolean; elevation: boolean }): TransformResult {
   const w = Math.max(1, Math.floor(window))
   const half = Math.floor(w / 2)
   const out = clone(points)
+
   for (let i = 0; i < points.length; i++) {
-    let latSum = 0, lonSum = 0, eleSum = 0, eleCount = 0, count = 0
+    let x = 0, y = 0, z = 0, eleSum = 0, eleCount = 0, count = 0
     for (let j = i - half; j <= i + half; j++) {
       if (j < 0 || j >= points.length) continue
-      latSum += points[j].lat
-      lonSum += points[j].lon
-      if (points[j].ele !== undefined) { eleSum += points[j].ele as number; eleCount++ }
+      const lat = points[j].lat * Math.PI / 180
+      const lon = points[j].lon * Math.PI / 180
+      x += Math.cos(lat) * Math.cos(lon)
+      y += Math.cos(lat) * Math.sin(lon)
+      z += Math.sin(lat)
+      if (points[j].ele !== undefined) { eleSum += points[j].ele!; eleCount++ }
       count++
     }
     if (targets.coords && count > 0) {
-      out[i].lat = latSum / count
-      out[i].lon = lonSum / count
+      const lon = Math.atan2(y / count, x / count)
+      const hyp = Math.hypot(x / count, y / count)
+      const lat = Math.atan2(z / count, hyp)
+      out[i].lat = lat * 180 / Math.PI
+      out[i].lon = lon * 180 / Math.PI
     }
-    if (targets.elevation && eleCount > 0 && out[i].ele !== undefined) {
-      out[i].ele = eleSum / eleCount
-    }
+    if (targets.elevation && eleCount > 0 && out[i].ele !== undefined) out[i].ele = eleSum / eleCount
   }
+
   const what = [targets.coords && 'position', targets.elevation && 'elevation'].filter(Boolean).join(' + ')
   return { points: out, summary: `Smoothed ${what} (window ${w})` }
 }
 
-/** Derive speed (m/s), cumulative distance (m), and heading (deg) from geometry+time. */
 export function deriveKinematics(points: TrackPoint[]): TransformResult {
   const out = clone(points)
   let cumDist = 0
   for (let i = 0; i < out.length; i++) {
-    const ext = out[i].ext ?? {}
+    const current = out[i]
+    if (!current) continue
+    const ext = current.ext ?? {}
     if (i === 0) {
-      ext['distance_m'] = 0
-      ext['speed_mps'] = 0
+      ext.distance_m = 0
+      ext.speed_mps = 0
     } else {
       const prev = out[i - 1]
-      const d = haversineMeters(prev.lat, prev.lon, out[i].lat, out[i].lon)
+      if (!prev) continue
+      const d = haversineMeters(prev.lat, prev.lon, current.lat, current.lon)
       cumDist += d
-      ext['distance_m'] = Math.round(cumDist * 1000) / 1000
-      if (out[i].time !== undefined && prev.time !== undefined) {
-        const dt = (out[i].time! - prev.time!) / 1000
-        ext['speed_mps'] = dt > 0 ? Math.round((d / dt) * 1000) / 1000 : 0
+      ext.distance_m = Math.round(cumDist * 1000) / 1000
+      if (current.time !== undefined && prev.time !== undefined) {
+        const dt = (current.time - prev.time) / 1000
+        if (dt > 0) {
+          ext.speed_mps = Math.round((d / dt) * 1000) / 1000
+        } else {
+          delete ext.speed_mps
+          addQualityFlag(current, dt === 0 ? 'duplicate_timestamp' : 'non_monotonic_timestamp')
+        }
       }
-      ext['heading_deg'] = Math.round(bearing(prev, out[i]) * 100) / 100
+      ext.heading_deg = Math.round(bearing(prev, current) * 100) / 100
     }
-    out[i].ext = ext
+    current.ext = ext
   }
-  return { points: out, summary: 'Derived distance, speed, and heading channels' }
+  return { points: out, summary: 'Derived distance, speed, and heading channels; flagged invalid time deltas' }
 }
 
 function bearing(a: TrackPoint, b: TrackPoint): number {
   const toRad = Math.PI / 180
   const y = Math.sin((b.lon - a.lon) * toRad) * Math.cos(b.lat * toRad)
-  const x =
-    Math.cos(a.lat * toRad) * Math.sin(b.lat * toRad) -
-    Math.sin(a.lat * toRad) * Math.cos(b.lat * toRad) * Math.cos((b.lon - a.lon) * toRad)
+  const x = Math.cos(a.lat * toRad) * Math.sin(b.lat * toRad) - Math.sin(a.lat * toRad) * Math.cos(b.lat * toRad) * Math.cos((b.lon - a.lon) * toRad)
   return (Math.atan2(y, x) * (180 / Math.PI) + 360) % 360
 }
 
-/** Shift every timestamp by a fixed number of seconds (clock alignment). */
 export function shiftTime(points: TrackPoint[], seconds: number): TransformResult {
-  const out = clone(points).map((p) =>
-    p.time !== undefined ? { ...p, time: p.time + seconds * 1000 } : p,
-  )
-  return { points: out, summary: `Shifted timestamps by ${seconds} s` }
+  return {
+    points: clone(points).map((p) => p.time !== undefined ? { ...p, time: p.time + seconds * 1000 } : p),
+    summary: `Shifted timestamps by ${seconds} s`,
+  }
 }
 
-/** Add a constant offset to every elevation (datum correction). */
 export function offsetElevation(points: TrackPoint[], meters: number): TransformResult {
-  const out = clone(points).map((p) =>
-    p.ele !== undefined ? { ...p, ele: p.ele + meters } : p,
-  )
-  return { points: out, summary: `Offset elevation by ${meters} m` }
+  return {
+    points: clone(points).map((p) => p.ele !== undefined ? { ...p, ele: p.ele + meters } : p),
+    summary: `Offset elevation by ${meters} m`,
+  }
 }
 
-/** Keep points within an inclusive time window (epoch ms). */
-export function clipTimeRange(points: TrackPoint[], startMs: number, endMs: number): TransformResult {
-  const out = points.filter((p) => p.time === undefined || (p.time >= startMs && p.time <= endMs))
-  return { points: clone(out), summary: `Clipped to time window (${out.length} kept)` }
+export function clipTimeRange(points: TrackPoint[], startMs: number, endMs: number, untimedPolicy: UntimedPointPolicy = 'keep'): TransformResult {
+  const out = points.filter((p) => p.time === undefined ? untimedPolicy === 'keep' : p.time >= startMs && p.time <= endMs)
+  return { points: clone(out), summary: `Clipped to time window (${out.length} kept; untimed=${untimedPolicy})` }
 }
 
-/** Remove statistical outliers in elevation using a rolling median absolute deviation. */
-export function removeElevationOutliers(points: TrackPoint[], threshold = 4): TransformResult {
-  const eles = points.map((p) => p.ele).filter((e): e is number => e !== undefined)
-  if (eles.length < 5) return { points: clone(points), summary: 'Too few elevations for outlier removal' }
-  const median = quantile(eles, 0.5)
-  const mad = quantile(eles.map((e) => Math.abs(e - median)), 0.5) || 1
+/** Remove local elevation outliers using a rolling median absolute deviation window. */
+export function removeElevationOutliers(points: TrackPoint[], threshold = 4, window = 21): TransformResult {
+  if (points.filter((p) => p.ele !== undefined).length < 5) return { points: clone(points), summary: 'Too few elevations for outlier removal' }
+  const radius = Math.max(2, Math.floor(window / 2))
   let removed = 0
-  const out = points.filter((p) => {
+  const out = points.filter((p, i) => {
     if (p.ele === undefined) return true
+    const local = points
+      .slice(Math.max(0, i - radius), Math.min(points.length, i + radius + 1))
+      .map((candidate) => candidate.ele)
+      .filter((value): value is number => value !== undefined)
+    if (local.length < 5) return true
+    const median = quantile(local, 0.5)
+    const mad = quantile(local.map((value) => Math.abs(value - median)), 0.5)
+    if (mad === 0) return true
     const score = Math.abs(p.ele - median) / (1.4826 * mad)
     if (score > threshold) { removed++; return false }
     return true
   })
-  return { points: clone(out), summary: `Removed ${removed} elevation outliers (>${threshold}σ)` }
+  return { points: clone(out), summary: `Removed ${removed} rolling elevation outliers (>${threshold}σ, window=${radius * 2 + 1})` }
 }
 
 function quantile(values: number[], q: number): number {
@@ -212,7 +234,13 @@ function quantile(values: number[], q: number): number {
   return sorted[base + 1] !== undefined ? sorted[base] + rest * (sorted[base + 1] - sorted[base]) : sorted[base]
 }
 
-/** Apply a transform result back onto a dataset, refreshing channel list. */
 export function withPoints(dataset: Dataset, points: TrackPoint[]): Dataset {
-  return { ...dataset, points, channels: collectChannels(points) }
+  const channels = collectChannels(points)
+  const definitions = dataset.metadata?.channels.filter((definition) => channels.includes(definition.id)) ?? []
+  return {
+    ...dataset,
+    points,
+    channels,
+    metadata: dataset.metadata ? { ...dataset.metadata, channels: definitions } : undefined,
+  }
 }

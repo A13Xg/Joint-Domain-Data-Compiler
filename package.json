@@ -17,7 +17,7 @@
     "build:web": "npm run build",
     "build:desktop": "npm run build && electron-builder --publish never",
     "build:desktop:linux": "npm run build && electron-builder --linux AppImage deb --publish never",
-    "build:desktop:win": "npm run build && electron-builder --win nsis --publish never",
+    "build:desktop:win": "npm run build && electron-builder --win nsis portable --x64 --publish never",
     "test": "esbuild test/validate.ts --bundle --platform=node --format=esm --outfile=.test-build/validate.mjs && node .test-build/validate.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
@@ -45,16 +45,33 @@
     },
     "win": {
       "target": [
-        "nsis"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "executableName": "JointDomainDataCompiler"
     },
     "nsis": {
+      "artifactName": "${productName}-${version}-Windows-${arch}-Setup.${ext}",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-Windows-${arch}-Portable.${ext}"
     },
     "mac": {
       "target": [

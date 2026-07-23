@@ -4,6 +4,49 @@
 // `Dataset` of `TrackPoint`s. Exporters consume the same model. This decoupling is
 // what lets the app act as an N-to-M conversion matrix instead of a single pipeline.
 
+export type AltitudeReference = 'MSL' | 'HAE' | 'AGL' | 'PRESSURE' | 'UNKNOWN'
+export type TimeReference = 'UTC' | 'GPS' | 'TAI' | 'LOCAL' | 'UNKNOWN'
+export type ChannelDataType = 'number' | 'string' | 'boolean'
+export type ChannelInterpolation = 'linear' | 'step' | 'none'
+
+export interface ChannelDefinition {
+  id: string
+  displayName: string
+  unit?: string
+  dataType: ChannelDataType
+  sourceColumn?: string
+  description?: string
+  interpolation?: ChannelInterpolation
+  semanticType?: string
+}
+
+export interface SourceMetadata {
+  filename: string
+  byteLength?: number
+  importedAt: number
+  checksum?: string
+  parserId: string
+  parserVersion: string
+}
+
+export interface DatasetMetadata {
+  /** EPSG identifier or other CRS label. Defaults to EPSG:4326 for normalized coordinates. */
+  coordinateSystem: string
+  altitudeReference: AltitudeReference
+  timeReference: TimeReference
+  channels: ChannelDefinition[]
+  source: SourceMetadata
+}
+
+export interface PointProvenance {
+  /** One-based record index in the source file when known. */
+  sourceRecord?: number
+  /** Source-native segment, track, sentence, or feature identifier. */
+  sourceSegment?: string
+  /** Machine-readable flags describing source or transform quality concerns. */
+  qualityFlags?: string[]
+}
+
 /** A single time/space sample. Canonical units: degrees, meters, epoch milliseconds. */
 export interface TrackPoint {
   /** Decimal degrees, -90..90. Required for any geospatial point. */
@@ -12,18 +55,19 @@ export interface TrackPoint {
   lon: number
   /** Elevation in meters (converted on import from feet etc.). */
   ele?: number
-  /** Timestamp as epoch milliseconds (UTC). */
+  /** Timestamp as epoch milliseconds (UTC unless dataset metadata states otherwise). */
   time?: number
   /** Short label. */
   name?: string
   /** Free-form note. */
   desc?: string
+  /** Source lineage and quality information preserved through transforms. */
+  provenance?: PointProvenance
   /**
-   * Derived / passthrough numeric or string channels keyed by name
-   * (e.g. speed_mps, heading_deg, hdop, sat, custom CSV columns). Engineers care
-   * about these extension channels, so we preserve every column we can.
+   * Derived / passthrough channels keyed by name
+   * (e.g. speed_mps, heading_deg, hdop, sat, custom CSV columns).
    */
-  ext?: Record<string, number | string>
+  ext?: Record<string, number | string | boolean>
 }
 
 export type SourceFormat =
@@ -46,6 +90,8 @@ export interface Dataset {
   warnings: string[]
   /** Ordered list of extension channel keys discovered across points. */
   channels: string[]
+  /** Rich semantic and provenance metadata. Optional for backward-compatible imports. */
+  metadata?: DatasetMetadata
   /** Bytes of the original source, for reporting. */
   sourceBytes?: number
   createdAt: number
@@ -64,8 +110,13 @@ export interface ParseResult {
   warnings: string[]
   /** Channel keys (extension fields) seen in the data. */
   channels: string[]
+  /** Optional semantic channel definitions supplied by the parser. */
+  channelDefinitions?: ChannelDefinition[]
   /** Format-specific metadata the UI may display (track name, creator, ...). */
   meta?: Record<string, string>
+  altitudeReference?: AltitudeReference
+  timeReference?: TimeReference
+  coordinateSystem?: string
 }
 
 export const EARTH_RADIUS_M = 6371008.8
@@ -104,9 +155,7 @@ export function computeBounds(points: TrackPoint[]): BoundingBox | null {
   let seen = false
 
   for (const p of points) {
-    if (!isValidLat(p.lat) || !isValidLon(p.lon)) {
-      continue
-    }
+    if (!isValidLat(p.lat) || !isValidLon(p.lon)) continue
     seen = true
     if (p.lat < minLat) minLat = p.lat
     if (p.lat > maxLat) maxLat = p.lat
@@ -131,4 +180,18 @@ export function collectChannels(points: TrackPoint[]): string[] {
     }
   }
   return order
+}
+
+export function inferChannelDefinitions(points: TrackPoint[], channels = collectChannels(points)): ChannelDefinition[] {
+  return channels.map((id) => {
+    let dataType: ChannelDataType = 'string'
+    for (const point of points) {
+      const value = point.ext?.[id]
+      if (value !== undefined) {
+        dataType = typeof value === 'number' ? 'number' : typeof value === 'boolean' ? 'boolean' : 'string'
+        break
+      }
+    }
+    return { id, displayName: id, dataType }
+  })
 }
