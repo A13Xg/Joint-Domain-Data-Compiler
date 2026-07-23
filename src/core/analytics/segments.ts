@@ -102,7 +102,7 @@ function mergeShortSegments(points: readonly TrackPoint[], segments: TrackSegmen
     if (segment.pointCount >= minPoints || segment.kind === 'gap') continue
     const previous = index > 0 ? segments[index - 1] : undefined
     const next = index + 1 < segments.length ? segments[index + 1] : undefined
-    if (previous?.kind === next?.kind) kinds[index] = previous.kind
+    if (previous && next && previous.kind === next.kind) kinds[index] = previous.kind
     else if (previous && next) kinds[index] = previous.pointCount >= next.pointCount ? previous.kind : next.kind
     else if (previous) kinds[index] = previous.kind
     else if (next) kinds[index] = next.kind
