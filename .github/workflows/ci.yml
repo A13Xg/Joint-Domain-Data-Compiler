@@ -29,7 +29,24 @@ jobs:
         run: npm ci
 
       - name: Lint
-        run: npm run lint
+        id: lint
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run lint -- --format stylish 2>&1 | tee lint-report.txt
+
+      - name: Upload lint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-report
+          path: lint-report.txt
+          if-no-files-found: error
+
+      - name: Enforce lint result
+        if: steps.lint.outcome == 'failure'
+        run: exit 1
 
       - name: Run conversion and transform tests
         run: npm test
