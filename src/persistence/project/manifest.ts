@@ -60,7 +60,7 @@ export function parseProjectManifest(text: string): ProjectManifest {
   try {
     value = JSON.parse(text)
   } catch (error) {
-    throw new Error(`Project manifest is not valid JSON: ${errorMessage(error)}`)
+    throw new Error(`Project manifest is not valid JSON: ${errorMessage(error)}`, { cause: error })
   }
   validateProjectManifest(value)
   return value
