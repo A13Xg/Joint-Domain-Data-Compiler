@@ -19,6 +19,7 @@ interface StagedRegistrations {
 }
 
 export class PluginRegistry {
+  private readonly hostVersion: string
   private readonly plugins = new Map<string, JddcPlugin>()
   private readonly parsers = new Map<string, ParserPluginDefinition>()
   private readonly exporters = new Map<string, ExporterPluginDefinition>()
@@ -27,8 +28,9 @@ export class PluginRegistry {
   private readonly chartPresets = new Map<string, ChartPresetPluginDefinition>()
   private readonly reportSections = new Map<string, ReportSectionPluginDefinition>()
 
-  constructor(private readonly hostVersion: string) {
+  constructor(hostVersion: string) {
     if (!isVersion(hostVersion)) throw new Error(`Invalid host version: ${hostVersion}`)
+    this.hostVersion = hostVersion
   }
 
   load(plugin: JddcPlugin): void {
