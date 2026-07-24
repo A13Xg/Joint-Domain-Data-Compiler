@@ -1,5 +1,5 @@
 import { ComputeTaskHost } from './host'
-import type { ComputeInboundMessage, ComputeOutboundMessage } from './protocol'
+import type { ComputeInboundMessage, ComputeOutboundMessage, ComputeTaskDefinition } from './protocol'
 import { PRODUCTION_COMPUTE_TASKS } from './tasks'
 
 export interface WorkerScopeLike {
@@ -15,7 +15,7 @@ export interface ComputeWorkerRuntime {
 
 export function attachComputeWorker(scope: WorkerScopeLike): ComputeWorkerRuntime {
   const host = new ComputeTaskHost()
-  for (const task of PRODUCTION_COMPUTE_TASKS) host.register(task)
+  for (const task of PRODUCTION_COMPUTE_TASKS) host.register(task as ComputeTaskDefinition)
 
   const listener = (event: MessageEvent<ComputeInboundMessage>) => {
     void host.handle(event.data, (message) => scope.postMessage(message))
