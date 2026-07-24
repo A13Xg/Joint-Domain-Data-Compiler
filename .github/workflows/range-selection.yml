@@ -1,0 +1,31 @@
+name: Range selection checks
+
+on:
+  pull_request:
+    paths:
+      - 'src/state/pointSelection.ts'
+      - 'src/core/analytics/rangeStatistics.ts'
+      - 'src/ui/TimeSeriesChart.tsx'
+      - 'test/rangeStatistics.ts'
+      - '.github/workflows/range-selection.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  range-selection:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint range selection implementation
+        run: npx eslint src/state/pointSelection.ts src/core/analytics/rangeStatistics.ts src/ui/TimeSeriesChart.tsx test/rangeStatistics.ts
+      - name: Run range statistics checks
+        run: npx esbuild test/rangeStatistics.ts --bundle --platform=node --format=esm --outfile=.test-build/range-statistics.mjs && node .test-build/range-statistics.mjs
