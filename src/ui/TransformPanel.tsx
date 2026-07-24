@@ -15,6 +15,8 @@ import {
   type TransformResult,
 } from '../core/transforms'
 import { fixedRateResampleOperation, type InterpolationMode } from '../core/operations/resample'
+import { applyTransformToRange } from '../core/rangeTransform'
+import { usePointSelection } from '../state/pointSelection'
 import { logger } from '../core/logger'
 
 interface Props {
@@ -40,6 +42,8 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
   const [resampleMode, setResampleMode] = useState<InterpolationMode>('linear')
   const [resampleMaxGapSeconds, setResampleMaxGapSeconds] = useState(10)
   const [limitResampleGaps, setLimitResampleGaps] = useState(true)
+  const [scopeToSelection, setScopeToSelection] = useState(false)
+  const { indexRange } = usePointSelection(dataset.points)
 
   const run = (fn: () => TransformResult) => {
     try {
@@ -49,6 +53,14 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
     } catch (error) {
       logger.error('transform', `Transform failed: ${(error as Error).message}`)
     }
+  }
+
+  const runScoped = (transform: (points: TrackPoint[]) => TransformResult) => {
+    if (scopeToSelection && indexRange) {
+      run(() => applyTransformToRange(dataset.points, indexRange, transform))
+      return
+    }
+    run(() => transform(dataset.points))
   }
 
   const runResample = () => {
@@ -68,6 +80,7 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
   }
 
   const points = dataset.points
+  const scoped = scopeToSelection && indexRange !== null
 
   return (
     <div className="transform-panel">
@@ -75,6 +88,15 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
         <button type="button" disabled={!canUndo} onClick={onUndo}>↶ Undo</button>
         <button type="button" disabled={!canRedo} onClick={onRedo}>↷ Redo</button>
         <span className="muted small">{points.length.toLocaleString()} points</span>
+        <label className="chk">
+          <input
+            type="checkbox"
+            checked={scopeToSelection}
+            disabled={!indexRange}
+            onChange={(event) => setScopeToSelection(event.target.checked)}
+          />
+          selected range only{indexRange ? ` (${indexRange.start}–${indexRange.end})` : ''}
+        </label>
       </div>
 
       <div className="transform-grid">
@@ -82,25 +104,25 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
           <button type="button" onClick={() => run(() => sortByTime(points))}>Apply</button>
         </Op>
 
-        <Op title="Swap lat / lon" desc="Fix transposed coordinate columns.">
-          <button type="button" onClick={() => run(() => swapLatLon(points))}>Apply</button>
+        <Op title="Swap lat / lon" desc="Fix transposed coordinate columns. Supports selected-range scope.">
+          <button type="button" onClick={() => runScoped((selected) => swapLatLon(selected))}>Apply{scoped ? ' to range' : ''}</button>
         </Op>
 
-        <Op title="Drop invalid" desc="Remove points outside valid lat/lon ranges.">
+        <Op title="Drop invalid" desc="Remove points outside valid lat/lon ranges. Full dataset only.">
           <button type="button" onClick={() => run(() => dropInvalid(points))}>Apply</button>
         </Op>
 
-        <Op title="Dedupe" desc="Collapse consecutive points within a distance tolerance.">
+        <Op title="Dedupe" desc="Collapse consecutive points within a distance tolerance. Full dataset only.">
           <NumField label="tolerance (m)" value={dedupeTol} onChange={setDedupeTol} min={0} step={1} />
           <button type="button" onClick={() => run(() => dedupe(points, dedupeTol))}>Apply</button>
         </Op>
 
-        <Op title="Decimate" desc="Keep every Nth point for fast thinning.">
+        <Op title="Decimate" desc="Keep every Nth point for fast thinning. Full dataset only.">
           <NumField label="factor" value={decimateFactor} onChange={setDecimateFactor} min={2} step={1} />
           <button type="button" onClick={() => run(() => decimate(points, decimateFactor))}>Apply</button>
         </Op>
 
-        <Op title="Resample to fixed rate" desc="Generate evenly timed samples using linear or step interpolation.">
+        <Op title="Resample to fixed rate" desc="Generate evenly timed samples using linear or step interpolation. Full dataset only.">
           <NumField label="rate (Hz)" value={resampleRateHz} onChange={setResampleRateHz} min={0.001} step={0.5} />
           <label className="num-field"><span>interpolation</span><select value={resampleMode} onChange={(event) => setResampleMode(event.target.value as InterpolationMode)}><option value="linear">linear</option><option value="step">step / hold</option></select></label>
           <label className="chk"><input type="checkbox" checked={limitResampleGaps} onChange={(event) => setLimitResampleGaps(event.target.checked)} /> skip large gaps</label>
@@ -108,35 +130,35 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
           <button type="button" onClick={runResample}>Apply</button>
         </Op>
 
-        <Op title="Simplify (Douglas–Peucker)" desc="Shape-preserving reduction within an epsilon.">
+        <Op title="Simplify (Douglas–Peucker)" desc="Shape-preserving reduction within an epsilon. Full dataset only.">
           <NumField label="ε (m)" value={simplifyEps} onChange={setSimplifyEps} min={0.1} step={0.5} />
           <button type="button" onClick={() => run(() => simplify(points, simplifyEps))}>Apply</button>
         </Op>
 
-        <Op title="Smooth" desc="Moving-average filter to reduce GPS jitter.">
+        <Op title="Smooth" desc="Moving-average filter to reduce GPS jitter. Supports selected-range scope.">
           <NumField label="window" value={smoothWindow} onChange={setSmoothWindow} min={2} step={1} />
           <label className="chk"><input type="checkbox" checked={smoothCoords} onChange={(event) => setSmoothCoords(event.target.checked)} /> position</label>
           <label className="chk"><input type="checkbox" checked={smoothEle} onChange={(event) => setSmoothEle(event.target.checked)} /> elevation</label>
-          <button type="button" onClick={() => run(() => smooth(points, smoothWindow, { coords: smoothCoords, elevation: smoothEle }))}>Apply</button>
+          <button type="button" onClick={() => runScoped((selected) => smooth(selected, smoothWindow, { coords: smoothCoords, elevation: smoothEle }))}>Apply{scoped ? ' to range' : ''}</button>
         </Op>
 
-        <Op title="Derive kinematics" desc="Compute distance, speed, and heading channels.">
+        <Op title="Derive kinematics" desc="Compute distance, speed, and heading channels. Full dataset only.">
           <button type="button" onClick={() => run(() => deriveKinematics(points))}>Apply</button>
         </Op>
 
-        <Op title="Shift time" desc="Add a fixed offset to every timestamp (clock alignment).">
+        <Op title="Shift time" desc="Add a fixed offset to timestamps. Supports selected-range scope.">
           <NumField label="seconds" value={timeShift} onChange={setTimeShift} step={1} />
-          <button type="button" onClick={() => run(() => shiftTime(points, timeShift))}>Apply</button>
+          <button type="button" onClick={() => runScoped((selected) => shiftTime(selected, timeShift))}>Apply{scoped ? ' to range' : ''}</button>
         </Op>
 
-        <Op title="Offset elevation" desc="Datum correction across all points.">
+        <Op title="Offset elevation" desc="Datum correction. Supports selected-range scope.">
           <NumField label="meters" value={eleOffset} onChange={setEleOffset} step={1} />
-          <button type="button" onClick={() => run(() => offsetElevation(points, eleOffset))}>Apply</button>
+          <button type="button" onClick={() => runScoped((selected) => offsetElevation(selected, eleOffset))}>Apply{scoped ? ' to range' : ''}</button>
         </Op>
 
-        <Op title="Remove elevation outliers" desc="MAD-based spike rejection on elevation.">
+        <Op title="Remove elevation outliers" desc="MAD-based spike rejection on elevation. Supports selected-range scope.">
           <NumField label="σ threshold" value={outlierSigma} onChange={setOutlierSigma} min={1} step={0.5} />
-          <button type="button" onClick={() => run(() => removeElevationOutliers(points, outlierSigma))}>Apply</button>
+          <button type="button" onClick={() => runScoped((selected) => removeElevationOutliers(selected, outlierSigma))}>Apply{scoped ? ' to range' : ''}</button>
         </Op>
       </div>
     </div>
