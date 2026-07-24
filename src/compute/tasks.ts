@@ -1,14 +1,7 @@
 import type { TrackPoint } from '../core/model'
-import { calculateRangeStatistics } from '../core/analytics/rangeStatistics'
 import { extractChartSeries, type ChartXAxis } from '../visualization/charts/series'
-import { fixedRateResampleOperation, type FixedRateResampleParams } from '../core/recipes/operations/resample'
+import { fixedRateResampleOperation, type ResampleParams } from '../core/operations/resample'
 import type { ComputeTaskDefinition } from './protocol'
-
-interface RangeStatisticsPayload {
-  points: TrackPoint[]
-  range: { start: number; end: number }
-  channelIds?: string[]
-}
 
 interface ChartSeriesPayload {
   points: TrackPoint[]
@@ -19,27 +12,7 @@ interface ChartSeriesPayload {
 
 interface ResamplePayload {
   points: TrackPoint[]
-  params: FixedRateResampleParams
-}
-
-export const rangeStatisticsTask: ComputeTaskDefinition<RangeStatisticsPayload, ReturnType<typeof calculateRangeStatistics>> = {
-  id: 'range-statistics',
-  version: 1,
-  validatePayload(payload: unknown): RangeStatisticsPayload {
-    const value = record(payload, 'range statistics payload')
-    const range = record(value.range, 'range')
-    return {
-      points: points(value.points),
-      range: { start: integer(range.start, 'range.start'), end: integer(range.end, 'range.end') },
-      channelIds: value.channelIds === undefined ? undefined : strings(value.channelIds, 'channelIds'),
-    }
-  },
-  run(payload, context) {
-    context.reportProgress({ completed: 0, total: 1, message: 'Calculating selected-range statistics' })
-    const result = calculateRangeStatistics(payload.points, payload.range, payload.channelIds)
-    context.reportProgress({ completed: 1, total: 1 })
-    return result
-  },
+  params: ResampleParams
 }
 
 export const chartSeriesTask: ComputeTaskDefinition<ChartSeriesPayload, ReturnType<typeof extractChartSeries>> = {
@@ -92,7 +65,7 @@ export const fixedRateResampleTask: ComputeTaskDefinition<ResamplePayload, Retur
   },
 }
 
-export const PRODUCTION_COMPUTE_TASKS = [rangeStatisticsTask, chartSeriesTask, fixedRateResampleTask] as const
+export const PRODUCTION_COMPUTE_TASKS = [chartSeriesTask, fixedRateResampleTask] as const
 
 function record(value: unknown, field: string): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(`${field} must be an object`)
@@ -121,10 +94,5 @@ function positiveInteger(value: unknown, field: string): number {
 
 function nonEmptyString(value: unknown, field: string): string {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`${field} must be a non-empty string`)
-  return value
-}
-
-function strings(value: unknown, field: string): string[] {
-  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) throw new Error(`${field} must be a string array`)
   return value
 }
