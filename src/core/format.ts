@@ -64,7 +64,7 @@ export function parseCoordinate(raw: string | number | undefined | null): number
   // Pure decimal degrees fast path.
   const direct = parseNumber(value)
   const dmsMatch = value.match(
-    /^\s*([NSEW])?\s*(-?\d+(?:[.,]\d+)?)[°:\s]+(?:(\d+(?:[.,]\d+)?)['’:\s]*)?(?:(\d+(?:[.,]\d+)?)\["”]?\s*)?([NSEW])?\s*$/i,
+    /^\s*([NSEW])?\s*(-?\d+(?:[.,]\d+)?)[°:\s]+(?:(\d+(?:[.,]\d+)?)['’:\s]*)?(?:(\d+(?:[.,]\d+)?)["”]?\s*)?([NSEW])?\s*$/i,
   )
 
   // Only treat as DMS if there is a hemisphere letter or multiple components.
