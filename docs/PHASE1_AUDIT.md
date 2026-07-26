@@ -1,8 +1,9 @@
 # Phase 1 Independent Audit — Shared Selection and Synchronization
 
-**Roadmap:** `JDDC-ROADMAP-2026-01`  
+**Original roadmap:** `JDDC-ROADMAP-2026-01`  
+**Current roadmap mapping:** Stage 2 of `JDDC-ROADMAP-2026-02`  
 **Branch:** `agent/roadmap-integration`  
-**Audit scope:** Phase 1 only  
+**Audit scope:** Shared selection and synchronization only  
 **Result:** PASS
 
 ## Acceptance review
@@ -47,12 +48,14 @@ Implementation head `58cee6ad40041fa0a93d0d3c78fd270bedfdf528` passed:
 - range-transform checks;
 - project archive checks.
 
-## Residual work outside Phase 1
+## Residual work outside shared-selection scope
 
-- Multi-chart synchronized crosshairs and chart layouts belong to Phase 3.
+- Multi-chart synchronized crosshairs and chart layouts belong to Stage 5.
 - Additional accessibility shortcuts can be expanded during broader workspace accessibility work.
+- Separating the selected-point clear action from range/time/segment clearing is tracked as a Stage 0 UX correctness fix; it does not invalidate the shared-state synchronization acceptance result.
 - Pointer-event throttling should be introduced only if profiling demonstrates a need.
+- Rendered-browser behavior belongs to the Stage 11 automated product-verification program.
 
 ## Conclusion
 
-Phase 1 meets its functional and validation acceptance criteria and is marked **DONE**.
+The shared-selection feature meets its functional and validation acceptance criteria and maps to **COMPLETE** in Stage 2 of the revised roadmap.
