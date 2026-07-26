@@ -3,63 +3,84 @@
 **Branch:** `agent/roadmap-integration`  
 **Pull request:** #25  
 **Base:** `main`  
+**Product-code review head:** `eca3579ef1e7aebe02d42a2d77f593f18e95015b`  
 **Audit date:** 2026-07-26
 
 ## Executive result
 
-The integration branch contains the validated roadmap work that was previously distributed across historical feature branches. GitHub reports PR #25 as mergeable with no current conflict against `main`.
+PR #25 is mergeable and currently conflict-free against `main`. The reviewed product-code head passed the complete validation gate. The branch contains a substantial, coherent expansion from a converter into a functional trajectory/TSPI engineering workbench.
 
-Branch protection and repository rulesets are intentionally excluded from the merge and release requirements at the repository owner's direction.
+The branch is not evidence that the product is production-complete. `docs/PROJECT_REVIEW_2026-07-26.md` identifies correctness, workspace-state, UI-automation, semantic-metadata, scale and release-hardening work that remains. The revised authority is `JDDC-ROADMAP-2026-02`.
 
-## Repository hardening applied
+Branch protection and repository rulesets are intentionally excluded from implementation, merge and release requirements.
 
-- Repository-wide CODEOWNERS coverage.
-- Consolidated TypeScript regression suite through `npm test`.
-- CI concurrency cancellation, timeouts, source snapshots, lint reports and production build artifacts.
-- Semgrep Community Edition production-source static analysis.
-- Runtime dependency audit, CycloneDX SBOM generation and release checksums.
-- Defensive parser validation, malformed fixtures and project archive safety limits.
+## Validated branch capabilities
 
-CodeQL result publication is unavailable for this private repository without GitHub Code Security. The unusable CodeQL workflow was replaced with an enforceable Semgrep check.
+- CSV/TSV, GPX, GeoJSON, KML, NMEA and JDDC GPB import.
+- GPX, CSV, GeoJSON, KML and GPB export.
+- Linked point, cursor, index-range, time-range and segment selection.
+- Chart, map, virtualized table and Canvas 3D inspection.
+- Practical transforms, selection scoping, undo/redo and Worker-based fixed-rate resampling.
+- Tested standard-kinematics, segmentation, recipe, plugin, Worker and project foundations.
+- Two-track nearest-time relative analysis.
+- Self-contained compressed project archive v1.
+- USGS-derived manual fixtures and malformed negative data.
 
-## Validation requirements
+## Validation evidence
 
-PR #25 requires successful completion of:
+The reviewed product-code head passed:
 
 - deterministic dependency installation;
 - ESLint;
-- complete regression suite;
+- all 20 TypeScript regression harnesses;
 - GPX XSD validation;
 - TypeScript compilation;
 - Vite production build;
-- Semgrep static analysis;
-- runtime dependency and supply-chain checks;
+- Semgrep production-source analysis;
+- runtime dependency audit and supply-chain reporting;
 - project archive checks;
-- point, range and range-transform focused checks.
+- selection, range-selection and range-transform checks.
 
-No branch-protection or ruleset configuration is required.
+The exact CI source snapshot has digest:
 
-## Current integration capabilities
+`sha256:266c485a48c6e2a514ab1e46b75cbd68dccba4a790c2ea5c505679133df6e52b`
 
-- linked chart, map, table and 3D point selection;
-- chart range brushing and selection-scoped transforms;
-- map, table and 3D selected-range highlighting;
-- derived kinematics and segmentation;
-- dense-series chart downsampling;
-- multi-dataset relative analysis;
-- interactive local-ENU 3D trajectory workspace with perspective/orthographic projection, orbit, pan, zoom, point picking, channel coloring, playback, follow mode, ground grid and vertical curtain;
-- production compute Worker resampling with progress and cancellation;
-- complete compressed project save and restore;
-- authoritative USGS-derived import fixtures.
+## Repository and release hardening present
 
-## Remaining non-blocking architecture risks
+- CODEOWNERS coverage.
+- Consolidated `npm test` discovery runner.
+- CI concurrency, timeouts and diagnostic artifacts.
+- Restrictive browser CSP.
+- Electron sandboxing, context isolation, disabled Node integration and navigation restrictions.
+- Semgrep Community Edition static analysis.
+- Runtime dependency audit and full dependency report.
+- CycloneDX SBOM generation.
+- Multi-platform Electron packaging workflows and release checksums.
 
-1. `src/App.tsx` remains a large orchestration component.
-2. Worker tasks still transfer object-shaped point arrays rather than transferable columnar buffers.
-3. The chart renderer remains SVG-based and will eventually need a Canvas/WebGL adapter for larger multi-chart workloads.
-4. The transform panel should move toward descriptor-driven controls and previews.
-5. Signing, notarization, parser fuzzing and provenance attestations remain release-hardening work.
+CodeQL result publication is unavailable for this private repository without GitHub Code Security. Semgrep is the enforceable static-analysis gate.
+
+## Important limitations corrected by the full review
+
+- Local processing is offline-capable; the default OpenStreetMap basemap is online.
+- GPB is compact numeric transport, not complete lossless persistence.
+- The tested full kinematics engine is not yet the normal UI derivation path.
+- Worker cancellation/progress is protocol-complete but not cooperative during synchronous resampling.
+- Project archives preserve datasets/history and basic workspace fields, not complete chart/map/3D/comparison state.
+- The current 3D implementation is a custom Canvas renderer with fraction-based playback; it is not Three.js/WebGL and does not currently provide follow mode or auto-rotation.
+- Plugin and recipe systems are tested foundations rather than product-integrated extension workflows.
+
+## Highest-priority risks
+
+1. Dataset ID collision after restore followed by import.
+2. Altitude/time-reference semantics are not enforced before 3D and comparison.
+3. Project decompression and selection validation need stronger pre-parse limits.
+4. New derived-channel semantic definitions can be lost after transforms.
+5. Panel-local state prevents complete workspace restoration.
+6. No browser end-to-end or packaged-application smoke automation.
+7. Object-shaped Worker transfers and full dataset history snapshots limit scale.
 
 ## Merge recommendation
 
-Merge only after the latest branch head passes the validation requirements above and the linked map, table and 3D interactions receive a final smoke test. Branch protection is not a prerequisite.
+PR #25 may be merged at the owner's chosen milestone after the documentation-only roadmap revision passes the normal branch checks. No branch-protection configuration is required.
+
+Merging PR #25 should not be described as a production release. The next development tranche is Stage 0 of `JDDC-ROADMAP-2026-02`: correctness, truth and workspace-state stabilization.
