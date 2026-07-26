@@ -2,7 +2,7 @@
   "name": "joint-domain-data-compiler",
   "private": true,
   "version": "0.1.0",
-  "description": "Local-first TSPI flight-data workbench: convert, visualize, correct, and massage CSV/GPX/GeoJSON/KML/NMEA/GPB tracks with schema-valid multi-format export.",
+  "description": "Local-first trajectory and TSPI workbench for importing, analyzing, transforming, comparing, visualizing, saving, and exporting track data.",
   "author": {
     "name": "A13Xg",
     "email": "a13xg@users.noreply.github.com"
