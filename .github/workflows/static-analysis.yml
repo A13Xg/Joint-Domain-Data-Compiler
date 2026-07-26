@@ -1,0 +1,33 @@
+name: Static analysis
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+      - agent/roadmap-integration
+  schedule:
+    - cron: '31 6 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: static-analysis-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  semgrep:
+    name: Semgrep CE security scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: semgrep/semgrep
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Scan TypeScript and JavaScript
+        run: semgrep scan --config auto --error --metrics=off
