@@ -42,7 +42,7 @@ export function MapView({ points, channels }: { points: TrackPoint[]; channels: 
   const [colorBy, setColorBy] = useState('none')
   const [fitRequest, setFitRequest] = useState(0)
   const [fitSelection, setFitSelection] = useState(false)
-  const { pointIndex, indexRange, selectPoint, clearSelection, clearRange } = usePointSelection(points)
+  const { pointIndex, hoverIndex, indexRange, selectPoint, setHoverIndex, clearSelection, clearRange, clearHover } = usePointSelection(points)
 
   const valid = useMemo(
     () => points.map((point, index) => ({ point, index })).filter(({ point }) => isValidLat(point.lat) && isValidLon(point.lon)),
@@ -56,6 +56,8 @@ export function MapView({ points, channels }: { points: TrackPoint[]; channels: 
   const renderedSelection = useMemo(() => downsample(selectedValid, MAX_RENDER_POINTS), [selectedValid])
   const positions = useMemo<LatLngTuple[]>(() => rendered.map(({ point }) => [point.lat, point.lon]), [rendered])
   const selectionPositions = useMemo<LatLngTuple[]>(() => renderedSelection.map(({ point }) => [point.lat, point.lon]), [renderedSelection])
+  const hoveredPoint = hoverIndex === null ? null : points[hoverIndex]
+  const hoveredPosition: LatLngTuple | null = hoveredPoint && isValidLat(hoveredPoint.lat) && isValidLon(hoveredPoint.lon) ? [hoveredPoint.lat, hoveredPoint.lon] : null
   const fitPositions = fitSelection && selectionPositions.length > 0 ? selectionPositions : positions
   const colorChannels = useMemo(() => ['none', 'elevation', ...channels.filter((channel) => channel !== 'elevation')], [channels])
   const colorRange = useMemo(() => {
@@ -85,9 +87,10 @@ export function MapView({ points, channels }: { points: TrackPoint[]; channels: 
           {mode !== 'points' && selectionPositions.length > 1 && <Polyline positions={selectionPositions} pathOptions={{ color: '#facc15', weight: 5, opacity: 0.95 }} />}
           {mode !== 'path' && rendered.map(({ point, index }) => {
             const selected = pointIndex === index
+            const hovered = hoverIndex === index
             const inRange = indexRange !== null && index >= indexRange.start && index <= indexRange.end
-            let color = selected ? '#ea4f2f' : inRange ? '#facc15' : '#0f8c6f'
-            if (!selected && !inRange && colorRange && colorBy !== 'none') {
+            let color = selected ? '#ea4f2f' : hovered ? '#38bdf8' : inRange ? '#facc15' : '#0f8c6f'
+            if (!selected && !hovered && !inRange && colorRange && colorBy !== 'none') {
               const value = channelValue(point, colorBy)
               if (value !== null) color = gradientColor((value - colorRange.min) / (colorRange.max - colorRange.min || 1))
             }
@@ -95,9 +98,9 @@ export function MapView({ points, channels }: { points: TrackPoint[]; channels: 
               <CircleMarker
                 key={`${index}-${point.lat}-${point.lon}`}
                 center={[point.lat, point.lon]}
-                radius={selected ? 7 : inRange ? 4.2 : 2.8}
-                pathOptions={{ color, fillColor: color, fillOpacity: selected || inRange ? 1 : 0.75, weight: selected ? 2 : inRange ? 1 : 0 }}
-                eventHandlers={{ click: () => selectPoint(selected ? null : index) }}
+                radius={selected ? 7 : hovered ? 6 : inRange ? 4.2 : 2.8}
+                pathOptions={{ color, fillColor: color, fillOpacity: selected || hovered || inRange ? 1 : 0.75, weight: selected ? 2 : hovered ? 2 : inRange ? 1 : 0 }}
+                eventHandlers={{ click: () => selectPoint(selected ? null : index), mouseover: () => setHoverIndex(index), mouseout: clearHover }}
               >
                 <Tooltip>
                   <div className="map-tip mono"><div>#{index} · {point.lat.toFixed(6)}, {point.lon.toFixed(6)}</div>{inRange && <div>selected range</div>}{point.ele !== undefined && <div>ele {point.ele.toFixed(1)} m</div>}{point.time !== undefined && <div>{epochMsToIso(point.time)}</div>}{point.name && <div>{point.name}</div>}{colorBy !== 'none' && channelValue(point, colorBy) !== null && <div>{colorBy}: {fmt(channelValue(point, colorBy)!)}</div>}</div>
@@ -105,6 +108,7 @@ export function MapView({ points, channels }: { points: TrackPoint[]; channels: 
               </CircleMarker>
             )
           })}
+          {hoveredPosition && <CircleMarker center={hoveredPosition} radius={7} pathOptions={{ color: '#ffffff', fillColor: '#38bdf8', fillOpacity: 0.95, weight: 2 }}><Tooltip>cursor #{hoverIndex}</Tooltip></CircleMarker>}
           <CircleMarker center={positions[0]} radius={6} pathOptions={{ color: '#16a34a', fillColor: '#16a34a', fillOpacity: 0.9, weight: 1 }}><Tooltip>start</Tooltip></CircleMarker>
           <CircleMarker center={positions[positions.length - 1]} radius={6} pathOptions={{ color: '#dc2626', fillColor: '#dc2626', fillOpacity: 0.9, weight: 1 }}><Tooltip>end</Tooltip></CircleMarker>
           <FitBounds positions={fitPositions} request={fitRequest} />
