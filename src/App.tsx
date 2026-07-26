@@ -19,10 +19,12 @@ import { ImportView } from './ui/ImportView'
 import { ComparisonPanel } from './ui/ComparisonPanel'
 import { Trajectory3dPanel } from './ui/Trajectory3dPanel'
 import { ProjectPanel } from './ui/ProjectPanel'
+import { restorePointSelection } from './state/pointSelection'
+import type { ProjectArchive, ProjectDatasetHistory } from './persistence/project/archive'
 
 export type Tab = 'import' | 'mapping' | 'overview' | 'map' | 'charts' | 'table' | 'compare' | 'scene3d' | 'transform' | 'project' | 'export'
 
-interface History { past: Dataset[]; future: Dataset[] }
+type History = ProjectDatasetHistory
 interface PendingCsv { file: File; analysis: CsvAnalysisResult; mapping: CsvMapping; additionalHeaders: boolean }
 const CSV_SAMPLE_LIMIT = 5000
 
@@ -164,6 +166,25 @@ export default function App() {
     if (activeId === id) { const remaining = datasets.filter((dataset) => dataset.id !== id); setActiveId(remaining[0]?.id ?? null) }
   }, [activeId, datasets])
 
+  const restoreProject = useCallback((archive: ProjectArchive) => {
+    const restoredDatasets = archive.datasets
+    const restoredActiveId = archive.manifest.view.activeDatasetId ?? restoredDatasets[0]?.id ?? null
+    const requestedTab = archive.manifest.view.activeTab
+    const restoredTab: Tab = isTab(requestedTab) ? requestedTab : restoredActiveId ? 'overview' : 'import'
+    setDatasets(restoredDatasets)
+    setHistories(archive.histories)
+    setActiveId(restoredActiveId)
+    setPendingCsv(null)
+    setTab(restoredTab)
+    const activeDataset = restoredDatasets.find((dataset) => dataset.id === restoredActiveId)
+    if (activeDataset) {
+      const selection = archive.manifest.view.selection
+      restorePointSelection(activeDataset.points, selection.pointIndex, selection.indexRange)
+    }
+    flashToast(`Restored project ${archive.manifest.name}`)
+    logger.success('project', `Restored ${restoredDatasets.length} dataset(s) from ${archive.manifest.name}`)
+  }, [flashToast])
+
   const tabs: Array<{ id: Tab; label: string; enabled: boolean }> = [
     { id: 'import', label: 'Import', enabled: true }, { id: 'mapping', label: 'CSV Mapping', enabled: !!pendingCsv },
     { id: 'overview', label: 'Overview', enabled: !!active }, { id: 'map', label: 'Map', enabled: !!active },
@@ -196,7 +217,7 @@ export default function App() {
             {tab === 'compare' && <ComparisonPanel datasets={datasets} activeId={activeId} />}
             {tab === 'scene3d' && active && <Trajectory3dPanel dataset={active} />}
             {tab === 'transform' && active && <TransformPanel dataset={active} onApply={applyTransform} onUndo={undo} onRedo={redo} canUndo={!!history && history.past.length > 0} canRedo={!!history && history.future.length > 0} />}
-            {tab === 'project' && <ProjectPanel datasets={datasets} activeId={activeId} activeTab={tab} onActivateDataset={setActiveId} />}
+            {tab === 'project' && <ProjectPanel datasets={datasets} histories={histories} activeId={activeId} activeTab={tab} onRestoreProject={restoreProject} />}
             {tab === 'export' && active && <ExportPanel dataset={active} />}
           </section>
         </main>
@@ -205,4 +226,8 @@ export default function App() {
       {toast && <div className="toast">{toast}</div>}
     </div>
   )
+}
+
+function isTab(value: unknown): value is Tab {
+  return typeof value === 'string' && ['import', 'mapping', 'overview', 'map', 'charts', 'table', 'compare', 'scene3d', 'transform', 'project', 'export'].includes(value)
 }
