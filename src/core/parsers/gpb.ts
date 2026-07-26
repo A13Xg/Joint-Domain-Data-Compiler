@@ -1,7 +1,8 @@
 // GPB — "Geo Point Binary", a compact self-describing binary container for TSPI
 // tracks. Many flight-test pipelines emit bespoke binary point streams; without a
-// universal spec we define an explicit, documented container the app reads AND
-// writes, enabling lossless high-rate round-tripping that text formats can't match.
+// universal spec, JDDC defines a compact numeric container that it can read and
+// write. GPB preserves the numeric fields represented by this layout, but it is
+// not a complete lossless workspace or metadata format.
 //
 // Layout (all little-endian):
 //   magic      : 4 bytes  = "GPB1"
