@@ -1,44 +1,65 @@
-# JDDC Roadmap Execution Status
+# JDDC Execution Status
 
-**Roadmap:** `JDDC-ROADMAP-2026-01`  
+**Roadmap:** `JDDC-ROADMAP-2026-02`  
+**Reviewed code head:** `eca3579ef1e7aebe02d42a2d77f593f18e95015b`  
 **Active integration PR:** #25 (`agent/roadmap-integration` → `main`)
 
-## Status key
+## Current assessment
 
-- `DONE` — implemented and validated on the integration branch or already merged.
-- `PARTIAL` — usable vertical slices exist; roadmap scope remains.
-- `ACTIVE` — current implementation focus.
-- `READY` — dependencies are available.
+JDDC is a functional local-first trajectory/TSPI workbench with a strong deterministic core. It is not yet production-complete. The immediate focus is correctness, durable workspace state and automated browser verification—not additional feature breadth.
 
-## Phases
+## Stage status
 
-| Phase | Status | Completed work / remaining boundary |
+| Stage | Status | Current boundary |
 |---|---|---|
-| 0 — Baseline stabilization | PARTIAL | CI, consolidated regression suite, packaging workflows, SBOM and checksums done. Manual cross-platform package inspection and signing remain. Branch protection is intentionally not a release requirement. |
-| 1 — Shared selection | DONE | Dataset-scoped point, synchronized cursor, index range, time range and segment selection; chart brushing; map/table/3D synchronization; keyboard navigation; statistics; transform scoping; regression coverage and independent audit are complete. |
-| 2 — Derived analytics | DONE | Versioned derivation registry, standard kinematics, flight-state and data-quality segmentation are implemented and tested. |
-| 3 — Time-series workspace | PARTIAL | Presets, distance axis, extrema-preserving downsampling and brushing done. Multi-chart layouts, synchronized crosshairs, statistical plots and image export remain. |
-| 4 — Data-massaging pipeline v2 | PARTIAL | Versioned recipes, undo/redo, fixed-rate linear/step resampling and scoped transforms done. Additional filters, previews and recipe UI remain. |
-| 5 — Workers and large-data architecture | PARTIAL | Typed protocol, host, browser client, production worker, progress and cancellation done. Transferable columnar storage and worker pool remain. |
-| 6 — Multi-dataset comparison | PARTIAL | Nearest-time alignment, ENU relative metrics and Compare UI done. Interpolation, cross-correlation, residual charts and reports remain. |
-| 7 — Local 3D trajectory viewer | PARTIAL | WGS84/ECEF/ENU geometry plus perspective/orthographic rendering, orbit/pan/zoom, point picking, channel coloring, selected-range highlighting, playback, ground grid and vertical curtain are done. Multi-track vectors, chase camera and image export remain. |
-| 8 — GPU map and optional globe | READY | Current map is functional and range-linked; deck.gl/Cesium evaluation and GPU implementation remain. |
-| 9 — Format expansion | PARTIAL | CSV/TSV, GPX, GeoJSON, KML, NMEA and GPB import plus current exporters are available. Arrow, Parquet, CZML, IGC, FIT and other roadmap formats remain. |
-| 10 — Projects, reproducibility, reports | PARTIAL | Complete compressed project save/restore with embedded datasets, histories and selection is done. Recipe capture, migrations, bookmarks and report generation remain. |
-| 11 — Extensibility boundaries | DONE | Compile-time plugin contracts and atomic registry exist for parsers, exporters, operations, derivations, chart presets and report sections. Runtime discovery remains intentionally excluded. |
-| 12 — Release and security hardening | ACTIVE | Runtime audit, SBOM, checksums, Semgrep, malformed fixtures and archive limits done. Signing, notarization, fuzzing and attestations remain. |
+| 0 — Correctness and workspace state | ACTIVE | Known ID, metadata, project-state, cancellation and documentation issues must be resolved. |
+| 1 — Ingestion and model integrity | FUNCTIONAL | Six import families are usable; full parser fixture matrix, limits, checksums and progressive import remain. |
+| 2 — Shared selection | COMPLETE | Point/cursor/index/time/segment selection and linked chart/map/table/3D behavior are delivered and audited. |
+| 3 — Analytics and segmentation | FUNCTIONAL + FOUNDATION | Basic derivation and default segment UI are wired; full versioned kinematics is tested but not wired. |
+| 4 — Transform pipeline | FUNCTIONAL | Practical transforms, selection scoping, Worker resampling and undo/redo exist; previews, operation records and recipe UI remain. |
+| 5 — Time-series workspace | FUNCTIONAL | Single-chart presets/downsampling/brushing exist; multi-pane layouts, explicit scales, zoom and statistics plots remain. |
+| 6 — Map workspace | FUNCTIONAL | Linked Leaflet view works; default basemap is online and gap/dateline/multi-track/report work remains. |
+| 7 — 3D workspace | FUNCTIONAL | Canvas 3D inspection and fraction playback work; time accuracy, multi-track, persistence and benchmark work remain. |
+| 8 — Comparison | FUNCTIONAL | Two-track nearest-time relative analytics work; interpolation, drift, visual linking and reports remain. |
+| 9 — Projects and reports | FUNCTIONAL | Self-contained v1 archives work; complete workspace persistence, migrations, compact history and reports remain. |
+| 10 — Workers and scale | FOUNDATION + one wired operation | Resampling is off-thread; cooperative cancellation, columnar transfer, worker scheduling and benchmarks remain. |
+| 11 — Automated product verification | PLANNED | Core regression/CI is strong; browser E2E, component, packaged-app, performance and fuzz testing remain. |
+| 12 — Formats and interoperability | FUNCTIONAL baseline | Existing imports/exports work with uneven round-trip fidelity; Arrow/Parquet follow scale work. |
+| 13 — Extensibility | FOUNDATION / deferred | Contracts and registry are tested but not product-integrated; runtime third-party plugins are deferred. |
+| 14 — Release and security | FUNCTIONAL pipeline | CI, audits, SBOMs, checksums and packages exist; immutable pinning, signing, attestations and package smoke tests remain. |
 
-## Phase 1 completion record
+## Verified strengths
 
-- Synchronized data cursor across chart, map, table, 3D hover and 3D playback.
-- Persistent point selection remains independent from transient cursor state.
-- Index ranges derive time ranges; explicit time ranges derive index ranges.
-- Flight segments can be selected as synchronized ranges.
-- Keyboard navigation supports arrows, Shift+arrows, Home, End, Enter and Escape.
-- Map, table, chart, statistics, transform scope and 3D reflect the same point/range state.
-- `docs/PHASE1_AUDIT.md` records the independent acceptance review.
-- Full CI, production build, static analysis, security and focused selection checks passed at implementation head `58cee6ad40041fa0a93d0d3c78fd270bedfdf528`.
+- No detected source import cycles.
+- No explicit `any`, TypeScript suppression or placeholder production behavior.
+- 20 deterministic regression harnesses.
+- Complete reviewed-head CI, build, static-analysis and security checks passed.
+- Electron isolation and CSP are materially hardened.
+- Project archives are fingerprint-validated and self-contained.
+- Linked selection is complete at the feature level.
 
-## Merge discipline
+## Immediate correction queue
 
-Each increment must pass the consolidated CI suite, production build, static analysis, security checks, and relevant focused checks before PR #25 is marked ready.
+1. Collision-resistant dataset IDs across restore/import.
+2. Correct point-clear versus range-clear semantics.
+3. Durable working-tab and view-state persistence.
+4. Workspace selection schema validation and decompressed-size limits.
+5. Semantic channel-definition preservation after transforms.
+6. Altitude/time-reference validation before 3D, comparison and timestamp operations.
+7. Wire the standard kinematics engine into the UI.
+8. Keep GPB/offline/Worker/project claims synchronized with actual behavior.
+9. Establish Playwright critical-path smoke tests.
+10. Add direct parser fixtures for every current input format.
+
+## Validation baseline
+
+The reviewed code head passed:
+
+- CI lint and complete regression suite;
+- TypeScript compilation and Vite production build;
+- Semgrep production-source scan;
+- runtime dependency audit and supply-chain reporting;
+- project manifest/archive checks;
+- selection, range-selection and range-transform checks.
+
+Documentation-only roadmap changes must pass the same final PR validation gate before being treated as authoritative.
