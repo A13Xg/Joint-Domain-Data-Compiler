@@ -2,8 +2,8 @@
 
 ## Canonical branches
 
-- `main` is the protected, validated integration branch and currently contains all merged roadmap work through PR #24.
-- `agent/roadmap-integration` is the single active development branch for subsequent roadmap implementation.
+- `main` is the validated integration and release branch.
+- `agent/roadmap-integration` is the single active development branch for roadmap implementation.
 
 ## Superseded feature branches
 
@@ -17,6 +17,7 @@ Branches created for PRs #2 through #24 are historical implementation branches. 
 4. Run focused checks and full CI on each meaningful increment.
 5. Merge the integration PR only at a deliberate milestone.
 6. After merge, recreate or fast-forward `agent/roadmap-integration` from the updated `main` before continuing.
+7. Branch protection and GitHub rulesets are optional administration choices, not implementation, merge, or release requirements.
 
 ## Branch cleanup
 
