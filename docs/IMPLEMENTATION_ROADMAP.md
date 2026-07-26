@@ -6,17 +6,7 @@
 
 ## Product objective
 
-Evolve the local-first TSPI conversion utility into a robust engineering workbench for:
-
-- ingestion and normalization;
-- data-quality assessment;
-- correction and signal processing;
-- synchronized chart, map, table and 3D inspection;
-- multi-dataset comparison;
-- reproducible project persistence;
-- high-confidence export and reporting.
-
-The application must remain offline-capable, deterministic, auditable, format-agnostic and suitable for browser and desktop distribution.
+Evolve the local-first TSPI conversion utility into a deterministic engineering workbench for ingestion, quality assessment, correction, synchronized inspection, comparison, reproducible projects, export and reporting. The application must remain offline-capable, auditable, format-agnostic and suitable for browser and desktop distribution.
 
 ## Repository policy
 
@@ -24,17 +14,7 @@ Branch protection and GitHub rulesets are optional administration choices. They 
 
 ## Delivery rules
 
-Every meaningful increment must include:
-
-1. real implementation reachable through the UI or a documented API;
-2. focused tests and representative fixtures;
-3. malformed and boundary-case handling;
-4. lint, typecheck, complete regression and production-build validation;
-5. visible warnings and failure states;
-6. undo and provenance for data mutations;
-7. a concise implementation and audit summary.
-
-Long-running user operations must expose progress and cancellation. Visualizations must downsample when display resolution cannot represent all source points.
+Every meaningful increment requires reachable implementation, focused tests, representative and malformed fixtures, explicit failure handling, lint/typecheck/regression/build validation, undo/provenance for mutations, and an implementation audit. Long-running work must expose progress and cancellation. Visualizations must downsample when necessary.
 
 ---
 
@@ -42,52 +22,34 @@ Long-running user operations must expose progress and cancellation. Visualizatio
 
 **Status:** PARTIAL
 
-### Complete
+Complete: CI, lint, tests, GPX validation, production build, platform packaging workflows, Windows installer/portable targets, dependency audits, SBOMs, checksums, Semgrep and consolidated regression execution.
 
-- CI lint, tests, GPX XSD validation and production build.
-- Windows, Linux and macOS packaging workflows.
-- Windows installer and portable targets.
-- Runtime dependency audit.
-- CycloneDX SBOM generation.
-- SHA-256 release manifests.
-- Semgrep production-source static analysis.
-- Consolidated default regression command.
-
-### Remaining
-
-- Manual packaged-binary inspection on supported platforms.
-- Windows code signing.
-- macOS signing and notarization.
-- Stable and prerelease channel policy.
+Remaining: packaged-binary inspection, Windows signing, macOS signing/notarization, stable/prerelease channel policy.
 
 ---
 
 ## Phase 1 — Shared selection and synchronization
 
-**Status:** PARTIAL
+**Status:** DONE
 
-### Complete
+Complete:
 
-- Shared point and index-range selection state.
+- Dataset-scoped persistent point selection.
+- Transient synchronized data cursor across chart, map, table and 3D.
+- 3D playback-driven cursor synchronization.
 - Chart point selection and range brushing.
-- Linked chart, map, table and 3D point selection.
-- Map selected-range path and point highlighting.
-- Map fit-to-range control.
-- Table selected-range highlighting and range-only filtering.
-- 3D selected-range highlighting.
+- Index-range and time-range synchronization.
+- Flight-segment selection mapped to source intervals.
+- Map selected point, cursor, path/range highlighting and fit-to-range.
+- Table selected point, cursor, range highlighting, range-only filtering and linked scrolling.
+- 3D selected point, cursor, playback and selected-range rendering.
 - Selection-scoped statistics and transforms.
-- Clear point and range actions.
+- Keyboard navigation: arrows, Shift+arrows, Home, End, Enter and Escape.
+- Dataset-change stale-state protection.
+- Focused linked-selection regression coverage.
+- Independent acceptance audit in `docs/PHASE1_AUDIT.md`.
 
-### Remaining
-
-- Shared hover cursor.
-- Time-range and segment selection.
-- Keyboard selection navigation.
-- Broader linked-component integration tests.
-
-### Acceptance target
-
-A selected point or range is visibly synchronized across chart, map, table, statistics, transform scope and 3D.
+Acceptance result: a cursor, point, time/index range or segment selection is consistently represented by all applicable linked views without mutating source data.
 
 ---
 
@@ -95,17 +57,7 @@ A selected point or range is visibly synchronized across chart, map, table, stat
 
 **Status:** DONE
 
-### Complete
-
-- Versioned derivation registry.
-- Distance and cumulative distance.
-- Ground speed.
-- Vertical speed.
-- Heading and turn rate.
-- Sample interval and sample frequency.
-- Flight-state segmentation.
-- Data-gap and quality segmentation.
-- Focused analytical tests.
+Complete: versioned derivations, cumulative distance, ground/vertical speed, heading, turn rate, sample interval/frequency, flight-state segmentation, gap/quality segmentation and focused tests.
 
 ---
 
@@ -113,24 +65,9 @@ A selected point or range is visibly synchronized across chart, map, table, stat
 
 **Status:** PARTIAL
 
-### Complete
+Complete: presets, time/index/distance axes, extrema-preserving downsampling, linked cursor, point/range selection and selected-range statistics.
 
-- Chart presets.
-- Time and cumulative-distance axes.
-- Extrema-preserving dense-series downsampling.
-- Point selection and range brushing.
-- Selected-range statistics.
-
-### Remaining
-
-- Multi-chart layouts.
-- Synchronized crosshairs.
-- Independent Y axes.
-- Raw-versus-processed overlays.
-- Event and anomaly overlays.
-- Histograms, scatter plots, box plots and correlation matrix.
-- PNG and SVG export.
-- Canvas, uPlot or WebGL renderer evaluation.
+Remaining: multi-chart layouts, synchronized crosshairs between simultaneous charts, independent Y axes, overlays, statistical plots, image export and higher-performance renderer evaluation.
 
 ---
 
@@ -138,35 +75,9 @@ A selected point or range is visibly synchronized across chart, map, table, stat
 
 **Status:** PARTIAL
 
-### Complete
+Complete: undo/redo, versioned recipes, coordinate swap, invalid removal, dedupe, decimation, simplification, moving average, offsets, elevation outlier removal, derived channels, fixed-rate gap-aware resampling and selection-scoped transforms.
 
-- Undo and redo.
-- Versioned operation and recipe contracts.
-- Coordinate swap.
-- Invalid-point removal.
-- Deduplication.
-- Decimation and simplification.
-- Moving-average smoothing.
-- Time and elevation offsets.
-- Elevation-outlier removal.
-- Derived-channel operation.
-- Fixed-rate linear and step resampling.
-- Gap-aware resampling.
-- Selection-scoped safe transforms.
-
-### Remaining
-
-- Before-and-after previews.
-- Impact summaries.
-- Median, Hampel and Savitzky–Golay filters.
-- Exponential moving average.
-- Butterworth filters.
-- Rolling statistics.
-- Derivative and integral operations.
-- Distance-based resampling.
-- Monotone cubic interpolation.
-- Timestamp de-jitter and clock-drift correction.
-- Saved transform presets and recipe UI.
+Remaining: previews, impact summaries, median/Hampel/Savitzky–Golay/EMA/Butterworth filters, rolling statistics, derivatives/integrals, distance resampling, cubic interpolation, timestamp repair and recipe UI.
 
 ---
 
@@ -174,23 +85,9 @@ A selected point or range is visibly synchronized across chart, map, table, stat
 
 **Status:** PARTIAL
 
-### Complete
+Complete: typed protocol, Worker host/client, production Worker, progress, cancellation, Worker resampling and dense chart preparation.
 
-- Typed compute protocol.
-- Worker host and browser client.
-- Production Worker entrypoint.
-- Progress reporting and cancellation.
-- Worker-based fixed-rate resampling.
-- Worker-based dense chart preparation.
-
-### Remaining
-
-- Transferable typed-array or columnar data representation.
-- Worker pool and task scheduling.
-- Worker-based large-range statistics.
-- Progressive import.
-- Memory budgets and telemetry.
-- Benchmarks at 100k, 500k and 1M points.
+Remaining: transferable columnar storage, Worker pool, Worker range statistics, progressive import, memory budgets and 100k/500k/1M benchmarks.
 
 ---
 
@@ -198,26 +95,9 @@ A selected point or range is visibly synchronized across chart, map, table, stat
 
 **Status:** PARTIAL
 
-### Complete
+Complete: multiple datasets, reference/target selection, nearest-time alignment, manual offset, local-ENU relative analytics, range/bearing/vertical separation/closure, closest approach and aligned table.
 
-- Multiple loaded datasets.
-- Reference and target selection.
-- Nearest-time alignment.
-- Manual time offset.
-- Relative local-ENU analytics.
-- Slant range, horizontal range, bearing, vertical separation and closure rate.
-- Closest-approach summary.
-- Aligned-sample table.
-
-### Remaining
-
-- Interpolated alignment.
-- Cross-correlation and event-based alignment.
-- Clock-drift estimation.
-- Along-track and cross-track error.
-- Residual charts.
-- More than two simultaneous comparison tracks.
-- Comparison report export.
+Remaining: interpolation, cross-correlation/event alignment, clock drift, along/cross-track errors, residual charts, multi-track comparison and report export.
 
 ---
 
@@ -225,33 +105,9 @@ A selected point or range is visibly synchronized across chart, map, table, stat
 
 **Status:** PARTIAL
 
-### Complete
+Complete: WGS84/ECEF/ENU geometry, bounded source-index retention, perspective/orthographic projection, orbit/pan/zoom, camera reset/fit, point picking, linked cursor, channel coloring, selected-range emphasis, start/end/selected/playback markers, playback controls, grid, curtain and altitude exaggeration.
 
-- WGS84 to ECEF to local ENU conversion.
-- Bounded source-index-preserving geometry.
-- Perspective and orthographic projection.
-- Orbit, pan and zoom controls.
-- Camera reset and fit controls.
-- Point picking synchronized with other views.
-- Channel-based trajectory coloring.
-- Selected-range highlighting.
-- Start, end, selected and playback markers.
-- Playback timeline and speed controls.
-- Playback follow mode.
-- Ground grid.
-- Vertical curtain.
-- Altitude exaggeration.
-- Auto rotation.
-
-### Remaining
-
-- Multi-track rendering.
-- Separation vectors and closest-approach visualization.
-- Chase camera.
-- Time-accurate playback using timestamps.
-- Camera-state persistence in project archives.
-- 3D screenshot export.
-- Optional WebGL/Three.js renderer if Canvas performance becomes insufficient.
+Remaining: multi-track rendering, separation vectors, closest-approach visualization, chase camera, timestamp-accurate playback, camera persistence, screenshot export and optional WebGL/Three.js migration if profiling requires it.
 
 ---
 
@@ -259,20 +115,9 @@ A selected point or range is visibly synchronized across chart, map, table, stat
 
 **Status:** READY
 
-### Complete
+Complete: Leaflet map, bounded point rendering, channel coloring and linked point/range/cursor state.
 
-- Leaflet map with bounded point rendering.
-- Channel coloring.
-- Linked point and range selection.
-- Fit-all and fit-range controls.
-
-### Remaining
-
-- deck.gl GPU path and point layers.
-- Optional Cesium globe.
-- Multi-track visibility and styling.
-- Selection-aware map playback.
-- Map screenshot export.
+Remaining: deck.gl GPU layers, optional Cesium globe, multi-track styling, playback and screenshot export.
 
 ---
 
@@ -280,28 +125,9 @@ A selected point or range is visibly synchronized across chart, map, table, stat
 
 **Status:** PARTIAL
 
-### Complete imports
+Complete imports: CSV/TSV, GPX, GeoJSON, KML, NMEA and GPB.
 
-- CSV and TSV.
-- GPX.
-- GeoJSON.
-- KML.
-- NMEA.
-- GPB.
-
-### Remaining priority formats
-
-- Apache Arrow.
-- Parquet.
-- CZML.
-- KMZ.
-- IGC.
-- FIT and TCX.
-- MAVLink telemetry logs.
-- ADS-B layouts.
-- SQLite.
-
-Each format requires representative and malformed fixtures, metadata mapping, explicit unit behavior, size limits and round-trip tests where applicable.
+Remaining priority: Arrow, Parquet, CZML, KMZ, IGC, FIT, TCX, MAVLink, ADS-B layouts and SQLite. Each format requires representative/malformed fixtures, metadata and unit mapping, size limits and round-trip tests where applicable.
 
 ---
 
@@ -309,28 +135,9 @@ Each format requires representative and malformed fixtures, metadata mapping, ex
 
 **Status:** PARTIAL
 
-### Complete
+Complete: versioned manifest, compressed `.jddc-project`, embedded datasets, fingerprints, undo/redo persistence, active dataset/tab, point/range selection and archive limits.
 
-- Versioned project manifest.
-- Compressed `.jddc-project` archives.
-- Embedded datasets.
-- Dataset fingerprint verification.
-- Undo and redo history persistence.
-- Active dataset and tab persistence.
-- Point and range selection persistence.
-- Archive safety limits.
-
-### Remaining
-
-- Project schema migrations.
-- Captured operation recipes.
-- Bookmarks and annotations.
-- Chart layouts.
-- Map and 3D camera state.
-- Multi-dataset alignment settings.
-- HTML analysis report.
-- PDF-ready report output.
-- Chart, map and 3D images in reports.
+Remaining: migrations, captured recipes, bookmarks/annotations, chart layouts, map/3D camera state, comparison settings, HTML/PDF-ready reports and embedded images.
 
 ---
 
@@ -338,17 +145,7 @@ Each format requires representative and malformed fixtures, metadata mapping, ex
 
 **Status:** DONE
 
-### Complete
-
-- Compile-time parser contracts.
-- Exporter contracts.
-- Operation contracts.
-- Derivation contracts.
-- Chart-preset contracts.
-- Report-section contracts.
-- Atomic plugin registry.
-
-Runtime third-party code discovery remains intentionally excluded until a secure sandbox and signing model are defined.
+Complete: compile-time parser, exporter, operation, derivation, chart-preset and report-section contracts plus atomic registry. Runtime third-party discovery remains intentionally excluded pending a secure sandbox/signing model.
 
 ---
 
@@ -356,41 +153,19 @@ Runtime third-party code discovery remains intentionally excluded until a secure
 
 **Status:** ACTIVE
 
-### Complete
+Complete: dependency audit, SBOM, checksums, Semgrep, malformed fixtures, project limits and CI artifacts.
 
-- Production dependency audit.
-- Full dependency audit reporting.
-- SBOM generation.
-- Release checksums.
-- Semgrep static analysis.
-- Malformed input fixtures.
-- Project archive limits.
-- CI artifacts and audit reports.
-
-### Remaining
-
-- Windows signing.
-- macOS signing and notarization.
-- Electron fuse review.
-- Parser fuzz testing.
-- Decompression-bomb protections for future archive formats.
-- Build provenance attestations.
-- Crash-report export.
-- Packaged-binary smoke tests on each platform.
-
----
+Remaining: signing/notarization, Electron fuse review, parser fuzzing, future archive bomb protections, provenance attestations, crash-report export and packaged-binary smoke tests.
 
 ## Current priority sequence
 
-1. Validate linked map, table and enhanced 3D behavior.
-2. Implement shared hover cursor and timestamp-accurate playback.
-3. Add transform previews and the next filter family.
-4. Introduce transferable columnar Worker payloads.
-5. Add multi-chart layouts and statistical charts.
-6. Expand multi-dataset visualization and reports.
-7. Add project migrations, recipe capture and bookmarks.
-8. Complete signing, fuzzing and provenance hardening.
+1. Phase 3 multi-chart workspace and synchronized crosshairs.
+2. Phase 4 transform previews and filter family.
+3. Phase 5 transferable columnar Worker payloads and benchmarks.
+4. Phase 6 interpolated comparison and multi-track visualization.
+5. Phase 10 project migrations, recipe capture, bookmarks and reports.
+6. Phase 12 signing, fuzzing and provenance hardening.
 
 ## Definition of done
 
-A task is complete only when its implementation is reachable, tested, documented, validated by CI and free of known blocking defects. Partial foundations are recorded as PARTIAL rather than DONE.
+A task is complete only when reachable, tested, documented, independently reviewed, validated by CI and free of known blocking defects. Partial foundations remain `PARTIAL` rather than `DONE`.
