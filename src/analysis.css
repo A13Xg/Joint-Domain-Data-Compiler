@@ -14,5 +14,13 @@
 .trajectory-playback input[type='range'] { width: 100%; }
 .chip-range { border-color: #eab308; color: #fde047; background: rgba(234, 179, 8, 0.12); }
 .grid-row.in-range { background: rgba(234, 179, 8, 0.09); box-shadow: inset 3px 0 #eab308; }
+.grid-row.hovered { background: rgba(56, 189, 248, 0.14); box-shadow: inset 3px 0 #38bdf8; }
 .grid-row.selected { background: rgba(234, 79, 47, 0.2); box-shadow: inset 3px 0 #ea4f2f; }
+.selection-controls { display: flex; flex-direction: column; gap: 12px; margin-bottom: 14px; }
+.selection-time-controls { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.selection-time-controls label { display: flex; flex-direction: column; gap: 4px; color: var(--text-dim); font-size: 11px; }
+.segment-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.segment-chip { display: inline-flex; gap: 7px; align-items: center; padding: 6px 9px; font-size: 11px; }
+.segment-chip.active { border-color: #eab308; background: rgba(234, 179, 8, 0.14); }
+.segment-chip span { color: var(--text-dim); font-family: var(--mono); }
 @media (max-width: 900px) { .trajectory-playback { grid-template-columns: auto auto 1fr; } }
