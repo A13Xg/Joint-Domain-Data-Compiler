@@ -29,18 +29,18 @@ A local-first **TSPI flight-data engineering workbench** for importing, validati
 
 - Overview statistics and data-quality reporting.
 - Leaflet map with point/path modes and channel coloring.
-- Dense multi-channel charts with built-in altitude, speed, vertical-speed, heading, sample-timing, and altitude-distance presets.
+- Dense multi-channel charts with altitude, speed, vertical-speed, heading, sample-timing, and altitude-distance presets.
 - Extrema-preserving chart downsampling with source-index retention.
-- Linked point selection across chart, map, and virtualized table.
+- Linked point selection across chart, map, virtualized table, and local 3D view.
 - Chart range brushing with selected-range duration, distance, and channel min/max/mean statistics.
 - Derived channels including distance, ground speed, vertical speed, heading, turn rate, acceleration, sample interval, and sample frequency.
 - Configurable stationary, climb, level, descent, gap, and unknown segmentation.
-- Local WGS84 → ECEF → ENU coordinate conversion and bounded 3D trajectory geometry preparation.
-- Nearest-time multi-track alignment and relative range/bearing/separation analytics.
+- Interactive local ENU trajectory preview with yaw, pitch, altitude exaggeration, source-point selection, and channel coloring.
+- Multi-dataset comparison workspace using nearest-time alignment, manual time offset, relative range, bearing, vertical separation, closest approach, and closure rate.
 
 ### Data correction and massaging
 
-All existing transforms use immutable point arrays and the UI maintains undo/redo history.
+All transforms use immutable point arrays and the UI maintains undo/redo history.
 
 - Sort by time.
 - Swap latitude and longitude.
@@ -54,14 +54,17 @@ All existing transforms use immutable point arrays and the UI maintains undo/red
 - Fixed-rate resampling with linear or step interpolation and maximum-gap protection.
 - Selection-scoped execution for point-count-preserving transforms.
 - Versioned operation records, dataset fingerprints, recipe construction, and guarded replay.
+- Fixed-rate resampling executes through the production compute Worker with progress and cancellation controls.
 
-### Compute and extensibility
+### Projects, compute, and extensibility
 
+- Export and validate versioned `.jddc-project` manifest JSON.
+- Persist dataset fingerprints, source references, active dataset, active tab, and workspace-selection schema.
 - Typed compute protocol with progress, cancellation, success, and failure messages.
 - Browser compute client and production Worker runtime.
 - Worker tasks for dense chart-series preparation and fixed-rate resampling.
 - Compile-time plugin contracts for parsers, exporters, operations, derivations, chart presets, and report sections.
-- Versioned `.jddc-project` manifest schema foundation.
+- Dataset-payload embedding, ZIP project archives, full recipe capture, and project rehydration remain planned increments.
 
 ## Quick start
 
@@ -98,7 +101,7 @@ npm test
 npm run build
 ```
 
-`npm test` discovers and executes every TypeScript regression harness under `test/`. The suite currently covers conversion, GPX XSD validation, transforms, recipes, selection, analytics, segmentation, chart-series preparation, resampling, geodesy, relative analytics, project manifests, plugins, compute protocol/client/worker behavior, range statistics, and 3D trajectory geometry.
+`npm test` discovers and executes every TypeScript regression harness under `test/`. The suite covers conversion, GPX XSD validation, transforms, recipes, selection, analytics, segmentation, chart-series preparation, resampling, geodesy, relative analytics, project manifests, plugins, compute protocol/client/worker behavior, range statistics, and 3D trajectory geometry.
 
 Pull-request CI performs:
 
@@ -108,7 +111,7 @@ Pull-request CI performs:
 - TypeScript and Vite production builds;
 - mandatory GPX 1.1 XSD validation on Linux;
 - CodeQL JavaScript/TypeScript security-and-quality analysis;
-- runtime dependency auditing and supply-chain/SBOM checks through the security workflow.
+- runtime dependency audit, SBOM generation, and release checksum validation.
 
 ## Releases
 
@@ -134,6 +137,7 @@ See:
 
 - `docs/IMPLEMENTATION_ROADMAP.md`
 - `docs/BRANCH_STRATEGY.md`
+- `docs/INTEGRATION_BRANCH_AUDIT.md`
 
 ## Architecture
 
@@ -144,13 +148,13 @@ src/compute/         Compute protocol, client, task host, Worker runtime, and ta
 src/state/           Shared point/range selection state
 src/visualization/   Dense chart-series and local 3D geometry preparation
 src/persistence/     Project-manifest schema and validation
-src/ui/              Map, charts, table, transform, export, statistics, and logs
+src/ui/              Import, map, charts, table, comparison, 3D, project, transform,
+                     export, statistics, and logging workspaces
 src/workers/         Worker entrypoints
-src/App.tsx          Workspace orchestration
 electron/            Hardened desktop shell
 test/                Regression harnesses and GPX schema
 scripts/             Cross-platform test orchestration
-docs/                Roadmap and branch strategy
+docs/                Roadmap, branch strategy, and integration audit
 ```
 
 ## Extending
