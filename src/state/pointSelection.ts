@@ -9,10 +9,11 @@ export interface SelectedIndexRange {
 interface PointSelectionSnapshot {
   points: readonly TrackPoint[] | null
   pointIndex: number | null
+  hoverIndex: number | null
   indexRange: SelectedIndexRange | null
 }
 
-let snapshot: PointSelectionSnapshot = { points: null, pointIndex: null, indexRange: null }
+let snapshot: PointSelectionSnapshot = { points: null, pointIndex: null, hoverIndex: null, indexRange: null }
 const listeners = new Set<() => void>()
 
 export function usePointSelection(points: readonly TrackPoint[]) {
@@ -24,10 +25,13 @@ export function usePointSelection(points: readonly TrackPoint[]) {
   const active = current.points === points
   return {
     pointIndex: active ? current.pointIndex : null,
+    hoverIndex: active ? current.hoverIndex : null,
     indexRange: active ? current.indexRange : null,
     selectPoint: (pointIndex: number | null) => selectPoint(points, pointIndex),
+    setHoverIndex: (pointIndex: number | null) => setHoveredPointIndex(points, pointIndex),
     selectRange: (range: SelectedIndexRange | null) => selectRange(points, range),
     clearSelection: () => clearSelection(points),
+    clearHover: () => setHoveredPointIndex(points, null),
     clearRange: () => selectRange(points, null),
   }
 }
@@ -40,6 +44,7 @@ export function restorePointSelection(
   snapshot = {
     points,
     pointIndex: normalizeIndex(points, pointIndex),
+    hoverIndex: null,
     indexRange: normalizeRange(points, indexRange),
   }
   emit()
@@ -54,12 +59,16 @@ export function getSelectedPoint(points: readonly TrackPoint[]): TrackPoint | nu
   return points[snapshot.pointIndex] ?? null
 }
 
+export function getHoveredPointIndex(points: readonly TrackPoint[]): number | null {
+  return snapshot.points === points ? snapshot.hoverIndex : null
+}
+
 export function getSelectedRange(points: readonly TrackPoint[]): SelectedIndexRange | null {
   return snapshot.points === points ? snapshot.indexRange : null
 }
 
 function setDataset(points: readonly TrackPoint[]): void {
-  snapshot = { points, pointIndex: null, indexRange: null }
+  snapshot = { points, pointIndex: null, hoverIndex: null, indexRange: null }
   emit()
 }
 
@@ -68,6 +77,14 @@ function selectPoint(points: readonly TrackPoint[], pointIndex: number | null): 
   const normalized = normalizeIndex(points, pointIndex)
   if (snapshot.pointIndex === normalized) return
   snapshot = { ...snapshot, pointIndex: normalized }
+  emit()
+}
+
+export function setHoveredPointIndex(points: readonly TrackPoint[], pointIndex: number | null): void {
+  ensureDataset(points)
+  const normalized = normalizeIndex(points, pointIndex)
+  if (snapshot.hoverIndex === normalized) return
+  snapshot = { ...snapshot, hoverIndex: normalized }
   emit()
 }
 
@@ -87,7 +104,7 @@ function clearSelection(points: readonly TrackPoint[]): void {
 }
 
 function ensureDataset(points: readonly TrackPoint[]): void {
-  if (snapshot.points !== points) snapshot = { points, pointIndex: null, indexRange: null }
+  if (snapshot.points !== points) snapshot = { points, pointIndex: null, hoverIndex: null, indexRange: null }
 }
 
 function normalizeIndex(points: readonly TrackPoint[], pointIndex: number | null): number | null {
