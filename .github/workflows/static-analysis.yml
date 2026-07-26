@@ -35,7 +35,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          semgrep scan --config auto --error --metrics=off 2>&1 | tee semgrep-report.txt
+          semgrep scan --config auto --error 2>&1 | tee semgrep-report.txt
 
       - name: Upload Semgrep report
         if: always()
