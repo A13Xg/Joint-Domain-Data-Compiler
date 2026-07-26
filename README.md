@@ -1,122 +1,164 @@
 # Joint Domain Data Compiler
 
-A local-first **TSPI flight-data workbench** for technical data engineers. Import a wide
-variety of time-space-position-information formats, **visualize, correct, and massage** the
-data, and export to any supported format — all offline, in the browser or as a desktop app.
+A local-first **TSPI flight-data engineering workbench** for importing, validating, visualizing, correcting, comparing, and exporting time-space-position-information data. It runs offline in the browser or as an Electron desktop application.
 
-> Conversion is built around a single normalized point model, so every input format can be
-> exported to every output format (an N-to-M conversion matrix), and the GPX writer is
-> validated against the official GPX 1.1 XSD for maximum downstream compatibility.
+> The application uses a normalized dataset model, semantic channel metadata, source provenance, and quality flags so supported input formats can flow through the same analysis and export pipeline.
 
-## Capabilities
+## Current capabilities
 
-### Import (auto-detected by extension)
+### Import
+
 | Format | Extensions | Notes |
 | --- | --- | --- |
-| CSV / TSV | `.csv .tsv .txt` | Header-aware, column-mapping UI with type inference. DMS + comma decimals. |
-| GPX | `.gpx` | Tracks, routes, waypoints (GPX 1.0/1.1), extension channels preserved. |
-| GeoJSON | `.geojson .json` | RFC 7946 LineString/Point/Multi*/Polygon; properties → channels. |
-| KML | `.kml` | `LineString`/`Point` coordinates and Google `gx:Track` with timestamps. |
-| NMEA 0183 | `.nmea .gps .log` | GGA/RMC/GLL decoding, checksum validation, sats/HDOP/speed/heading. |
-| GPB | `.gpb .bin` | Self-describing binary container for lossless high-rate round-trips. |
+| CSV / TSV | `.csv .tsv .txt` | Header-aware mapping, type inference, DMS and comma-decimal handling. |
+| GPX | `.gpx` | Tracks, routes, waypoints, extension-channel preservation. |
+| GeoJSON | `.geojson .json` | RFC 7946 features and property channels. |
+| KML | `.kml` | `LineString`, `Point`, and Google `gx:Track`. |
+| NMEA 0183 | `.nmea .gps .log` | GGA/RMC/GLL, checksum checks, satellite/HDOP/speed/heading fields. |
+| GPB | `.gpb .bin` | Self-describing binary container for lossless high-rate round trips. |
 
 ### Export
-- **GPX 1.1** — schema-valid, time-sorted, correct child ordering, `<bounds>`, namespaced extensions, optional UTF-8 BOM.
-- **CSV** — flat table including every derived/extension channel.
-- **GeoJSON** — RFC 7946 FeatureCollection (track + named waypoints).
-- **KML** — Google Earth track with timestamps and altitude.
-- **GPB** — lossless binary container.
 
-### Analyze & visualize
-- Overview dashboard: distance, duration, sample rate, speed, elevation gain/range, bounding box.
-- **Data-quality report**: coordinate validity, time monotonicity, duplicates, channel stats.
-- **Interactive map** (Leaflet) with path/points modes and gradient coloring by any channel.
-- **Multi-channel time-series charts** (elevation, speed, heading, custom…) with hover readout.
-- **Windowed data grid** (sortable, searchable) that stays smooth at hundreds of thousands of points.
+- GPX 1.1 with schema-valid ordering, bounds, deterministic UTC timestamps, namespaced extensions, and optional UTF-8 BOM.
+- CSV with normalized and derived channels.
+- GeoJSON FeatureCollection.
+- KML track output.
+- GPB binary output.
 
-### Correct & massage (stackable, with undo/redo)
-Sort by time · swap lat/lon · drop invalid · dedupe (distance tolerance) · decimate ·
-Douglas–Peucker simplify · moving-average smoothing (position/elevation) · derive
-distance/speed/heading · shift time · offset elevation · MAD-based elevation outlier rejection.
+### Analysis and visualization
 
-### Engineering ergonomics
-- Structured **logging console** (levels, filter, search, export) capturing every pipeline action.
-- Global **error boundary** and `window` error/rejection capture — nothing fails silently.
-- Spinners, progress bars, and animated feedback throughout.
+- Overview statistics and data-quality reporting.
+- Leaflet map with point/path modes and channel coloring.
+- Dense multi-channel charts with built-in altitude, speed, vertical-speed, heading, sample-timing, and altitude-distance presets.
+- Extrema-preserving chart downsampling with source-index retention.
+- Linked point selection across chart, map, and virtualized table.
+- Chart range brushing with selected-range duration, distance, and channel min/max/mean statistics.
+- Derived channels including distance, ground speed, vertical speed, heading, turn rate, acceleration, sample interval, and sample frequency.
+- Configurable stationary, climb, level, descent, gap, and unknown segmentation.
+- Local WGS84 → ECEF → ENU coordinate conversion and bounded 3D trajectory geometry preparation.
+- Nearest-time multi-track alignment and relative range/bearing/separation analytics.
 
-## Why the GPX output is more compatible
+### Data correction and massaging
 
-The original converter produced GPX that strict parsers (Garmin BaseCamp, `gpsbabel -x validate`,
-XSD loaders) rejected. This version fixes the root causes:
+All existing transforms use immutable point arrays and the UI maintains undo/redo history.
 
-1. **Schema-valid child ordering** — `<ele> → <time> → <name> → <cmt> → <desc> → … → <extensions>`
-   (the old output put `<desc>` before `<cmt>`, which is invalid).
-2. **Deterministic UTC timestamps** — explicit format parsing instead of engine-dependent `Date`.
-3. **Chronological sorting on export** (the preview used to sort but the export did not).
-4. **`<bounds>` metadata** so importers fit/zoom correctly.
-5. **Pretty-printed** output for naive line-based importers.
+- Sort by time.
+- Swap latitude and longitude.
+- Drop invalid coordinates.
+- Deduplicate and decimate.
+- Meter-based Douglas–Peucker simplification.
+- Antimeridian-safe moving-average smoothing.
+- Rolling-MAD elevation outlier rejection.
+- Time and elevation offsets.
+- Derived kinematics.
+- Fixed-rate resampling with linear or step interpolation and maximum-gap protection.
+- Selection-scoped execution for point-count-preserving transforms.
+- Versioned operation records, dataset fingerprints, recipe construction, and guarded replay.
 
-Correctness is enforced by an automated test that validates generated GPX against the bundled
-official **GPX 1.1 XSD** (`test/schemas/gpx.xsd`) via `xmllint`.
+### Compute and extensibility
 
-## Quick start (web)
+- Typed compute protocol with progress, cancellation, success, and failure messages.
+- Browser compute client and production Worker runtime.
+- Worker tasks for dense chart-series preparation and fixed-rate resampling.
+- Compile-time plugin contracts for parsers, exporters, operations, derivations, chart presets, and report sections.
+- Versioned `.jddc-project` manifest schema foundation.
+
+## Quick start
+
+Requires **Node.js 22 or newer**.
 
 ```bash
-npm install
-npm run dev      # http://localhost:5173
+npm ci
+npm run dev
 ```
 
-Requires **Node 22+** (Vite 8 / rolldown).
+The development server is normally available at `http://localhost:5173`.
 
-## Desktop (Electron)
+## Desktop application
 
 ```bash
-npm run dev:desktop          # Vite + Electron, live reload
-npm run build:desktop        # package for the current OS into release/
-npm run build:desktop:linux  # AppImage + .deb
-npm run build:desktop:win    # NSIS .exe (run on Windows or with wine)
+npm run dev:desktop
+npm run build:desktop
+npm run build:desktop:linux
+npm run build:desktop:win
 ```
 
-## Tests
+Windows packaging produces both:
+
+- `Joint Domain Data Compiler-<version>-Windows-x64-Setup.exe`
+- `Joint Domain Data Compiler-<version>-Windows-x64-Portable.exe`
+
+The portable build can run without installation, although Electron may still use the user's profile for cache and application data.
+
+## Validation
 
 ```bash
 npm run lint
-npm test     # conversion + GPX XSD validation (xmllint optional; skipped if absent)
+npm test
+npm run build
 ```
 
-## Releases (CI)
+`npm test` discovers and executes every TypeScript regression harness under `test/`. The suite currently covers conversion, GPX XSD validation, transforms, recipes, selection, analytics, segmentation, chart-series preparation, resampling, geodesy, relative analytics, project manifests, plugins, compute protocol/client/worker behavior, range statistics, and 3D trajectory geometry.
 
-`.github/workflows/release.yml` builds installers on Linux, Windows, and macOS for any pushed
-`v*` tag, runs lint + tests as a gate, and attaches artifacts (`.deb`, `.AppImage`, `.exe`,
-`.dmg`, `.zip`) to the GitHub Release.
+Pull-request CI performs:
+
+- deterministic `npm ci` installation;
+- ESLint validation;
+- the complete regression suite;
+- TypeScript and Vite production builds;
+- mandatory GPX 1.1 XSD validation on Linux;
+- CodeQL JavaScript/TypeScript security-and-quality analysis;
+- high-severity dependency-change review.
+
+## Releases
+
+`.github/workflows/release.yml` builds native Linux, Windows, and macOS artifacts for matching `v*` tags. It verifies that the tag matches `package.json`, generates platform SBOMs and SHA-256 manifests, and attaches validated artifacts to GitHub Releases.
+
+Manual workflow runs create downloadable Actions artifacts but do not publish a GitHub Release.
 
 ```bash
-git tag v0.2.0 && git push origin v0.2.0
+git tag v0.1.0
+git push origin v0.1.0
 ```
+
+Windows and macOS signing are not configured yet, so operating-system reputation warnings may appear.
+
+## Repository workflow
+
+- `main` is the validated integration source of truth.
+- `agent/roadmap-integration` is the sole active development branch.
+- Pull request [#25](https://github.com/A13Xg/Joint-Domain-Data-Compiler/pull/25) is the current integration PR.
+- Historical `agent/*` branches are superseded and should not receive new commits.
+
+See:
+
+- `docs/IMPLEMENTATION_ROADMAP.md`
+- `docs/BRANCH_STRATEGY.md`
 
 ## Architecture
 
-```
-src/core/            Format-agnostic engine (no React)
-  model.ts           Unified TrackPoint / Dataset model + geo helpers
-  format.ts          Robust number/coordinate/timestamp parsing
-  logger.ts          Structured pub/sub logger
-  stats.ts           Statistics & quality profiling
-  transforms.ts      Pure data-massaging operations
-  parsers/           csv, gpx, geojson, kml, nmea, gpb + registry
-  exporters/         gpx (XSD-valid), csv, geojson, kml + registry
-src/ui/              Presentational components (map, charts, table, panels, logs)
-src/workers/         CSV analyzer Web Worker (off-main-thread profiling)
-src/App.tsx          Tabbed workspace orchestrator
-electron/            Desktop shell
-test/validate.ts     Conversion correctness + XSD validation harness
+```text
+src/core/            Normalized model, parsers, exporters, transforms, analytics,
+                     recipes, plugins, geodesy, and comparison logic
+src/compute/         Compute protocol, client, task host, Worker runtime, and tasks
+src/state/           Shared point/range selection state
+src/visualization/   Dense chart-series and local 3D geometry preparation
+src/persistence/     Project-manifest schema and validation
+src/ui/              Map, charts, table, transform, export, statistics, and logs
+src/workers/         Worker entrypoints
+src/App.tsx          Workspace orchestration
+electron/            Hardened desktop shell
+test/                Regression harnesses and GPX schema
+scripts/             Cross-platform test orchestration
+docs/                Roadmap and branch strategy
 ```
 
 ## Extending
 
-- **New input format**: add a parser under `src/core/parsers/`, register it in
-  `parsers/index.ts` (`INPUT_FORMATS`), returning a `ParseResult`.
-- **New export format**: add a writer under `src/core/exporters/` and register it in
-  `EXPORTERS`.
-- **New transform**: add a pure function to `src/core/transforms.ts` and an `Op` card in
-  `src/ui/TransformPanel.tsx`.
+- Add input formats through parser contracts and registration.
+- Add output formats through exporter contracts and registration.
+- Add deterministic transforms through operation definitions and recipe records.
+- Add derived channels through the derivation registry.
+- Add chart presets and report sections through compile-time plugin contracts.
+
+New functionality should include fixtures, malformed-input coverage, explicit units and null behavior, and a focused regression harness included in the consolidated `npm test` run.
