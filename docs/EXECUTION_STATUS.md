@@ -30,11 +30,11 @@
 
 ## Current verified increment
 
-- Highlight chart-selected index ranges on the map, including fit-to-range controls.
+- Highlight chart-selected index ranges on the map and provide fit-to-range controls.
 - Highlight and optionally isolate selected ranges in the virtualized table.
 - Replace the basic SVG 3D preview with an interactive perspective/orthographic trajectory workspace.
 - Add 3D orbit, pan, zoom, playback, follow mode, point picking, channel coloring, grid, curtain, selection and range synchronization.
-- Remove branch protection from the merge and release requirements.
+- Remove branch protection from implementation, merge and release requirements.
 
 ## Merge discipline
 
