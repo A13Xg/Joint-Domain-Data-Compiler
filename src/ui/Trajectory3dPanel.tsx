@@ -84,11 +84,12 @@ export function Trajectory3dPanel({ dataset }: { dataset: Dataset }) {
       context.fillStyle = background
       context.fillRect(0, 0, width, height)
 
-      const projected = projectVertices(geometry.vertices, camera, projection, width, height)
+      const renderCamera = followPlayback ? playbackFollowCamera(camera, geometry.vertices, playbackFraction) : camera
+      const projected = projectVertices(geometry.vertices, renderCamera, projection, width, height)
       projectedRef.current = projected
       if (projected.length === 0) return
 
-      if (showGrid) drawGrid(context, camera, projection, geometry.vertices, width, height)
+      if (showGrid) drawGrid(context, renderCamera, projection, geometry.vertices, width, height)
       if (showCurtain) drawCurtain(context, projected, height)
 
       context.lineJoin = 'round'
@@ -145,16 +146,7 @@ export function Trajectory3dPanel({ dataset }: { dataset: Dataset }) {
     const observer = new ResizeObserver(draw)
     observer.observe(canvas)
     return () => observer.disconnect()
-  }, [geometry, camera, projection, showGrid, showCurtain, showPoints, colorChannelId, indexRange, pointIndex, playbackFraction])
-
-  useEffect(() => {
-    if (!followPlayback || geometry.vertices.length === 0) return
-    const index = Math.min(geometry.vertices.length - 1, Math.round(playbackFraction * (geometry.vertices.length - 1)))
-    const vertex = geometry.vertices[index]
-    if (!vertex) return
-    const scale = Math.max(trajectorySpan(geometry.vertices), 1)
-    setCamera((current) => ({ ...current, panX: -(vertex.eastM / scale) * 180, panY: (vertex.upM / scale) * 120 }))
-  }, [followPlayback, playbackFraction, geometry.vertices])
+  }, [geometry, camera, projection, showGrid, showCurtain, showPoints, colorChannelId, indexRange, pointIndex, playbackFraction, followPlayback])
 
   const pointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -328,6 +320,15 @@ function trajectoryCenter(vertices: readonly Trajectory3dVertex[]) { const b = b
 function trajectorySpan(vertices: readonly Trajectory3dVertex[]) { const b = bounds(vertices); return Math.max(b.maxE - b.minE, b.maxN - b.minN, b.maxU - b.minU) }
 function bounds(vertices: readonly Trajectory3dVertex[]) { let minE=Infinity,maxE=-Infinity,minN=Infinity,maxN=-Infinity,minU=Infinity,maxU=-Infinity; for(const v of vertices){minE=Math.min(minE,v.eastM);maxE=Math.max(maxE,v.eastM);minN=Math.min(minN,v.northM);maxN=Math.max(maxN,v.northM);minU=Math.min(minU,v.upM);maxU=Math.max(maxU,v.upM)} return {minE,maxE,minN,maxN,minU,maxU} }
 function nearestProjected(vertices: readonly ScreenVertex[], sourceIndex: number): ScreenVertex | null { let best: ScreenVertex | null = null; for (const vertex of vertices) if (!best || Math.abs(vertex.sourceIndex-sourceIndex)<Math.abs(best.sourceIndex-sourceIndex)) best=vertex; return best }
+function playbackFollowCamera(camera: CameraState, vertices: readonly Trajectory3dVertex[], fraction: number): CameraState {
+  if (vertices.length === 0) return camera
+  const center = trajectoryCenter(vertices)
+  const span = Math.max(trajectorySpan(vertices), 1)
+  const index = Math.min(vertices.length - 1, Math.round(fraction * (vertices.length - 1)))
+  const vertex = vertices[index]
+  if (!vertex) return camera
+  return { ...camera, panX: camera.panX - ((vertex.eastM - center.eastM) / span) * 180, panY: camera.panY + ((vertex.upM - center.upM) / span) * 120 }
+}
 function Metric({ label, value }: { label: string; value: string }) { return <div className="metric-card"><span className="metric-label">{label}</span><strong className="mono">{value}</strong></div> }
 function format(value: number): string { return Math.abs(value) >= 1000 ? value.toFixed(0) : value.toFixed(1) }
 function clamp(value: number, min: number, max: number): number { return Math.max(min, Math.min(max, value)) }
