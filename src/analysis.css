@@ -8,8 +8,11 @@
 .compact-table table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 11px; }
 .compact-table th, .compact-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
 .compact-table th { position: sticky; top: 0; background: var(--bg-2); z-index: 1; }
-.trajectory-svg { width: 100%; min-height: 420px; max-height: 62vh; border: 1px solid var(--border); border-radius: var(--radius); cursor: crosshair; }
-.trajectory-bg { fill: #080d15; }
-.trajectory-grid { stroke: #263247; stroke-width: 1; }
-.trajectory-path { fill: none; stroke: var(--accent); stroke-width: 2.2; vector-effect: non-scaling-stroke; }
-.trajectory-selected { fill: none; stroke: #fff; stroke-width: 2; }
+.trajectory-three-canvas { width: 100%; min-height: 560px; height: min(68vh, 760px); display: block; border: 1px solid var(--border); border-radius: var(--radius); background: #070b12; cursor: grab; touch-action: none; }
+.trajectory-three-canvas:active { cursor: grabbing; }
+.trajectory-playback { display: grid; grid-template-columns: auto auto minmax(180px, 1fr) auto auto auto; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-1); }
+.trajectory-playback input[type='range'] { width: 100%; }
+.chip-range { border-color: #eab308; color: #fde047; background: rgba(234, 179, 8, 0.12); }
+.grid-row.in-range { background: rgba(234, 179, 8, 0.09); box-shadow: inset 3px 0 #eab308; }
+.grid-row.selected { background: rgba(234, 79, 47, 0.2); box-shadow: inset 3px 0 #ea4f2f; }
+@media (max-width: 900px) { .trajectory-playback { grid-template-columns: auto auto 1fr; } }
