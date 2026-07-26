@@ -1,0 +1,15 @@
+.analysis-panel { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.analysis-toolbar { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-1); }
+.analysis-toolbar .num-field select { min-width: 180px; max-width: 320px; }
+.analysis-toolbar .num-field input[type='range'] { width: 150px; }
+.analysis-summary { padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-1); line-height: 1.6; }
+.panel-empty { padding: 28px; border: 1px dashed var(--border-bright); border-radius: var(--radius); color: var(--text-dim); text-align: center; }
+.compact-table { max-height: 430px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+.compact-table table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 11px; }
+.compact-table th, .compact-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
+.compact-table th { position: sticky; top: 0; background: var(--bg-2); z-index: 1; }
+.trajectory-svg { width: 100%; min-height: 420px; max-height: 62vh; border: 1px solid var(--border); border-radius: var(--radius); cursor: crosshair; }
+.trajectory-bg { fill: #080d15; }
+.trajectory-grid { stroke: #263247; stroke-width: 1; }
+.trajectory-path { fill: none; stroke: var(--accent); stroke-width: 2.2; vector-effect: non-scaling-stroke; }
+.trajectory-selected { fill: none; stroke: #fff; stroke-width: 2; }
