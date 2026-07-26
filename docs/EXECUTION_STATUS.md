@@ -12,7 +12,7 @@ JDDC is a functional local-first trajectory/TSPI workbench with a strong determi
 
 | Stage | Status | Current boundary |
 |---|---|---|
-| 0 — Correctness and workspace state | ACTIVE | Known ID, metadata, project-state, cancellation and documentation issues must be resolved. |
+| 0 — Correctness and workspace state | ACTIVE | Public truth correction is complete; known ID, metadata, project-state and cancellation issues remain. |
 | 1 — Ingestion and model integrity | FUNCTIONAL | Six import families are usable; full parser fixture matrix, limits, checksums and progressive import remain. |
 | 2 — Shared selection | COMPLETE | Point/cursor/index/time/segment selection and linked chart/map/table/3D behavior are delivered and audited. |
 | 3 — Analytics and segmentation | FUNCTIONAL + FOUNDATION | Basic derivation and default segment UI are wired; full versioned kinematics is tested but not wired. |
