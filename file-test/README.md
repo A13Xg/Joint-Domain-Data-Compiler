@@ -15,10 +15,9 @@ This folder contains manual-import and smoke-test fixtures for every currently s
 - `csv/`: mapping, units, DMS coordinates, channels, gaps, and malformed-row behavior.
 - `gpx/`: tracks, routes, waypoints, extensions, and multiple segments.
 - `geojson/`: LineString, MultiLineString, and point features.
-- `kml/`: LineString and `gx:Track`.
+- `kml/`: LineString, points, and `gx:Track`.
 - `nmea/`: RMC/GGA/GLL receiver logs.
 - `gpb/`: valid compact binary track.
-- `project/`: uncompressed complete-project archive fixture.
 
 ## Negative samples
 
