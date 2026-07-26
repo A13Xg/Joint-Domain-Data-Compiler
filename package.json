@@ -18,7 +18,8 @@
     "build:desktop": "npm run build && electron-builder --publish never",
     "build:desktop:linux": "npm run build && electron-builder --linux AppImage deb --publish never",
     "build:desktop:win": "npm run build && electron-builder --win nsis portable --x64 --publish never",
-    "test": "esbuild test/validate.ts --bundle --platform=node --format=esm --outfile=.test-build/validate.mjs && node .test-build/validate.mjs",
+    "test": "node scripts/run-tests.mjs",
+    "test:legacy": "esbuild test/validate.ts --bundle --platform=node --format=esm --outfile=.test-build/validate.mjs && node .test-build/validate.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },
