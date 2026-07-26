@@ -17,6 +17,13 @@ export type ElevationUnit = 'meters' | 'feet'
 
 const EXCEL_EPOCH_OFFSET_DAYS = 25569 // days between 1899-12-30 and 1970-01-01
 const MS_PER_DAY = 86_400_000
+const XML_ENTITIES: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&apos;',
+}
 
 /**
  * Parse a possibly messy numeric string. Handles thousands separators and the
@@ -57,7 +64,7 @@ export function parseCoordinate(raw: string | number | undefined | null): number
   // Pure decimal degrees fast path.
   const direct = parseNumber(value)
   const dmsMatch = value.match(
-    /^\s*([NSEW])?\s*(-?\d+(?:[.,]\d+)?)[°:\s]+(?:(\d+(?:[.,]\d+)?)['’:\s]*)?(?:(\d+(?:[.,]\d+)?)["”]?\s*)?([NSEW])?\s*$/i,
+    /^\s*([NSEW])?\s*(-?\d+(?:[.,]\d+)?)[°:\s]+(?:(\d+(?:[.,]\d+)?)['’:\s]*)?(?:(\d+(?:[.,]\d+)?)\["”]?\s*)?([NSEW])?\s*$/i,
   )
 
   // Only treat as DMS if there is a hemisphere letter or multiple components.
@@ -163,12 +170,7 @@ export function epochMsToIso(ms: number | undefined): string {
 
 /** XML-escape text for safe inclusion in element bodies and attributes. */
 export function escapeXml(input: string): string {
-  return input
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&apos;')
+  return input.replace(/[&<>"']/g, (character) => XML_ENTITIES[character] ?? character)
 }
 
 /** Trim trailing zeros from a fixed-precision number to keep files compact. */
