@@ -32,6 +32,23 @@ export function usePointSelection(points: readonly TrackPoint[]) {
   }
 }
 
+export function restorePointSelection(
+  points: readonly TrackPoint[],
+  pointIndex: number | null,
+  indexRange: SelectedIndexRange | null,
+): void {
+  snapshot = {
+    points,
+    pointIndex: normalizeIndex(points, pointIndex),
+    indexRange: normalizeRange(points, indexRange),
+  }
+  emit()
+}
+
+export function getSelectedPointIndex(points: readonly TrackPoint[]): number | null {
+  return snapshot.points === points ? snapshot.pointIndex : null
+}
+
 export function getSelectedPoint(points: readonly TrackPoint[]): TrackPoint | null {
   if (snapshot.points !== points || snapshot.pointIndex === null) return null
   return points[snapshot.pointIndex] ?? null
