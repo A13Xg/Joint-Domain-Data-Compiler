@@ -13,6 +13,7 @@ export function Trajectory3dPanel({ dataset }: { dataset: Dataset }) {
   const geometry = useMemo(() => buildTrajectory3dGeometry(dataset.points, { altitudeExaggeration, maxPoints: 8000, colorChannelId: colorChannelId || undefined }), [dataset.points, altitudeExaggeration, colorChannelId])
   const projected = useMemo(() => projectVertices(geometry.vertices, yawDeg, pitchDeg, 920, 520), [geometry.vertices, yawDeg, pitchDeg])
   const selected = pointIndex === null ? null : projected.find((vertex) => vertex.sourceIndex === pointIndex) ?? null
+  const colorRange = geometry.colorRange
 
   return (
     <div className="analysis-panel trajectory-panel">
@@ -36,7 +37,7 @@ export function Trajectory3dPanel({ dataset }: { dataset: Dataset }) {
         <line x1="50" y1="470" x2="870" y2="470" className="trajectory-grid" />
         <line x1="70" y1="60" x2="70" y2="470" className="trajectory-grid" />
         {projected.length > 1 && <path d={projected.map((vertex, index) => `${index === 0 ? 'M' : 'L'}${vertex.x.toFixed(1)},${vertex.y.toFixed(1)}`).join(' ')} className="trajectory-path" />}
-        {colorChannelId && geometry.colorRange && projected.map((vertex) => vertex.colorValue === undefined ? null : <circle key={vertex.sourceIndex} cx={vertex.x} cy={vertex.y} r="2.2" fill={gradient(vertex.colorValue, geometry.colorRange.min, geometry.colorRange.max)} />)}
+        {colorChannelId && colorRange && projected.map((vertex) => vertex.colorValue === undefined ? null : <circle key={vertex.sourceIndex} cx={vertex.x} cy={vertex.y} r="2.2" fill={gradient(vertex.colorValue, colorRange.min, colorRange.max)} />)}
         {selected && <circle cx={selected.x} cy={selected.y} r="7" className="trajectory-selected" />}
         <text x="80" y="78" className="chart-axis-label">UP</text><text x="700" y="495" className="chart-axis-label">LOCAL ENU PROJECTION</text>
       </svg>
