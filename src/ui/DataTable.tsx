@@ -22,7 +22,7 @@ export function DataTable({ points, channels }: { points: TrackPoint[]; channels
   const [rangeOnly, setRangeOnly] = useState(false)
   const viewportRef = useRef<HTMLDivElement>(null)
   const viewportHeight = 460
-  const { pointIndex, indexRange, selectPoint, clearSelection, clearRange } = usePointSelection(points)
+  const { pointIndex, hoverIndex, indexRange, selectPoint, setHoverIndex, clearSelection, clearRange, clearHover } = usePointSelection(points)
   const activeRangeOnly = rangeOnly && indexRange !== null
 
   const columns = useMemo<Column[]>(() => {
@@ -64,9 +64,10 @@ export function DataTable({ points, channels }: { points: TrackPoint[]; channels
   }, [filtered, sortKey, sortDir, columns])
 
   useEffect(() => {
-    if (pointIndex === null || sortKey || query || activeRangeOnly) return
-    viewportRef.current?.scrollTo({ top: Math.max(0, pointIndex * ROW_HEIGHT - viewportHeight / 2), behavior: 'smooth' })
-  }, [pointIndex, sortKey, query, activeRangeOnly])
+    const targetIndex = pointIndex ?? hoverIndex
+    if (targetIndex === null || sortKey || query || activeRangeOnly) return
+    viewportRef.current?.scrollTo({ top: Math.max(0, targetIndex * ROW_HEIGHT - viewportHeight / 2), behavior: pointIndex !== null ? 'smooth' : 'auto' })
+  }, [pointIndex, hoverIndex, sortKey, query, activeRangeOnly])
 
   const total = sorted.length
   const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
@@ -97,9 +98,10 @@ export function DataTable({ points, channels }: { points: TrackPoint[]; channels
         <div style={{ height: total * ROW_HEIGHT, position: 'relative' }}>
           {slice.map(({ point, index }, offset) => {
             const selected = pointIndex === index
+            const hovered = hoverIndex === index
             const inRange = indexRange !== null && index >= indexRange.start && index <= indexRange.end
             return (
-              <div key={index} className={`grid-row${selected ? ' selected' : ''}${inRange ? ' in-range' : ''}`} onClick={() => selectPoint(selected ? null : index)} style={{ position: 'absolute', top: (startIndex + offset) * ROW_HEIGHT, height: ROW_HEIGHT, gridTemplateColumns: `60px repeat(${columns.length}, minmax(110px, 1fr))`, cursor: 'pointer' }}>
+              <div key={index} className={`grid-row${selected ? ' selected' : ''}${hovered ? ' hovered' : ''}${inRange ? ' in-range' : ''}`} onMouseEnter={() => setHoverIndex(index)} onMouseLeave={clearHover} onClick={() => selectPoint(selected ? null : index)} style={{ position: 'absolute', top: (startIndex + offset) * ROW_HEIGHT, height: ROW_HEIGHT, gridTemplateColumns: `60px repeat(${columns.length}, minmax(110px, 1fr))`, cursor: 'pointer' }}>
                 <div className="grid-cell grid-idx">{index}</div>
                 {columns.map((column) => <div key={column.key} className="grid-cell" title={fmtCell(column.get(point))}>{fmtCell(column.get(point))}</div>)}
               </div>
