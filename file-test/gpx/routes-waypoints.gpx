@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="JDDC file-test" xmlns="http://www.topografix.com/GPX/1/1">
+  <wpt lat="34.600000" lon="-117.800000"><ele>820</ele><name>Range Start</name><desc>Waypoint fixture</desc></wpt>
+  <wpt lat="34.610000" lon="-117.784000"><ele>1075</ele><name>Range End</name></wpt>
+  <rte><name>Route Fixture</name>
+    <rtept lat="34.600000" lon="-117.800000"><ele>820</ele><name>R1</name></rtept>
+    <rtept lat="34.605000" lon="-117.792000"><ele>930</ele><name>R2</name></rtept>
+    <rtept lat="34.610000" lon="-117.784000"><ele>1075</ele><name>R3</name></rtept>
+  </rte>
+</gpx>

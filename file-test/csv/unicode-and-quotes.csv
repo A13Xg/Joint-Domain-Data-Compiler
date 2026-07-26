@@ -1,0 +1,4 @@
+latitude,longitude,elevation_m,timestamp,unicode_label,notes
+34.6000,-117.8000,820,2026-07-26T12:00:00Z,"Café α","Quoted, comma"
+34.6010,-117.7985,845,2026-07-26T12:00:01Z,"測試 β","Line with emoji ✈"
+34.6025,-117.7960,880,2026-07-26T12:00:02Z,"اختبار γ","Ampersand & XML <tag>"

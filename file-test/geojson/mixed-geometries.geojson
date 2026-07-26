@@ -1,0 +1,8 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {"type":"Feature","properties":{"name":"valid"},"geometry":{"type":"Point","coordinates":[-117.8,34.6,820]}},
+    {"type":"Feature","properties":{"name":"null-geometry"},"geometry":null},
+    {"type":"Feature","properties":{"name":"unsupported-polygon"},"geometry":{"type":"Polygon","coordinates":[[[-117.8,34.6],[-117.7,34.6],[-117.7,34.7],[-117.8,34.6]]]}}
+  ]
+}

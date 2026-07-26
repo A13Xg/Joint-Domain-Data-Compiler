@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="JDDC file-test" xmlns="http://www.topografix.com/GPX/1/1" xmlns:jddc="https://example.invalid/jddc">
+  <metadata><name>Extension Track</name></metadata>
+  <trk><name>Flight Alpha</name><trkseg>
+    <trkpt lat="34.600000" lon="-117.800000"><ele>820</ele><time>2026-07-26T12:00:00Z</time><extensions><jddc:speed_mps>120</jddc:speed_mps><jddc:quality>1</jddc:quality></extensions></trkpt>
+    <trkpt lat="34.601000" lon="-117.798500"><ele>845</ele><time>2026-07-26T12:00:01Z</time><extensions><jddc:speed_mps>125</jddc:speed_mps><jddc:quality>0.98</jddc:quality></extensions></trkpt>
+    <trkpt lat="34.602500" lon="-117.796000"><ele>880</ele><time>2026-07-26T12:00:02Z</time><extensions><jddc:speed_mps>130</jddc:speed_mps><jddc:quality>0.95</jddc:quality></extensions></trkpt>
+  </trkseg></trk>
+</gpx>
