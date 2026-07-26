@@ -108,7 +108,7 @@ Pull-request CI performs:
 - TypeScript and Vite production builds;
 - mandatory GPX 1.1 XSD validation on Linux;
 - CodeQL JavaScript/TypeScript security-and-quality analysis;
-- high-severity dependency-change review.
+- runtime dependency auditing and supply-chain/SBOM checks through the security workflow.
 
 ## Releases
 
