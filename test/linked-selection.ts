@@ -3,15 +3,14 @@ import {
   getHoveredPointIndex,
   getSelectedPointIndex,
   getSelectedRange,
+  getSelectedTimeRange,
+  handleSelectionKeyboard,
   restorePointSelection,
   setHoveredPointIndex,
 } from '../src/state/pointSelection.ts'
 
 let failures = 0
-function check(name: string, condition: boolean): void {
-  if (!condition) failures++
-  console.log(`  [${condition ? 'PASS' : 'FAIL'}] ${name}`)
-}
+function check(name: string, condition: boolean): void { if (!condition) failures++; console.log(`  [${condition ? 'PASS' : 'FAIL'}] ${name}`) }
 
 const points: TrackPoint[] = [
   { lat: 34, lon: -117, time: 1000 },
@@ -25,11 +24,20 @@ setHoveredPointIndex(points, 2)
 check('Cursor is shared through the dataset-scoped store', getHoveredPointIndex(points) === 2)
 check('Cursor does not replace selected point', getSelectedPointIndex(points) === 1)
 check('Cursor does not replace selected range', getSelectedRange(points)?.end === 2)
+check('Index range derives synchronized time range', getSelectedTimeRange(points)?.startMs === 1000 && getSelectedTimeRange(points)?.endMs === 3000)
 
 setHoveredPointIndex(points, 99)
 check('Out-of-bounds cursor is normalized to null', getHoveredPointIndex(points) === null)
-setHoveredPointIndex(points, 0)
-check('Cursor can move independently after normalization', getHoveredPointIndex(points) === 0)
+handleSelectionKeyboard(points, 'Home')
+check('Home moves cursor to first point', getHoveredPointIndex(points) === 0)
+handleSelectionKeyboard(points, 'ArrowRight', true)
+check('Shift+Arrow extends a normalized range', getSelectedRange(points)?.start === 0 && getSelectedRange(points)?.end === 1)
+handleSelectionKeyboard(points, 'Enter')
+check('Enter persists the cursor point', getSelectedPointIndex(points) === 1)
+handleSelectionKeyboard(points, 'End')
+check('End moves cursor to final point', getHoveredPointIndex(points) === 2)
+handleSelectionKeyboard(points, 'Escape')
+check('Escape clears point, cursor, and range', getHoveredPointIndex(points) === null && getSelectedPointIndex(points) === null && getSelectedRange(points) === null)
 
 setHoveredPointIndex(other, 0)
 check('Switching datasets isolates cursor state', getHoveredPointIndex(points) === null && getHoveredPointIndex(other) === 0)
