@@ -1,24 +1,19 @@
-# JDDC File Test Corpus
+# JDDC Real-Data Test Corpus
 
-This folder contains manual-import and smoke-test fixtures for every currently supported input family.
+These fixtures replace the earlier synthetic corpus. They are derived from the official USGS Magnitude 4.5+ weekly earthquake feed retrieved on 2026-07-26.
 
-## Quick smoke sequence
+Source documentation: https://earthquake.usgs.gov/earthquakes/feed/v1.0/
+Original feed: https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.geojson
 
-1. Load `comparison/reference-track.csv` and map `latitude`, `longitude`, `elevation_m`, and `timestamp`.
-2. Load `comparison/target-track.csv` with the same mapping.
-3. Open **Compare**, **3D**, **Transform**, and **Project**.
-4. Run fixed-rate resampling at 2 Hz.
-5. Save a complete project, reload the app, and reopen it.
+The source is authoritative public scientific data with no credentials, executable content, personal tracking records, or archive payloads.
 
-## Valid samples
+## Smoke test
 
-- `csv/`: mapping, units, DMS coordinates, channels, gaps, and malformed-row behavior.
-- `gpx/`: tracks, routes, waypoints, extensions, and multiple segments.
-- `geojson/`: LineString, MultiLineString, and point features.
-- `kml/`: LineString, points, and `gx:Track`.
-- `nmea/`: RMC/GGA/GLL receiver logs.
-- `gpb/`: valid compact binary track.
+1. Import `real-usgs.csv` and map `latitude`, `longitude`, `depth_km`, and `time`.
+2. Import `comparison-a.csv` and `comparison-b.csv`, then open Compare.
+3. Import `real-usgs.geojson` and `real-usgs.gpx`.
+4. Run fixed-rate resampling.
+5. Save and reopen a complete project.
+6. Confirm `invalid/malformed-usgs.csv` fails safely.
 
-## Negative samples
-
-Files under `invalid/` are intentionally malformed or unsupported. They should fail safely or produce clear warnings without crashing the application.
+Earthquake depth is positive downward. The GPX file converts depth to negative meters only to populate an altitude-oriented field. These are ingestion fixtures, not flight trajectories.
