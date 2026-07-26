@@ -1,122 +1,162 @@
 # Joint Domain Data Compiler
 
-A local-first **TSPI flight-data workbench** for technical data engineers. Import a wide
-variety of time-space-position-information formats, **visualize, correct, and massage** the
-data, and export to any supported format — all offline, in the browser or as a desktop app.
+A **single-user trajectory and TSPI engineering workbench** for importing, normalizing, inspecting, transforming, comparing, visualizing, saving and exporting time-space-position-information data.
 
-> Conversion is built around a single normalized point model, so every input format can be
-> exported to every output format (an N-to-M conversion matrix), and the GPX writer is
-> validated against the official GPX 1.1 XSD for maximum downstream compatibility.
+JDDC runs as a browser application and an Electron desktop application. Data parsing and processing are local and do not require a cloud service. The default OpenStreetMap basemap does require network access; the local dataset workflows continue to work without it.
 
-## Capabilities
+## Current product state
 
-### Import (auto-detected by extension)
-| Format | Extensions | Notes |
-| --- | --- | --- |
-| CSV / TSV | `.csv .tsv .txt` | Header-aware, column-mapping UI with type inference. DMS + comma decimals. |
-| GPX | `.gpx` | Tracks, routes, waypoints (GPX 1.0/1.1), extension channels preserved. |
-| GeoJSON | `.geojson .json` | RFC 7946 LineString/Point/Multi*/Polygon; properties → channels. |
-| KML | `.kml` | `LineString`/`Point` coordinates and Google `gx:Track` with timestamps. |
-| NMEA 0183 | `.nmea .gps .log` | GGA/RMC/GLL decoding, checksum validation, sats/HDOP/speed/heading. |
-| GPB | `.gpb .bin` | Self-describing binary container for lossless high-rate round-trips. |
+JDDC is a functional engineering workbench with a strong deterministic core. It is not yet production-complete. The canonical current-state review and revised roadmap are:
 
-### Export
-- **GPX 1.1** — schema-valid, time-sorted, correct child ordering, `<bounds>`, namespaced extensions, optional UTF-8 BOM.
-- **CSV** — flat table including every derived/extension channel.
-- **GeoJSON** — RFC 7946 FeatureCollection (track + named waypoints).
-- **KML** — Google Earth track with timestamps and altitude.
-- **GPB** — lossless binary container.
+- `docs/PROJECT_REVIEW_2026-07-26.md`
+- `docs/IMPLEMENTATION_ROADMAP.md`
+- `docs/EXECUTION_STATUS.md`
 
-### Analyze & visualize
-- Overview dashboard: distance, duration, sample rate, speed, elevation gain/range, bounding box.
-- **Data-quality report**: coordinate validity, time monotonicity, duplicates, channel stats.
-- **Interactive map** (Leaflet) with path/points modes and gradient coloring by any channel.
-- **Multi-channel time-series charts** (elevation, speed, heading, custom…) with hover readout.
-- **Windowed data grid** (sortable, searchable) that stays smooth at hundreds of thousands of points.
+## Import
 
-### Correct & massage (stackable, with undo/redo)
-Sort by time · swap lat/lon · drop invalid · dedupe (distance tolerance) · decimate ·
-Douglas–Peucker simplify · moving-average smoothing (position/elevation) · derive
-distance/speed/heading · shift time · offset elevation · MAD-based elevation outlier rejection.
+| Format | Extensions | Current behavior |
+|---|---|---|
+| CSV / TSV | `.csv .tsv .txt` | Header analysis, field mapping, type inference, DMS coordinates, decimal-comma handling and multiple timestamp forms. |
+| GPX | `.gpx` | Tracks, routes, waypoints and extension-leaf channels. |
+| GeoJSON | `.geojson .json` | Points, LineStrings, MultiLineStrings and supported geometry collections. |
+| KML | `.kml` | Points, LineStrings and Google `gx:Track`. |
+| NMEA 0183 | `.nmea .gps .log` | GGA, RMC and GLL with checksum handling. |
+| GPB | `.gpb .bin` | Compact JDDC numeric binary transport. GPB is not a complete lossless workspace format. |
 
-### Engineering ergonomics
-- Structured **logging console** (levels, filter, search, export) capturing every pipeline action.
-- Global **error boundary** and `window` error/rejection capture — nothing fails silently.
-- Spinners, progress bars, and animated feedback throughout.
+All supported inputs normalize into a shared dataset model with source metadata, channel definitions, provenance fields, warnings and quality flags.
 
-## Why the GPX output is more compatible
+## Analysis and linked inspection
 
-The original converter produced GPX that strict parsers (Garmin BaseCamp, `gpsbabel -x validate`,
-XSD loaders) rejected. This version fixes the root causes:
+- Overview statistics and basic data-quality checks.
+- A basic UI derivation operation for cumulative distance, speed and heading.
+- A tested versioned standard-kinematics engine for additional channels; full UI integration remains roadmap work.
+- Default flight/data-state segmentation with linked segment selection.
+- Dataset-scoped persistent point selection.
+- Synchronized transient data cursor across chart, map, table and 3D.
+- Index-range, time-range and segment selection.
+- Selection-scoped statistics and supported transforms.
+- Keyboard navigation for selection and cursor movement.
 
-1. **Schema-valid child ordering** — `<ele> → <time> → <name> → <cmt> → <desc> → … → <extensions>`
-   (the old output put `<desc>` before `<cmt>`, which is invalid).
-2. **Deterministic UTC timestamps** — explicit format parsing instead of engine-dependent `Date`.
-3. **Chronological sorting on export** (the preview used to sort but the export did not).
-4. **`<bounds>` metadata** so importers fit/zoom correctly.
-5. **Pretty-printed** output for naive line-based importers.
+## Visualization
 
-Correctness is enforced by an automated test that validates generated GPX against the bundled
-official **GPX 1.1 XSD** (`test/schemas/gpx.xsd`) via `xmllint`.
+### Charts
 
-## Quick start (web)
+- One multi-channel SVG time-series surface.
+- Time, source-index and cumulative-distance axes.
+- Built-in presets and extrema-preserving source-index-aware downsampling.
+- Linked cursor, point selection, range brushing and selected-range statistics.
+
+Multi-pane layouts, explicit per-series scales, zoom/pan, statistical plots and image export remain roadmap work.
+
+### Map
+
+- Leaflet path and bounded point rendering.
+- Channel-based coloring, linked cursor/selection/range emphasis and fit-to-range.
+- Default OpenStreetMap tiles are online; an offline/no-basemap mode remains roadmap work.
+
+### 3D
+
+- Local ENU trajectory geometry rendered through a custom Canvas perspective/orthographic viewer.
+- Orbit, pan, zoom, reset, fit, point picking, channel coloring, altitude exaggeration, ground grid, vertical curtain and linked cursor/selection/ranges.
+- Fraction-based playback and speed controls.
+
+Timestamp-accurate playback, follow/chase behavior, multi-track rendering, persisted camera state and performance validation remain roadmap work.
+
+### Comparison
+
+- Two-dataset reference/target comparison.
+- Nearest-time alignment with tolerance and manual target time offset.
+- Local-ENU relative position, horizontal/slant range, bearing, vertical separation, closure rate and closest approach.
+
+Interpolation, time-reference reconciliation, drift estimation, multi-track visualization and reports remain roadmap work.
+
+## Transforms
+
+- Sort by time.
+- Swap coordinates.
+- Remove invalid or duplicate points.
+- Decimate and simplify.
+- Moving-average smoothing.
+- Shift timestamps and elevation.
+- Remove local elevation outliers.
+- Fixed-rate linear or step resampling with gap protection in a Worker.
+- Selection-scoped safe transforms.
+- Undo and redo using dataset snapshots.
+
+Transform previews, durable operation records, recipe UI, advanced filters and memory-efficient history remain roadmap work.
+
+## Projects
+
+JDDC can save and reopen a self-contained gzip `.jddc-project` v1 archive containing:
+
+- embedded datasets;
+- dataset fingerprints;
+- undo/redo dataset snapshots;
+- active dataset;
+- basic tab and point/index-range selection fields.
+
+The current archive is not yet complete workspace persistence. Chart layouts, map controls, 3D camera state, comparison settings, operation recipes, schema migrations, compact history and reports remain roadmap work.
+
+## Export
+
+- GPX 1.1 with schema validation.
+- CSV.
+- GeoJSON.
+- KML.
+- GPB compact numeric binary.
+
+Project archives currently provide higher-fidelity JDDC persistence than the individual interchange formats.
+
+## Development
 
 ```bash
-npm install
-npm run dev      # http://localhost:5173
+npm ci
+npm run dev
 ```
 
-Requires **Node 22+** (Vite 8 / rolldown).
-
-## Desktop (Electron)
-
-```bash
-npm run dev:desktop          # Vite + Electron, live reload
-npm run build:desktop        # package for the current OS into release/
-npm run build:desktop:linux  # AppImage + .deb
-npm run build:desktop:win    # NSIS .exe (run on Windows or with wine)
-```
-
-## Tests
+Run the complete validation suite:
 
 ```bash
 npm run lint
-npm test     # conversion + GPX XSD validation (xmllint optional; skipped if absent)
+npm test
+npm run build
 ```
 
-## Releases (CI)
-
-`.github/workflows/release.yml` builds installers on Linux, Windows, and macOS for any pushed
-`v*` tag, runs lint + tests as a gate, and attaches artifacts (`.deb`, `.AppImage`, `.exe`,
-`.dmg`, `.zip`) to the GitHub Release.
+Desktop development:
 
 ```bash
-git tag v0.2.0 && git push origin v0.2.0
+npm run dev:desktop
 ```
 
-## Architecture
+## Packaging
 
-```
-src/core/            Format-agnostic engine (no React)
-  model.ts           Unified TrackPoint / Dataset model + geo helpers
-  format.ts          Robust number/coordinate/timestamp parsing
-  logger.ts          Structured pub/sub logger
-  stats.ts           Statistics & quality profiling
-  transforms.ts      Pure data-massaging operations
-  parsers/           csv, gpx, geojson, kml, nmea, gpb + registry
-  exporters/         gpx (XSD-valid), csv, geojson, kml + registry
-src/ui/              Presentational components (map, charts, table, panels, logs)
-src/workers/         CSV analyzer Web Worker (off-main-thread profiling)
-src/App.tsx          Tabbed workspace orchestrator
-electron/            Desktop shell
-test/validate.ts     Conversion correctness + XSD validation harness
+```bash
+npm run build:desktop
+npm run build:desktop:win
+npm run build:desktop:linux
 ```
 
-## Extending
+Configured targets:
 
-- **New input format**: add a parser under `src/core/parsers/`, register it in
-  `parsers/index.ts` (`INPUT_FORMATS`), returning a `ParseResult`.
-- **New export format**: add a writer under `src/core/exporters/` and register it in
-  `EXPORTERS`.
-- **New transform**: add a pure function to `src/core/transforms.ts` and an `Op` card in
-  `src/ui/TransformPanel.tsx`.
+- Windows: NSIS installer and portable executable.
+- Linux: AppImage and DEB.
+- macOS: DMG and ZIP.
+
+The release workflow also produces SBOMs and SHA-256 checksums. Code signing, macOS notarization, provenance attestations and automated packaged-application smoke tests are not yet complete.
+
+## Testing
+
+The default suite currently includes 20 deterministic TypeScript regression harnesses covering core analytics, selection, transforms, resampling, compute protocol/runtime, project archives, recipes/plugins, geodesy, 3D geometry and exports.
+
+The repository does not yet have a rendered-component suite, browser end-to-end suite, packaged Electron launch tests, performance regression suite or parser fuzzing. These are explicit roadmap priorities.
+
+## Test data
+
+`file-test/` contains a documented USGS-derived sample corpus in CSV, GeoJSON and GPX forms, comparison inputs and a malformed negative CSV fixture.
+
+## Branch workflow
+
+- `main` is the validated integration and release history.
+- `agent/roadmap-integration` is the active roadmap-development branch.
+- PR #25 is the current integration pull request.
+- Branch protection and GitHub rulesets are optional administration choices, not implementation or release requirements.

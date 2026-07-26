@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { TrackPoint } from '../core/model'
 import { epochMsToIso } from '../core/format'
 import { usePointSelection } from '../state/pointSelection'
@@ -19,9 +19,11 @@ export function DataTable({ points, channels }: { points: TrackPoint[]; channels
   const [sortKey, setSortKey] = useState<string | null>(null)
   const [sortDir, setSortDir] = useState<SortDir>(null)
   const [scrollTop, setScrollTop] = useState(0)
+  const [rangeOnly, setRangeOnly] = useState(false)
   const viewportRef = useRef<HTMLDivElement>(null)
   const viewportHeight = 460
-  const { pointIndex, selectPoint, clearSelection } = usePointSelection(points)
+  const { pointIndex, hoverIndex, indexRange, selectPoint, setHoverIndex, clearSelection, clearRange, clearHover } = usePointSelection(points)
+  const activeRangeOnly = rangeOnly && indexRange !== null
 
   const columns = useMemo<Column[]>(() => {
     const base: Column[] = [
@@ -36,13 +38,14 @@ export function DataTable({ points, channels }: { points: TrackPoint[]; channels
 
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
-    const indexed = points.map((point, index) => ({ point, index }))
+    let indexed = points.map((point, index) => ({ point, index }))
+    if (activeRangeOnly && indexRange) indexed = indexed.filter(({ index }) => index >= indexRange.start && index <= indexRange.end)
     if (!normalizedQuery) return indexed
     return indexed.filter(({ point }) => columns.some((column) => {
       const value = column.get(point)
       return value !== undefined && String(value).toLowerCase().includes(normalizedQuery)
     }))
-  }, [points, query, columns])
+  }, [points, query, columns, activeRangeOnly, indexRange])
 
   const sorted = useMemo(() => {
     if (!sortKey || !sortDir) return filtered
@@ -60,6 +63,12 @@ export function DataTable({ points, channels }: { points: TrackPoint[]; channels
     })
   }, [filtered, sortKey, sortDir, columns])
 
+  useEffect(() => {
+    const targetIndex = pointIndex ?? hoverIndex
+    if (targetIndex === null || sortKey || query || activeRangeOnly) return
+    viewportRef.current?.scrollTo({ top: Math.max(0, targetIndex * ROW_HEIGHT - viewportHeight / 2), behavior: pointIndex !== null ? 'smooth' : 'auto' })
+  }, [pointIndex, hoverIndex, sortKey, query, activeRangeOnly])
+
   const total = sorted.length
   const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
   const visibleCount = Math.ceil(viewportHeight / ROW_HEIGHT) + OVERSCAN * 2
@@ -67,15 +76,9 @@ export function DataTable({ points, channels }: { points: TrackPoint[]; channels
   const slice = sorted.slice(startIndex, endIndex)
 
   const toggleSort = (key: string) => {
-    if (sortKey !== key) {
-      setSortKey(key)
-      setSortDir('asc')
-    } else if (sortDir === 'asc') {
-      setSortDir('desc')
-    } else {
-      setSortKey(null)
-      setSortDir(null)
-    }
+    if (sortKey !== key) { setSortKey(key); setSortDir('asc') }
+    else if (sortDir === 'asc') setSortDir('desc')
+    else { setSortKey(null); setSortDir(null) }
   }
 
   return (
@@ -83,41 +86,24 @@ export function DataTable({ points, channels }: { points: TrackPoint[]; channels
       <div className="data-table-toolbar">
         <input className="data-search" placeholder="filter rows…" value={query} onChange={(event) => setQuery(event.target.value)} />
         <span className="data-meta">{total.toLocaleString()} / {points.length.toLocaleString()} rows</span>
-        {pointIndex !== null && (
-          <button type="button" className="chip chip-on" onClick={clearSelection}>selected #{pointIndex} ×</button>
-        )}
+        {indexRange && <label className="chk"><input type="checkbox" checked={rangeOnly} onChange={(event) => setRangeOnly(event.target.checked)} />selected range only</label>}
+        {pointIndex !== null && <button type="button" className="chip chip-on" onClick={clearSelection}>selected #{pointIndex} ×</button>}
+        {indexRange && <button type="button" className="chip chip-range" onClick={() => { setRangeOnly(false); clearRange() }}>range {indexRange.start}–{indexRange.end} ×</button>}
       </div>
       <div className="grid-header" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(110px, 1fr))` }}>
         <div className="grid-cell grid-idx">#</div>
-        {columns.map((column) => (
-          <button key={column.key} type="button" className="grid-cell grid-th" onClick={() => toggleSort(column.key)}>
-            {column.label}
-            {sortKey === column.key && <span className="sort-arrow">{sortDir === 'asc' ? '▲' : '▼'}</span>}
-          </button>
-        ))}
+        {columns.map((column) => <button key={column.key} type="button" className="grid-cell grid-th" onClick={() => toggleSort(column.key)}>{column.label}{sortKey === column.key && <span className="sort-arrow">{sortDir === 'asc' ? '▲' : '▼'}</span>}</button>)}
       </div>
       <div ref={viewportRef} className="grid-viewport mono" style={{ height: viewportHeight }} onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}>
         <div style={{ height: total * ROW_HEIGHT, position: 'relative' }}>
           {slice.map(({ point, index }, offset) => {
             const selected = pointIndex === index
+            const hovered = hoverIndex === index
+            const inRange = indexRange !== null && index >= indexRange.start && index <= indexRange.end
             return (
-              <div
-                key={index}
-                className="grid-row"
-                onClick={() => selectPoint(selected ? null : index)}
-                style={{
-                  position: 'absolute',
-                  top: (startIndex + offset) * ROW_HEIGHT,
-                  height: ROW_HEIGHT,
-                  gridTemplateColumns: `60px repeat(${columns.length}, minmax(110px, 1fr))`,
-                  background: selected ? 'rgba(234, 79, 47, 0.18)' : undefined,
-                  cursor: 'pointer',
-                }}
-              >
+              <div key={index} className={`grid-row${selected ? ' selected' : ''}${hovered ? ' hovered' : ''}${inRange ? ' in-range' : ''}`} onMouseEnter={() => setHoverIndex(index)} onMouseLeave={clearHover} onClick={() => selectPoint(selected ? null : index)} style={{ position: 'absolute', top: (startIndex + offset) * ROW_HEIGHT, height: ROW_HEIGHT, gridTemplateColumns: `60px repeat(${columns.length}, minmax(110px, 1fr))`, cursor: 'pointer' }}>
                 <div className="grid-cell grid-idx">{index}</div>
-                {columns.map((column) => (
-                  <div key={column.key} className="grid-cell" title={fmtCell(column.get(point))}>{fmtCell(column.get(point))}</div>
-                ))}
+                {columns.map((column) => <div key={column.key} className="grid-cell" title={fmtCell(column.get(point))}>{fmtCell(column.get(point))}</div>)}
               </div>
             )
           })}

@@ -5,13 +5,19 @@ on:
   push:
     branches:
       - main
+      - agent/roadmap-integration
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -23,7 +29,9 @@ jobs:
           path: |
             src
             test
+            scripts
             electron
+            docs
             package.json
             package-lock.json
             tsconfig*.json
@@ -63,7 +71,7 @@ jobs:
         if: steps.lint.outcome == 'failure'
         run: exit 1
 
-      - name: Run conversion and transform tests
+      - name: Run complete regression suite
         run: npm test
 
       - name: Build web application
@@ -80,6 +88,14 @@ jobs:
         with:
           name: build-report
           path: build-report.txt
+          if-no-files-found: error
+
+      - name: Upload web application
+        if: steps.build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: dist
           if-no-files-found: error
 
       - name: Enforce build result

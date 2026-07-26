@@ -1,149 +1,37 @@
-// Dataset overview: headline metric cards, a data-quality report, and a
-// per-channel statistics table. This is the engineer's "at a glance" surface.
-import { useMemo } from 'react'
+// Dataset overview: headline metrics, quality review, channel statistics, and
+// Phase 1 time/segment selection controls.
+import { useMemo, useState } from 'react'
 import type { Dataset } from '../core/model'
 import { computeStats, formatDistance, formatDuration } from '../core/stats'
 import { epochMsToIso } from '../core/format'
+import { segmentTrack } from '../core/analytics/segments'
+import { usePointSelection } from '../state/pointSelection'
 
 export function StatsPanel({ dataset }: { dataset: Dataset }) {
   const stats = useMemo(() => computeStats(dataset), [dataset])
+  const segments = useMemo(() => segmentTrack(dataset.points), [dataset.points])
+  const [startTime, setStartTime] = useState('')
+  const [endTime, setEndTime] = useState('')
+  const { timeRange, segmentIds, selectTimeRange, selectSegment, clearRange } = usePointSelection(dataset.points)
+  const quality = useMemo(() => [
+    { label: 'Coordinate validity', ok: stats.invalidCoordCount === 0, detail: `${stats.validCoordCount.toLocaleString()} valid / ${stats.invalidCoordCount.toLocaleString()} invalid` },
+    { label: 'Timestamps present', ok: stats.withTime > 0, detail: `${stats.withTime.toLocaleString()} of ${stats.pointCount.toLocaleString()} points timed` },
+    { label: 'Time monotonic', ok: stats.timeMonotonic, detail: stats.timeMonotonic ? 'ascending' : 'out-of-order timestamps detected (sort recommended)' },
+    { label: 'Elevation present', ok: stats.withElevation > 0, detail: `${stats.withElevation.toLocaleString()} points with elevation` },
+    { label: 'Duplicate coordinates', ok: stats.duplicateCoords === 0, detail: `${stats.duplicateCoords.toLocaleString()} consecutive duplicates` },
+  ], [stats])
+  const startMs = Date.parse(startTime)
+  const endMs = Date.parse(endTime)
 
-  const quality = useMemo(() => {
-    const checks: Array<{ label: string; ok: boolean; detail: string }> = [
-      {
-        label: 'Coordinate validity',
-        ok: stats.invalidCoordCount === 0,
-        detail: `${stats.validCoordCount.toLocaleString()} valid / ${stats.invalidCoordCount.toLocaleString()} invalid`,
-      },
-      {
-        label: 'Timestamps present',
-        ok: stats.withTime > 0,
-        detail: `${stats.withTime.toLocaleString()} of ${stats.pointCount.toLocaleString()} points timed`,
-      },
-      {
-        label: 'Time monotonic',
-        ok: stats.timeMonotonic,
-        detail: stats.timeMonotonic ? 'ascending' : 'out-of-order timestamps detected (sort recommended)',
-      },
-      {
-        label: 'Elevation present',
-        ok: stats.withElevation > 0,
-        detail: `${stats.withElevation.toLocaleString()} points with elevation`,
-      },
-      {
-        label: 'Duplicate coordinates',
-        ok: stats.duplicateCoords === 0,
-        detail: `${stats.duplicateCoords.toLocaleString()} consecutive duplicates`,
-      },
-    ]
-    return checks
-  }, [stats])
-
-  return (
-    <div className="stats-panel">
-      <div className="metric-grid">
-        <Metric label="Points" value={stats.pointCount.toLocaleString()} />
-        <Metric label="Valid coords" value={stats.validCoordCount.toLocaleString()} />
-        <Metric label="Distance" value={formatDistance(stats.distanceMeters)} />
-        <Metric label="Duration" value={formatDuration(stats.durationMs)} />
-        <Metric
-          label="Avg rate"
-          value={stats.sampleRateHz ? `${stats.sampleRateHz.toFixed(2)} Hz` : '—'}
-        />
-        <Metric
-          label="Max speed"
-          value={stats.speed ? `${stats.speed.maxMps.toFixed(1)} m/s` : '—'}
-        />
-        <Metric
-          label="Elev gain"
-          value={stats.elevation ? `${stats.elevation.gain.toFixed(0)} m` : '—'}
-        />
-        <Metric
-          label="Elev range"
-          value={stats.elevation ? `${stats.elevation.min.toFixed(0)}–${stats.elevation.max.toFixed(0)} m` : '—'}
-        />
-      </div>
-
-      <div className="stats-columns">
-        <section className="stats-block">
-          <h3>Data quality</h3>
-          <ul className="quality-list">
-            {quality.map((q) => (
-              <li key={q.label} className={q.ok ? 'q-ok' : 'q-warn'}>
-                <span className="q-icon">{q.ok ? '✓' : '!'}</span>
-                <span className="q-label">{q.label}</span>
-                <span className="q-detail">{q.detail}</span>
-              </li>
-            ))}
-          </ul>
-          {stats.startTime !== null && (
-            <p className="muted mono small">
-              {epochMsToIso(stats.startTime)} → {epochMsToIso(stats.endTime ?? undefined)}
-            </p>
-          )}
-          {stats.bounds && (
-            <p className="muted mono small">
-              bbox [{stats.bounds.minLat.toFixed(5)}, {stats.bounds.minLon.toFixed(5)}] →
-              [{stats.bounds.maxLat.toFixed(5)}, {stats.bounds.maxLon.toFixed(5)}]
-            </p>
-          )}
-          {dataset.warnings.length > 0 && (
-            <div className="stats-warnings">
-              {dataset.warnings.map((w, i) => (
-                <p key={i} className="warn-line small">⚠ {w}</p>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section className="stats-block">
-          <h3>Channels ({stats.channels.length})</h3>
-          {stats.channels.length === 0 && <p className="muted small">No extension channels.</p>}
-          {stats.channels.length > 0 && (
-            <table className="channel-table mono">
-              <thead>
-                <tr>
-                  <th>channel</th>
-                  <th>n</th>
-                  <th>min</th>
-                  <th>max</th>
-                  <th>mean</th>
-                  <th>σ</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stats.channels.map((c) => (
-                  <tr key={c.key}>
-                    <td>{c.key}{c.unit ? <span className="unit"> {c.unit}</span> : null}</td>
-                    <td>{c.numericCount}</td>
-                    <td>{fmt(c.min)}</td>
-                    <td>{fmt(c.max)}</td>
-                    <td>{fmt(c.mean)}</td>
-                    <td>{fmt(c.stddev)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
-      </div>
+  return <div className="stats-panel">
+    <div className="metric-grid"><Metric label="Points" value={stats.pointCount.toLocaleString()} /><Metric label="Valid coords" value={stats.validCoordCount.toLocaleString()} /><Metric label="Distance" value={formatDistance(stats.distanceMeters)} /><Metric label="Duration" value={formatDuration(stats.durationMs)} /><Metric label="Avg rate" value={stats.sampleRateHz ? `${stats.sampleRateHz.toFixed(2)} Hz` : '—'} /><Metric label="Max speed" value={stats.speed ? `${stats.speed.maxMps.toFixed(1)} m/s` : '—'} /><Metric label="Elev gain" value={stats.elevation ? `${stats.elevation.gain.toFixed(0)} m` : '—'} /><Metric label="Elev range" value={stats.elevation ? `${stats.elevation.min.toFixed(0)}–${stats.elevation.max.toFixed(0)} m` : '—'} /></div>
+    <section className="stats-block selection-controls"><h3>Selection controls</h3><div className="selection-time-controls"><label>Start time<input type="datetime-local" step="0.001" value={startTime} onChange={(event) => setStartTime(event.target.value)} /></label><label>End time<input type="datetime-local" step="0.001" value={endTime} onChange={(event) => setEndTime(event.target.value)} /></label><button type="button" disabled={!Number.isFinite(startMs) || !Number.isFinite(endMs)} onClick={() => selectTimeRange({ startMs, endMs })}>Select time range</button>{timeRange && <button type="button" className="chip chip-range" onClick={clearRange}>{epochMsToIso(timeRange.startMs)} → {epochMsToIso(timeRange.endMs)} ×</button>}</div><div className="segment-list">{segments.map((segment) => <button key={segment.id} type="button" className={`segment-chip${segmentIds.includes(segment.id) ? ' active' : ''}`} onClick={() => selectSegment(segment.id, { start: segment.startIndex, end: segment.endIndex })}><strong>{segment.kind}</strong><span>#{segment.startIndex}–{segment.endIndex}</span><span>{segment.pointCount} pts</span></button>)}{segments.length === 0 && <span className="muted small">No segments available.</span>}</div><p className="muted small">Keyboard: ←/→ moves the synchronized cursor, Shift+←/→ extends a range, Enter selects the cursor point, Home/End jumps, Escape clears.</p></section>
+    <div className="stats-columns">
+      <section className="stats-block"><h3>Data quality</h3><ul className="quality-list">{quality.map((item) => <li key={item.label} className={item.ok ? 'q-ok' : 'q-warn'}><span className="q-icon">{item.ok ? '✓' : '!'}</span><span className="q-label">{item.label}</span><span className="q-detail">{item.detail}</span></li>)}</ul>{stats.startTime !== null && <p className="muted mono small">{epochMsToIso(stats.startTime)} → {epochMsToIso(stats.endTime ?? undefined)}</p>}{stats.bounds && <p className="muted mono small">bbox [{stats.bounds.minLat.toFixed(5)}, {stats.bounds.minLon.toFixed(5)}] → [{stats.bounds.maxLat.toFixed(5)}, {stats.bounds.maxLon.toFixed(5)}]</p>}{dataset.warnings.length > 0 && <div className="stats-warnings">{dataset.warnings.map((warning, index) => <p key={index} className="warn-line small">⚠ {warning}</p>)}</div>}</section>
+      <section className="stats-block"><h3>Channels ({stats.channels.length})</h3>{stats.channels.length === 0 && <p className="muted small">No extension channels.</p>}{stats.channels.length > 0 && <table className="channel-table mono"><thead><tr><th>channel</th><th>n</th><th>min</th><th>max</th><th>mean</th><th>σ</th></tr></thead><tbody>{stats.channels.map((channel) => <tr key={channel.key}><td>{channel.key}{channel.unit ? <span className="unit"> {channel.unit}</span> : null}</td><td>{channel.numericCount}</td><td>{fmt(channel.min)}</td><td>{fmt(channel.max)}</td><td>{fmt(channel.mean)}</td><td>{fmt(channel.stddev)}</td></tr>)}</tbody></table>}</section>
     </div>
-  )
+  </div>
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="metric-card">
-      <span className="metric-value">{value}</span>
-      <span className="metric-label">{label}</span>
-    </div>
-  )
-}
-
-function fmt(n: number | null): string {
-  if (n === null || !Number.isFinite(n)) return '—'
-  if (Number.isInteger(n)) return String(n)
-  if (Math.abs(n) >= 1000) return n.toFixed(0)
-  if (Math.abs(n) >= 1) return n.toFixed(2)
-  return n.toFixed(4)
-}
+function Metric({ label, value }: { label: string; value: string }) { return <div className="metric-card"><span className="metric-value">{value}</span><span className="metric-label">{label}</span></div> }
+function fmt(value: number | null): string { if (value === null || !Number.isFinite(value)) return '—'; if (Number.isInteger(value)) return String(value); if (Math.abs(value) >= 1000) return value.toFixed(0); if (Math.abs(value) >= 1) return value.toFixed(2); return value.toFixed(4) }

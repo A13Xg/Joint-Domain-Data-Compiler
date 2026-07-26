@@ -54,9 +54,9 @@ class Logger {
 
     // Mirror to the dev console for engineers running with devtools open.
     const tag = `[${category}]`
-    if (level === 'error') console.error(tag, message, detail ?? '')
-    else if (level === 'warn') console.warn(tag, message, detail ?? '')
-    else console.log(tag, message, detail ?? '')
+    if (level === 'error') console.error('%s %s %o', tag, message, detail ?? '')
+    else if (level === 'warn') console.warn('%s %s %o', tag, message, detail ?? '')
+    else console.log('%s %s %o', tag, message, detail ?? '')
   }
 
   private now(): number {

@@ -1,1181 +1,546 @@
-# Joint Domain Data Compiler — Incremental Implementation Roadmap
+# Joint Domain Data Compiler — Product and Engineering Roadmap
 
-**Plan ID:** `JDDC-ROADMAP-2026-01`  
-**Status:** Proposed development authority  
+**Plan ID:** `JDDC-ROADMAP-2026-02`  
+**Supersedes:** `JDDC-ROADMAP-2026-01`  
 **Repository:** `A13Xg/Joint-Domain-Data-Compiler`  
-**Primary objective:** Evolve the current local-first TSPI conversion workbench into a robust flight-data analysis, correction, visualization, comparison, and reproducibility platform without destabilizing the existing converter.
+**Current integration PR:** #25  
+**Authority:** This document is the canonical product and implementation roadmap.
+
+## Product definition
+
+JDDC is a **single-user, local-first trajectory and TSPI engineering workbench** for importing, normalizing, validating, analyzing, correcting, comparing, visualizing, saving and exporting time-space-position-information data.
+
+The primary workflow is:
+
+`Import → Normalize → Inspect quality → Derive/analyze → Select → Transform → Compare/visualize → Save project → Export/report`
+
+All data processing must remain available without a cloud service. Optional online resources, such as the default OpenStreetMap basemap, must be clearly identified and must not prevent local data processing.
+
+## Near-term non-goals
+
+- cloud accounts or collaborative editing;
+- real-time telemetry ingest;
+- general-purpose GIS editing;
+- unrestricted runtime third-party plugins;
+- Cesium/globe work before the existing map and 3D workflows are complete;
+- broad vendor-format accumulation without representative fixtures and a user need;
+- branch protection as an implementation or release requirement.
+
+## Status model
+
+- **COMPLETE** — intended feature scope is wired into the product, tested and accepted.
+- **FUNCTIONAL** — a usable product workflow exists, but material correctness, UX, scale or release work remains.
+- **FOUNDATION** — tested lower-level capability exists but is not fully wired into the normal product workflow.
+- **ACTIVE** — current corrective or implementation focus.
+- **PLANNED** — accepted future scope with no complete implementation.
+- **DEFERRED** — intentionally outside the current priority sequence.
+
+## Definition of done
+
+A feature is complete only when it is:
+
+1. reachable through the product or a deliberately public API;
+2. deterministic and documented;
+3. covered by focused automated tests and representative fixtures;
+4. validated for malformed and boundary inputs;
+5. reflected accurately in README and roadmap documentation;
+6. included in the full lint, regression and production-build gate;
+7. accompanied by progress/cancellation for genuinely long-running work;
+8. free of known blocking correctness defects.
 
 ---
 
-## 1. Product direction
+# Stage 0 — Correctness, truth and workspace-state stabilization
 
-Joint Domain Data Compiler should remain:
+**Status:** ACTIVE
 
-- local-first and offline-capable;
-- format-agnostic through a normalized dataset model;
-- deterministic and auditable;
-- useful for both quick conversion and deeper engineering analysis;
-- performant on large TSPI datasets;
-- releasable as a browser application and signed desktop application;
-- extensible without coupling parsers, transforms, charts, maps, and exporters.
+This stage resolves findings from `docs/PROJECT_REVIEW_2026-07-26.md` before additional feature breadth.
 
-The target product is not merely a converter. It is a modular flight-data workbench supporting:
+## Required work
 
-1. ingestion and normalization;
-2. data-quality assessment;
-3. correction and signal processing;
-4. synchronized 2D, tabular, chart, and 3D inspection;
-5. multi-dataset comparison;
-6. reproducible transformation recipes;
-7. high-confidence export and reporting.
+- Replace process-local sequential dataset IDs with collision-resistant IDs that remain safe after project restore.
+- Separate “clear selected point” from “clear all point/range/time/segment state.”
+- Preserve the last working tab when saving from the Project tab.
+- Centralize durable workspace state for chart, map, 3D and comparison controls.
+- Validate every `WorkspaceSelection` field during manifest/archive loading.
+- Add decompressed-byte limits before project JSON parsing.
+- Preserve or infer semantic channel definitions after transforms and derivations.
+- Reconcile altitude references before 3D or relative analysis; visibly block or warn on incompatible/unknown references.
+- Reconcile time references before alignment and timestamp-sensitive operations.
+- Keep public documentation synchronized with verified product behavior; the 2026-07-26 truth correction is complete.
+- Add direct regression coverage for each correction.
 
----
+## Acceptance target
 
-## 2. Delivery rules
-
-Every roadmap item must follow these rules.
-
-### 2.1 Incremental pull requests
-
-Each pull request must deliver one coherent vertical slice. Avoid broad rewrites that simultaneously replace storage, charts, state, and rendering.
-
-Recommended maximum scope:
-
-- one architectural primitive plus its first user-visible use;
-- one transform family;
-- one visualization mode;
-- one import/export format;
-- one performance boundary.
-
-### 2.2 Implementation and audit phases
-
-Every increment has two required stages:
-
-1. **Implementation**
-   - code;
-   - tests;
-   - fixtures;
-   - documentation;
-   - migration handling;
-   - telemetry/logging where applicable.
-
-2. **Audit**
-   - inspect the complete diff;
-   - run lint, typecheck, tests, and builds;
-   - verify no mock or placeholder behavior;
-   - test malformed and edge-case data;
-   - record performance observations;
-   - produce a concise audit report in the PR.
-
-### 2.3 No hidden data changes
-
-Any operation that changes data must:
-
-- produce a human-readable summary;
-- identify affected point count and channels;
-- preserve operation parameters;
-- support undo;
-- avoid silently fabricating values;
-- add quality flags or warnings for ambiguous repairs;
-- preserve source provenance when possible.
-
-### 2.4 Correctness before feature count
-
-A new format, transform, or graph is incomplete without:
-
-- representative fixtures;
-- malformed-input tests;
-- boundary-condition tests;
-- unit semantics;
-- explicit null and invalid-value behavior;
-- round-trip tests where applicable.
-
-### 2.5 Performance budgets
-
-Initial budgets should be treated as engineering targets, not marketing guarantees.
-
-- 100,000-point dataset: interactive chart/map navigation.
-- 500,000-point dataset: import and basic analysis without renderer lockup.
-- 1,000,000-point dataset: supported through workers, progressive rendering, downsampling, or columnar storage.
-- User-triggered operations longer than a brief interaction must expose progress and cancellation.
-- Visualization must not render every point when the display resolution cannot represent them.
+No known high-priority state, metadata or persistence defect remains, and every public capability claim matches the product exactly.
 
 ---
 
-## 3. Target architecture
+# Stage 1 — Ingestion and normalized data integrity
 
-The codebase should gradually converge on these layers.
+**Status:** FUNCTIONAL
 
-```text
-src/
-  core/
-    model/             Dataset, channel, units, provenance, quality flags
-    parsing/           Parser interfaces, detection, fixtures
-    transforms/        Pure transformation and signal-processing operations
-    analytics/         Derivations, segmentation, statistics, comparisons
-    export/            Exporter interfaces and validation
-    recipes/           Serializable operations and replay
-  compute/
-    workers/           Worker protocol and compute tasks
-    columnar/          Optional typed-array storage and adapters
-    cancellation/      Abort/progress primitives
-  state/
-    workspace/         Datasets, active dataset, visibility, references
-    selection/         Cursor, selected point, ranges, regions, segments
-    history/           Undo/redo and operation provenance
-  visualization/
-    charts/            Time-series and statistical chart adapters
-    map2d/             Leaflet/deck.gl adapters
-    scene3d/           React Three Fiber local trajectory view
-    playback/          Shared timeline and synchronization
-  persistence/
-    project/           Project archive/session format
-    settings/          User preferences and presets
-  ui/
-    panels/
-    dialogs/
-    common/
-```
+## Delivered
 
-This is a migration target. Existing files should be moved only when a feature requires it.
+- CSV/TSV mapping with sample analysis in a Worker.
+- DMS, decimal-comma and multiple timestamp representations.
+- GPX tracks, routes, waypoints and extension leaves.
+- GeoJSON points, LineStrings, MultiLineStrings and geometry collections.
+- KML points, LineStrings and `gx:Track`.
+- NMEA GGA/RMC/GLL with checksum handling.
+- JDDC GPB numeric binary import.
+- Normalized `Dataset`/`TrackPoint` model with channel definitions, source metadata, provenance and quality flags.
+- User-visible parser warnings.
+
+## Remaining
+
+- Explicit per-format file-size and record-count budgets.
+- Progressive full CSV import without retaining both complete row and point representations.
+- Content sniffing and mismatch warnings beyond filename extensions.
+- Source checksums on import.
+- Direct automated parser fixtures for CSV, GPX, KML and NMEA, including malformed cases.
+- Strong GPB bounds validation and format revision planning.
+- Metadata editor for coordinate, altitude and time references.
+- Unit normalization audit for imported extension channels.
+- Import summary showing dropped/changed records and source lineage.
+
+## Acceptance target
+
+Every supported input has authoritative valid and malformed fixtures, explicit limits, predictable metadata mapping and a complete import-quality summary.
 
 ---
 
-## 4. Phase 0 — Stabilize the current foundation
+# Stage 2 — Shared selection and synchronized inspection
 
-**Goal:** establish a clean, releasable baseline before expanding functionality.
+**Status:** COMPLETE
 
-### Scope
+## Delivered
 
-- Fix all lint failures in the active hardening PR.
-- Confirm tests and production build pass.
-- Run the Windows packaging workflow manually.
-- Verify generation of:
-  - NSIS installer;
-  - portable executable;
-  - Windows checksum manifest.
-- Verify Linux and macOS artifacts remain present.
-- Merge the hardening PR only after CI passes.
-- Tag the baseline release and confirm all binaries are attached to GitHub Releases.
-- Add this roadmap to the repository.
-- Add branch protection requiring CI before merge.
+- Dataset-scoped persistent point selection.
+- Transient synchronized data cursor.
+- Index-range and time-range selection.
+- Segment-to-range selection.
+- Chart brushing and point picking.
+- Map point/cursor/range rendering and fit-to-range.
+- Virtualized table point/cursor/range rendering and range filtering.
+- 3D point/cursor/playback/range rendering.
+- Selection-scoped statistics and supported transforms.
+- Keyboard navigation with arrows, Shift+arrows, Home, End, Enter and Escape.
+- Dataset-change stale-state protection.
+- Focused state regression tests and independent Phase 1 audit.
 
-### Acceptance criteria
+## Cross-cutting follow-up
 
-- `npm ci`, lint, tests, and build pass on CI.
-- GPX XSD validation is mandatory on Linux.
-- Manual Windows packaging creates both expected executables.
-- Version-tag release publishes all expected platform artifacts.
-- No known red CI checks remain.
-
-### Recommended PR boundary
-
-`PR-000: Stabilize correctness, CI, packaging, and roadmap`
+Rendered browser behavior is covered by the future Stage 11 end-to-end test suite rather than reopening this feature stage.
 
 ---
 
-## 5. Phase 1 — Shared analysis selection and synchronization
+# Stage 3 — Analytics, quality and segmentation
 
-**Goal:** create the state backbone needed for linked charts, map, table, playback, and transforms.
+**Status:** FUNCTIONAL + FOUNDATION
 
-### 5.1 Selection model
+## Delivered
 
-Introduce a UI-independent selection state:
+- Overview statistics and basic quality checks.
+- Basic UI transform for cumulative distance, speed and heading.
+- Tested versioned standard-kinematics engine for distance, ground speed, vertical speed, heading, turn rate, horizontal acceleration, sample interval and sample frequency.
+- Tested flight/data-state segmentation engine.
+- Segment selection in the Overview UI using default configuration.
+- Quality flags for missing, duplicate and non-monotonic timestamps.
 
-```ts
-interface WorkspaceSelection {
-  datasetId: string | null
-  pointIndex: number | null
-  timeCursorMs: number | null
-  indexRange: { start: number; end: number } | null
-  timeRange: { startMs: number; endMs: number } | null
-  segmentIds: string[]
-}
-```
+## Remaining
 
-### 5.2 Required behaviors
+- Wire the versioned standard-kinematics engine into the normal UI and operation history.
+- Remove or consolidate the duplicate basic derivation implementation.
+- Expose segmentation thresholds and segment summaries in the UI.
+- Add gap, spike, flatline, saturation and coordinate-jump detection.
+- Add altitude/time-reference-aware analytical guards.
+- Add anomaly/event overlays consumable by charts, map and reports.
+- Add analysis provenance: engine ID, version, parameters and source hash.
 
-- Hovering a chart updates a shared cursor.
-- Selecting a chart range highlights the corresponding map path.
-- Clicking a map point selects the nearest record.
-- Selecting a table row moves the chart cursor and map marker.
-- A selected range can be used as transform scope.
-- Statistics recalculate for either the full dataset or selection.
-- Selection changes must not mutate source data.
+## Acceptance target
 
-### 5.3 UI additions
-
-- Selection summary bar.
-- Clear-selection action.
-- Full dataset / selected range toggle.
-- Selected point details.
-- Selected range duration, distance, and point count.
-
-### Tests
-
-- time-to-index lookup;
-- nearest-point lookup;
-- empty and untimed datasets;
-- non-monotonic timestamps;
-- selection after sort, filter, undo, and redo;
-- linked component integration tests.
-
-### Acceptance criteria
-
-A user can select a range in the chart and see the same range reflected in the map, table, statistics, and transform target.
-
-### PR segmentation
-
-- `PR-101: Add shared workspace selection model`
-- `PR-102: Link chart, map, and table selections`
-- `PR-103: Add selection-scoped statistics and transforms`
+All analytical results are produced by versioned operations, carry provenance, respect metadata references and are directly usable in linked views and reports.
 
 ---
 
-## 6. Phase 2 — Derived analytics and flight segmentation
+# Stage 4 — Transform pipeline and reproducibility
 
-**Goal:** make common engineering channels first-class and repeatable.
+**Status:** FUNCTIONAL
 
-### 6.1 Derivation registry
+## Delivered
 
-Create a registry rather than hard-coding all calculations into one transform.
+- Undo/redo using dataset snapshots.
+- Sort, coordinate swap, invalid removal, dedupe, decimation and Douglas–Peucker simplification.
+- Moving-average coordinate/elevation smoothing.
+- Time and elevation offsets.
+- Local elevation-outlier removal.
+- Selection-scoped safe transforms.
+- Fixed-rate linear/step resampling with gap protection in a Worker.
+- Tested versioned operation, recipe, registry, hashing and replay foundations.
 
-```ts
-interface DerivedChannelDefinition {
-  id: string
-  outputChannels: ChannelDefinition[]
-  requiredInputs: string[]
-  derive(context: DerivationContext): DerivationResult
-}
-```
+## Remaining
 
-### 6.2 Initial derived channels
+- Before/after preview with point-count, bounds, timing and quality impact.
+- Operation records attached to dataset history.
+- Recipe capture, save, load, replay and compatibility UI.
+- Descriptor-driven transform controls and validation.
+- Median, Hampel, Savitzky–Golay and exponential moving average filters.
+- Butterworth filters after sampling assumptions are explicit.
+- Rolling statistics, derivatives and integrals.
+- Distance-based resampling and monotone cubic interpolation.
+- Timestamp de-jitter, duplicate-time policies and clock-drift correction.
+- Memory-efficient history using deltas/checkpoints rather than unlimited complete snapshots.
+- Explicit handling of selections after transforms that reorder or remove points.
 
-- cumulative distance;
-- ground speed;
-- vertical speed;
-- horizontal acceleration;
-- vertical acceleration;
-- total acceleration;
-- heading;
-- turn rate;
-- sample interval;
-- sample frequency;
-- climb angle;
-- path angle;
-- distance from start;
-- bearing from start;
-- quality score;
-- gap and discontinuity flags.
+## Acceptance target
 
-### 6.3 Flight/event segmentation
-
-Add deterministic event detectors:
-
-- stationary;
-- taxi/low-speed;
-- takeoff transition;
-- climb;
-- level segment;
-- descent;
-- landing transition;
-- data gap;
-- timestamp reset;
-- positional jump;
-- high-acceleration event;
-- rapid-turn event.
-
-Detectors must expose thresholds and confidence rather than claiming universal classification accuracy.
-
-### 6.4 Outputs
-
-- derived channels;
-- segment list;
-- event markers;
-- segment statistics;
-- chart annotations;
-- optional export of segment/event metadata.
-
-### Acceptance criteria
-
-Users can generate standard kinematic channels, inspect the formula and units, and view detected segments on charts and maps.
-
-### PR segmentation
-
-- `PR-201: Introduce derivation registry and channel dependencies`
-- `PR-202: Add vertical speed, acceleration, turn rate, and sample metrics`
-- `PR-203: Add configurable flight and data-quality segmentation`
+Every mutation is previewable, versioned, reproducible and explainable, with bounded history memory and deterministic recipe replay.
 
 ---
 
-## 7. Phase 3 — Time-series analysis workspace
+# Stage 5 — Time-series and statistical workspace
 
-**Goal:** replace the basic chart experience with a high-performance engineering signal workspace.
+**Status:** FUNCTIONAL
 
-### 7.1 Chart engine
+## Delivered
 
-Recommended primary engine: **uPlot** behind an internal chart adapter.
+- One multi-channel SVG time-series surface.
+- Time, index and cumulative-distance axes.
+- Built-in presets.
+- Extrema-preserving source-index-aware downsampling.
+- Linked cursor, point selection and range brushing.
+- Selected-range readouts and statistics.
+- Tested chart-series extraction and an unused Worker task foundation.
 
-Reasons:
+## Remaining
 
-- high performance for dense time series;
-- zoom, pan, cursor, scales, and synchronized charts;
-- small runtime compared with general dashboard libraries;
-- suitable for engineering signal inspection.
+- Multi-pane chart layouts.
+- Synchronized crosshairs across visible panes.
+- Explicit independent/shared Y-axis controls and visible scales for every series.
+- Zoom, pan and range reset.
+- Raw-versus-processed overlays.
+- Segment, gap, anomaly and event overlays.
+- Histograms, scatter plots, box plots and correlation matrix.
+- PNG and SVG export.
+- Persisted chart layouts in projects.
+- Move chart preparation to Workers only after payload/benchmark work proves a benefit.
+- Evaluate uPlot/Canvas/WebGL using measured datasets rather than replacing SVG preemptively.
 
-Do not expose uPlot types throughout the application. Use an adapter so another renderer can be substituted later.
+## Acceptance target
 
-### 7.2 Core chart capabilities
-
-- time or sample-index x-axis;
-- distance x-axis;
-- independent and shared y-scales;
-- units and formatted axis labels;
-- zoom and pan;
-- range brushing;
-- synchronized crosshair;
-- multiple stacked plots;
-- channel search;
-- presets;
-- raw and processed overlay;
-- event markers;
-- gap visualization;
-- anomaly markers;
-- min/max/mean and percentile bands;
-- export to PNG/SVG/CSV;
-- persistent chart layouts.
-
-### 7.3 Initial presets
-
-- altitude over time;
-- speed over time;
-- vertical speed over time;
-- heading and turn rate;
-- acceleration;
-- sample interval and frequency;
-- quality metrics;
-- altitude versus distance;
-- climb profile;
-- raw versus smoothed comparison.
-
-### 7.4 Statistical visualizations
-
-Add a second adapter, preferably Apache ECharts, only for non-time-series views:
-
-- histogram;
-- scatter plot;
-- box plot;
-- correlation matrix;
-- missing-data heatmap;
-- channel summary distributions.
-
-### Performance requirements
-
-- display-resolution-aware downsampling;
-- no full DOM/SVG path for hundreds of thousands of samples;
-- cursor lookup using binary search when timestamps are ordered;
-- worker-computed aggregates for large selections.
-
-### Acceptance criteria
-
-A 100,000-point dataset supports responsive zooming, panning, linked selection, and synchronized chart/map/table inspection.
-
-### PR segmentation
-
-- `PR-301: Add chart adapter and uPlot time-series foundation`
-- `PR-302: Add linked zoom, brushing, cursor, and chart presets`
-- `PR-303: Add statistical charts and distribution analysis`
-- `PR-304: Add chart export and saved layouts`
+Users can build, synchronize, save and export trustworthy multi-chart analytical layouts without ambiguous scaling.
 
 ---
 
-## 8. Phase 4 — Data-massaging pipeline v2
+# Stage 6 — Map and spatial workspace
 
-**Goal:** provide explicit, testable, stackable correction and processing operations.
+**Status:** FUNCTIONAL
 
-### 8.1 Operation contract
+## Delivered
 
-Each operation must serialize into a recipe:
+- Leaflet path and bounded point rendering.
+- Channel-based point coloring.
+- Point, cursor and selected-range synchronization.
+- Fit-all and fit-range controls.
+- Tooltips with source values.
 
-```ts
-interface OperationRecord<TParams = unknown> {
-  id: string
-  version: number
-  params: TParams
-  inputDatasetHash: string
-  affectedRange?: SelectionRange
-  createdAt: number
-  summary: string
-}
-```
+## Remaining
 
-### 8.2 Time operations
+- Offline/no-basemap mode with clear network status.
+- Gap-aware and antimeridian-safe path rendering.
+- Multi-track visibility, colors and ordering.
+- Timestamp-driven playback synchronized with chart and 3D.
+- Segment/anomaly overlays.
+- Map image export for reports.
+- Optional local tile source/cache configuration for Electron.
+- deck.gl evaluation only after benchmarked Leaflet limits are reached.
+- Cesium globe remains deferred until a validated globe-specific use case exists.
 
-- fixed-rate resampling;
-- distance-based resampling;
-- linear interpolation;
-- nearest-neighbor interpolation;
-- hold-last-value;
-- monotone cubic interpolation;
-- short-gap bridging;
-- split on large gaps;
-- timestamp de-jitter;
-- duplicate timestamp resolution;
-- constant clock offset;
-- linear clock-drift correction;
-- alignment to reference event or dataset;
-- GPS/UTC/TAI/local-time conversion.
+## Acceptance target
 
-### 8.3 Signal filtering
-
-- moving average;
-- exponential moving average;
-- median filter;
-- Hampel filter;
-- Savitzky-Golay filter;
-- configurable Butterworth low-pass/high-pass;
-- derivative;
-- integral;
-- normalization;
-- clipping;
-- scale and offset;
-- rolling statistics;
-- saturation and flatline detection.
-
-Filters must document edge behavior, phase effects, and required sample assumptions.
-
-### 8.4 Spatial operations
-
-- ENU offset;
-- ECEF and geodetic conversion;
-- local tangent-plane projection;
-- antimeridian-safe smoothing;
-- geofence crop;
-- polygon crop;
-- stationary cluster consolidation;
-- positional jump removal;
-- short GPS-gap interpolation;
-- track split and merge;
-- spatial resampling;
-- cross-track smoothing.
-
-### 8.5 Altitude operations
-
-- feet/meters conversion;
-- MSL/HAE/AGL metadata handling;
-- constant altitude correction;
-- reference-point zeroing;
-- barometric versus GPS channel selection;
-- geoid-model correction when an approved local dataset is available;
-- altitude-step detection;
-- vertical profile smoothing;
-- terrain-clearance derivation when terrain data is present.
-
-### 8.6 Transform UX
-
-- before/after preview;
-- point-count and channel-impact summary;
-- parameter validation;
-- selected-range scope;
-- apply/cancel;
-- undo/redo;
-- saved presets;
-- recipe export;
-- warnings for destructive operations.
-
-### Acceptance criteria
-
-A user can build, preview, apply, undo, save, and replay a deterministic sequence of transforms.
-
-### PR segmentation
-
-- `PR-401: Add serializable operation and recipe framework`
-- `PR-402: Add resampling, interpolation, and time-gap operations`
-- `PR-403: Add engineering signal filters`
-- `PR-404: Add spatial and altitude correction operations`
-- `PR-405: Add transform preview, presets, and recipe replay`
+The map remains useful without network access, represents gaps/dateline crossings correctly, and participates in multi-track playback and reporting.
 
 ---
 
-## 9. Phase 5 — Compute and large-data architecture
+# Stage 7 — 3D trajectory workspace
 
-**Goal:** prevent advanced analysis and visualization from freezing the browser or Electron renderer.
+**Status:** FUNCTIONAL
 
-### 9.1 Worker protocol
+## Delivered
 
-Create a generic worker request protocol:
+- WGS84/ECEF/local-ENU geometry foundation.
+- Software Canvas perspective and orthographic projection.
+- Orbit, pan, zoom, reset and fit behavior.
+- Source-index-preserving bounded geometry.
+- Point picking, cursor, persistent selection and selected-range emphasis.
+- Channel coloring, altitude exaggeration, ground grid and vertical curtain.
+- Start/end and playback markers.
+- Fraction-based playback and speed controls.
 
-```ts
-interface ComputeRequest<T> {
-  requestId: string
-  task: string
-  payload: T
-}
+## Remaining
 
-interface ComputeProgress {
-  requestId: string
-  completed: number
-  total?: number
-  message?: string
-}
-```
+- Stable render-loop ownership independent from React effect recreation per playback frame.
+- Timestamp-accurate playback and gap behavior.
+- Follow/chase camera and automatic rotation if still desired.
+- Multi-track rendering.
+- Separation vectors and closest-approach visualization.
+- Persisted camera/render settings in projects.
+- 3D image export.
+- Altitude-reference compatibility checks and conversion.
+- Performance benchmark for 20k, 100k and larger rendered geometry.
+- Three.js/WebGL migration only if profiling shows the Canvas renderer cannot meet requirements.
 
-Required support:
+## Acceptance target
 
-- progress;
-- cancellation;
-- typed errors;
-- deterministic task versions;
-- transferables;
-- worker pooling only when justified.
-
-### 9.2 Move heavy operations off the main thread
-
-Prioritize:
-
-- CSV/NMEA parsing;
-- statistics;
-- resampling;
-- filtering;
-- correlation;
-- segmentation;
-- multi-dataset comparison;
-- visualization downsampling;
-- project checksums.
-
-### 9.3 Columnar storage investigation
-
-Introduce a compatibility layer before replacing `TrackPoint[]`.
-
-Candidate internal structure:
-
-```ts
-interface ColumnarDataset {
-  lat: Float64Array
-  lon: Float64Array
-  ele?: Float64Array
-  time?: Float64Array
-  numericChannels: Map<string, TypedArray>
-  stringChannels: Map<string, string[]>
-}
-```
-
-Use adapters so parsers, transforms, and UI do not all change simultaneously.
-
-### 9.4 Progressive rendering
-
-- decimated preview during import;
-- progressively refined chart;
-- point budget per viewport;
-- map simplification by zoom;
-- virtualized table;
-- cancellation when the user switches dataset.
-
-### Acceptance criteria
-
-Large computations expose progress and cancellation, and the renderer stays responsive during supported operations.
-
-### PR segmentation
-
-- `PR-501: Add shared compute worker protocol`
-- `PR-502: Move analytics and transforms into workers`
-- `PR-503: Add visualization downsampling and progressive rendering`
-- `PR-504: Add optional columnar dataset adapter`
+3D playback is time-accurate, metadata-correct, multi-track capable, persistable and reportable at validated performance targets.
 
 ---
 
-## 10. Phase 6 — Multi-dataset workspace and comparison
+# Stage 8 — Multi-dataset comparison
 
-**Goal:** support reference-versus-test and multiple-platform analysis.
+**Status:** FUNCTIONAL
 
-### 10.1 Workspace model
+## Delivered
 
-- load several datasets;
-- control visibility;
-- assign colors;
-- designate reference dataset;
-- independently offset time;
-- independently show/hide channels;
-- retain dataset-specific provenance.
+- Multiple loaded datasets.
+- Reference and target selection.
+- Nearest-time alignment with tolerance and manual target offset.
+- Local-ENU relative position.
+- Horizontal/slant range, bearing, vertical separation and closure rate.
+- Closest-approach summary and bounded aligned-sample table.
 
-### 10.2 Alignment methods
+## Remaining
 
-- absolute timestamp;
-- manual offset;
-- named event;
-- nearest spatial point;
-- maximum cross-correlation for selected numeric channels;
-- shared start;
-- reference marker.
+- Reconcile stale selector state when datasets change.
+- Interpolated target position at reference times.
+- Event and cross-correlation alignment.
+- Clock offset and drift estimation.
+- Along-track/cross-track error.
+- Residual charts and distribution summaries.
+- More than two visible comparison tracks.
+- Linked comparison selection across chart, map and 3D.
+- Separation vectors and closest-approach graphics.
+- Saved alignment settings and comparison report export.
+- Time/altitude reference compatibility validation.
 
-Automatic alignment must show the calculated offset and confidence and require user acceptance.
+## Acceptance target
 
-### 10.3 Relative analytics
-
-- relative north/east/down;
-- slant range;
-- horizontal range;
-- bearing;
-- altitude separation;
-- closure rate;
-- along-track error;
-- cross-track error;
-- nearest approach;
-- closest point of approach time;
-- residuals against reference;
-- aggregate error statistics.
-
-### 10.4 Comparison visualization
-
-- synchronized multi-track map;
-- overlaid or stacked charts;
-- residual charts;
-- separation timeline;
-- closest-approach marker;
-- reference-relative 3D vectors;
-- comparison report export.
-
-### Acceptance criteria
-
-Two datasets can be aligned, compared, and exported with transparent alignment parameters and derived relative metrics.
-
-### PR segmentation
-
-- `PR-601: Add multi-dataset workspace state`
-- `PR-602: Add manual and event-based alignment`
-- `PR-603: Add relative-position and residual analytics`
-- `PR-604: Add comparison visualizations and report`
+Comparison is metadata-safe, interpolation-aware, visually linked, reproducible and capable of producing an auditable report.
 
 ---
 
-## 11. Phase 7 — Local 3D trajectory viewer
+# Stage 9 — Projects, bookmarks and reporting
 
-**Goal:** add an analytically useful 3D flight-path view without immediately taking on global-globe complexity.
+**Status:** FUNCTIONAL
 
-### 11.1 Technology
+## Delivered
 
-Use:
+- Versioned project manifest and archive schema v1.
+- Self-contained gzip `.jddc-project` archive.
+- Embedded datasets and fingerprint verification.
+- Undo/redo snapshot persistence.
+- Active dataset and basic tab/selection fields.
+- Compressed file, dataset and point-count validation.
+- Archive round-trip and corruption tests.
 
-- `three`;
-- `@react-three/fiber`;
-- `@react-three/drei`.
+## Remaining
 
-Keep the 3D view isolated behind a visualization adapter.
+- Stage 0 correctness fixes for IDs, view state and decompressed-size limits.
+- Project schema migration framework and compatibility tests.
+- Persist recipes and operation records.
+- Persist chart layouts, map state, 3D camera state and comparison settings.
+- Persist time-range/segment semantics rather than only the derived index range.
+- Bookmarks, annotations and notes UI.
+- Save/open dirty-state indication and recovery behavior.
+- Compact history storage and optional history exclusion.
+- HTML analysis report with source, metadata, quality, transforms, selections, charts, map and 3D images.
+- Print/PDF-ready report styling after HTML reports are stable.
 
-### 11.2 Coordinate system
+## Acceptance target
 
-- choose a configurable reference origin;
-- convert WGS84 geodetic coordinates to ECEF;
-- convert ECEF to local ENU;
-- render in meters;
-- expose altitude exaggeration;
-- clearly label reference frame and scale.
-
-Do not render latitude and longitude directly as Cartesian x/y coordinates.
-
-### 11.3 Initial scene
-
-- trajectory line;
-- channel-colored segments;
-- ground grid;
-- north/east/up axes;
-- vertical drop lines or profile curtain;
-- orbit controls;
-- reset view;
-- fit trajectory;
-- selected point marker;
-- linked chart cursor;
-- selected range emphasis.
-
-### 11.4 Playback
-
-- play/pause;
-- frame step;
-- speed control;
-- scrub timeline;
-- moving vehicle marker;
-- trail length;
-- chase and orbit camera;
-- event jump list;
-- synchronized map/chart/table cursor.
-
-### 11.5 Advanced 3D modes
-
-Add only after the basic scene is stable:
-
-- trajectory ribbon;
-- uncertainty tube;
-- speed/quality-dependent width;
-- multiple tracks;
-- separation vectors;
-- closest-approach marker;
-- optional simple aircraft model;
-- screenshot export.
-
-### Performance requirements
-
-- decimate geometry based on display resolution;
-- use buffer geometry;
-- avoid one React component per sample;
-- update playback marker without rebuilding the entire path;
-- cap labels and annotations.
-
-### Acceptance criteria
-
-A user can inspect and play a local ENU flight trajectory, color it by a selected channel, and synchronize selection with the 2D analysis workspace.
-
-### PR segmentation
-
-- `PR-701: Add ENU coordinate conversion and tests`
-- `PR-702: Add React Three Fiber trajectory scene`
-- `PR-703: Link 3D selection and channel coloring`
-- `PR-704: Add synchronized playback and camera modes`
-- `PR-705: Add multi-track vectors and advanced geometry`
+A project reopens into the same meaningful analytical workspace across supported schema versions and can generate a complete evidence-backed report.
 
 ---
 
-## 12. Phase 8 — GPU map visualization and optional global view
+# Stage 10 — Workers, memory and large-data architecture
 
-**Goal:** scale geospatial rendering and add global context only where justified.
+**Status:** FOUNDATION + one functional Worker operation
 
-### 12.1 deck.gl integration
+## Delivered
 
-Use deck.gl when Leaflet path rendering becomes a bottleneck or advanced layers are required.
+- Versioned request/progress/success/failure/cancel protocol.
+- Worker host, browser client and production runtime.
+- Worker-based fixed-rate resampling.
+- Tested chart-series Worker task foundation.
+- Bounded chart/map/3D rendering.
 
-Candidate layers:
+## Remaining
 
-- PathLayer;
-- TripsLayer;
-- ScatterplotLayer;
-- PointCloudLayer;
-- HeatmapLayer;
-- GeoJsonLayer;
-- ColumnLayer.
+- Cooperative task yielding/cancellation and meaningful incremental progress.
+- Transferable typed-array or columnar dataset representation.
+- Conversion adapters between product `TrackPoint[]` and compute columns.
+- Worker-based chart preparation and selected-range statistics where benchmarks justify it.
+- Progressive import and export.
+- Worker pool/task scheduler with memory budgets.
+- Replace spread-based large-array extrema operations.
+- Benchmarks at 100k, 500k and 1M points covering import, memory, transforms, charts, comparison, project save/open and export.
+- Visible memory/size warnings and graceful refusal thresholds.
 
-Capabilities:
+## Acceptance target
 
-- GPU trajectory rendering;
-- animated trails;
-- point-density heatmaps;
-- channel-colored points;
-- large multi-track overlays;
-- map-linked range selection.
-
-### 12.2 CesiumJS decision gate
-
-Only add CesiumJS if at least one real requirement needs:
-
-- global Earth visualization;
-- terrain;
-- satellite or space tracks;
-- long-distance trajectories;
-- 3D Tiles;
-- globe-scale camera navigation.
-
-Cesium should be an optional visualization module, not a dependency of the core workbench.
-
-### Acceptance criteria
-
-deck.gl provides measurable improvement for large map datasets. Cesium is introduced only after a documented use-case decision.
-
-### PR segmentation
-
-- `PR-801: Add deck.gl map adapter and GPU path layer`
-- `PR-802: Add animated trips, point cloud, and heatmap layers`
-- `PR-803: Evaluate Cesium global-view proof of concept`
-- `PR-804: Add Cesium module only if decision gate passes`
+Defined large datasets complete supported workflows within documented time/memory budgets, with responsive cancellation and no renderer lockups.
 
 ---
 
-## 13. Phase 9 — Format and conversion expansion
+# Stage 11 — Automated product verification
 
-**Goal:** prioritize formats that improve interoperability and large-data workflows.
+**Status:** PLANNED
 
-### Tier 1
+## Delivered
 
-- Apache Arrow IPC;
-- Parquet;
-- project-native JDDC archive;
-- CZML;
-- KMZ;
-- IGC.
+- 20 deterministic Node regression harnesses.
+- GPX XSD validation.
+- Lint, TypeScript, Vite build, Semgrep, audit, SBOM and focused workflow gates.
+- Documented manual fixture corpus.
 
-### Tier 2
+## Remaining
 
-- FIT;
-- TCX;
-- MAVLink logs;
-- common ADS-B CSV/JSON layouts;
-- SQLite;
-- configurable fixed-width text.
+- Browser component-test framework.
+- Playwright end-to-end workflow tests for import, mapping, selection, transforms, Worker resampling, projects and export.
+- Automated fixture matrix for every supported parser and exporter.
+- Visual smoke tests for chart, map, table and 3D.
+- Electron packaged-launch tests on Windows, Linux and macOS.
+- Performance regression suite.
+- Property-based and fuzz tests for parsers, archive validation and transforms.
+- Consolidate redundant focused workflows after equivalent diagnostics exist in the main suite.
 
-### Tier 3 / research
+## Acceptance target
 
-- HDF5;
-- MATLAB MAT;
-- NetCDF;
-- LAS/LAZ;
-- schema-defined binary import.
-
-### Requirements for every format
-
-- format descriptor;
-- content detection;
-- parser/exporter version;
-- unit conversion;
-- metadata mapping;
-- representative fixtures;
-- malformed fixtures;
-- round-trip or golden-output tests;
-- compatibility notes;
-- file-size and point-count limits;
-- licensing review for dependencies.
-
-### Acceptance criteria
-
-Formats are added based on documented demand and are fully tested, not merely accepted by extension.
-
-### PR segmentation
-
-One format or tightly related family per PR.
+Critical user workflows and packaged applications are automatically exercised, not inferred solely from core-unit tests and successful compilation.
 
 ---
 
-## 14. Phase 10 — Projects, reproducibility, and reporting
+# Stage 12 — Formats and interoperability
 
-**Goal:** make analysis sessions durable and defensible.
+**Status:** FUNCTIONAL baseline; expansion planned
 
-### 14.1 Project archive
+## Delivered imports
 
-Introduce a versioned `.jddc-project` archive containing:
+- CSV/TSV, GPX, GeoJSON, KML, NMEA and GPB.
 
-- project manifest;
-- dataset references or embedded data;
-- source hashes;
-- metadata;
-- transformation recipes;
-- annotations;
-- chart layouts;
-- selections/bookmarks;
-- alignment parameters;
-- application and parser versions.
+## Delivered exports
 
-Use a ZIP container with JSON manifests and optional binary/Arrow payloads.
+- GPX, CSV, GeoJSON, KML and GPB numeric binary.
 
-### 14.2 Reproducibility
+## Accuracy notes
 
-- deterministic recipe replay;
-- source checksum verification;
-- operation version migration;
-- immutable audit log;
-- explicit warnings when source files differ;
-- export of recipe-only files;
-- comparison of current versus saved outputs.
+- GPB is compact numeric transport, not complete lossless workspace persistence.
+- GeoJSON/KML/GPX exports do not preserve every normalized metadata/provenance field.
+- Project archives, not GPB, are the current highest-fidelity JDDC persistence format.
 
-### 14.3 Reports
+## Priority expansion after Stage 10
 
-Generate HTML and PDF-ready reports containing:
+1. Apache Arrow for columnar interchange and internal architecture alignment.
+2. Parquet for analytical storage.
+3. CZML or IGC only with a concrete workflow.
+4. FIT/TCX for consumer activity data if demand exists.
+5. MAVLink, ADS-B or SQLite through explicit profile specifications.
 
-- source summary;
-- quality findings;
-- transforms applied;
-- selected charts;
-- map image;
-- 3D screenshot;
-- segment/event table;
-- export details;
-- checksums and software versions.
+KMZ, HDF5, MAT, NetCDF, LAS/LAZ and vendor binaries remain deferred until a user workflow and representative licensed fixtures exist.
 
-### Acceptance criteria
+## Acceptance target
 
-A project can be saved, reopened, verified against source hashes, and reproduced with the same operations and outputs.
-
-### PR segmentation
-
-- `PR-1001: Define versioned project manifest`
-- `PR-1002: Add project save/open and migrations`
-- `PR-1003: Add recipe verification and audit history`
-- `PR-1004: Add analytical report generation`
+A new format is accepted only with authoritative fixtures, malformed cases, explicit units/metadata, size limits and round-trip expectations.
 
 ---
 
-## 15. Phase 11 — Extensibility and plugin boundaries
+# Stage 13 — Extensibility boundaries
 
-**Goal:** make new formats, transforms, derivations, and visualizations addable without modifying central orchestration code.
+**Status:** FOUNDATION; runtime discovery deferred
 
-### Plugin contracts
+## Delivered
 
-- parser plugin;
-- exporter plugin;
-- transform plugin;
-- derived-channel plugin;
-- chart preset plugin;
-- report section plugin.
+- Compile-time parser, exporter, operation, derivation, chart-preset and report-section contracts.
+- Atomic plugin registry with duplicate validation and rollback behavior.
+- Versioned recipe/operation/derivation contracts.
+- Focused tests.
 
-Initial implementation should remain compile-time registered. Runtime third-party plugins should not be enabled until security, versioning, and sandbox requirements are defined.
+## Remaining
 
-### Developer tooling
+- Connect internal registries to the actual application menus and execution paths where this reduces hard-coded duplication.
+- Define compatibility/version policy for first-party extensions.
+- Do not load third-party runtime code until sandboxing, signing, permissions and support policy exist.
 
-- plugin templates;
-- fixture conventions;
-- contract tests;
-- typed registration;
-- compatibility version;
-- documentation generator.
+## Acceptance target
 
-### Acceptance criteria
-
-A new parser, transform, or derivation can be added through a documented contract with automated contract tests and minimal central-file changes.
+First-party capabilities register through one coherent internal extension path. Third-party runtime plugins remain deferred unless a secure product requirement emerges.
 
 ---
 
-## 16. Phase 12 — Release, security, and enterprise hardening
+# Stage 14 — Release, security and operational readiness
 
-**Goal:** make desktop distribution trustworthy and repeatable.
+**Status:** FUNCTIONAL pipeline; production hardening incomplete
 
-### Scope
+## Delivered
 
-- Windows code signing;
-- macOS signing and notarization;
-- Electron fuses;
-- dependency and license scanning;
-- SBOM generation;
-- artifact checksums for every platform;
-- provenance/attestation;
-- reproducible release notes;
-- crash-report export without automatic data transmission;
-- local settings and cache controls;
-- offline basemap strategy;
-- secure project-file validation;
-- file-size and decompression-bomb limits;
-- parser fuzz testing;
-- threat model and security review.
+- Browser and Electron builds.
+- Windows NSIS and portable targets.
+- Linux AppImage and DEB targets.
+- macOS DMG and ZIP targets.
+- Electron context isolation, sandboxing, disabled Node integration and navigation restrictions.
+- CSP.
+- Runtime dependency audit and full audit report.
+- CycloneDX SBOMs.
+- Semgrep production-source analysis.
+- Release checksums.
+- Tag/version verification and GitHub Release workflow.
 
-### Release channels
+## Remaining
 
-- stable;
-- prerelease/beta;
-- optional nightly artifact builds.
+- Pin Actions and scanner containers to immutable revisions.
+- Windows code signing.
+- macOS signing and notarization.
+- Electron fuse review.
+- Build provenance attestations.
+- Packaged-application launch/smoke tests.
+- Parser and archive fuzzing.
+- Crash/diagnostic bundle export.
+- Stable, prerelease and migration policy.
+- Release checklist and rollback procedure.
 
-### Acceptance criteria
+## Acceptance target
 
-Release artifacts are signed where supported, checksummed, attached to GitHub Releases, and generated only from validated source revisions.
-
----
-
-## 17. Cross-cutting test strategy
-
-### Unit tests
-
-- geodesic helpers;
-- coordinate transforms;
-- time conversions;
-- filters;
-- interpolation;
-- resampling;
-- derived channels;
-- segment detectors;
-- selection mapping;
-- recipes and migrations.
-
-### Golden fixtures
-
-Maintain versioned fixtures for every supported input and output format.
-
-### Property and fuzz tests
-
-Use generated inputs for:
-
-- parser robustness;
-- invalid coordinates;
-- non-monotonic time;
-- antimeridian and poles;
-- empty and single-point tracks;
-- extreme values;
-- malformed XML/JSON/binary;
-- operation invariants.
-
-### Integration tests
-
-- import → transform → export;
-- save project → reopen → reproduce;
-- linked chart/map/table selection;
-- multi-dataset alignment;
-- 3D playback synchronization;
-- desktop open/import/export smoke test.
-
-### Performance tests
-
-Track:
-
-- import duration;
-- peak memory;
-- transform duration;
-- chart interaction latency;
-- map frame rate;
-- 3D frame rate;
-- project save/open duration.
-
-Performance regressions should be reported even before hard failure thresholds are introduced.
+Signed, reproducible and automatically smoke-tested packages can be released with traceable provenance, migration guidance and diagnostic support.
 
 ---
 
-## 18. User-experience requirements
+# Ordered execution plan
 
-Across all phases:
+## Immediate tranche — correctness before breadth
 
-- preserve the current quick conversion path;
-- provide beginner-safe defaults and advanced controls;
-- show units everywhere;
-- distinguish source, derived, corrected, and interpolated values;
-- expose warnings without blocking safe work;
-- provide reset and undo;
-- never hide point removal or repair;
-- keep advanced tools discoverable but not mandatory;
-- maintain keyboard and accessible control support;
-- retain useful behavior without internet access.
+1. Complete Stage 0 corrections.
+2. Establish Stage 11 browser/E2E testing for current critical workflows.
+3. Wire standard kinematics and metadata guards from Stage 3.
+4. Add transform previews and operation records from Stage 4.
 
-Recommended workspace layout:
+## Product-depth tranche
 
-```text
-Top bar: project, import, save, export, undo/redo
-Left panel: datasets, channels, segments, operations
-Center: map / charts / 3D tabs or split layout
-Right panel: selection details, transform configuration, statistics
-Bottom: timeline, logs, warnings, progress
-```
+5. Build Stage 5 multi-chart layouts and explicit axes.
+6. Add Stage 7 timestamp-accurate playback and Stage 6 offline map behavior.
+7. Add Stage 8 interpolated, visually linked comparison.
+8. Build Stage 9 project migrations, durable workspace state and HTML reports.
 
----
+## Scale and interoperability tranche
 
-## 19. Recommended execution order
+9. Implement Stage 10 columnar Worker architecture and benchmarks.
+10. Add Arrow/Parquet only after the internal scale architecture is stable.
+11. Complete Stage 14 packaged-app verification, signing and provenance.
 
-The strict dependency order is:
+## Deferred until justified
 
-1. Phase 0 — baseline stability;
-2. Phase 1 — shared selection;
-3. Phase 2 — derived analytics;
-4. Phase 3 — chart workspace;
-5. Phase 4 — massaging pipeline;
-6. Phase 5 — worker/performance architecture;
-7. Phase 6 — multi-dataset comparison;
-8. Phase 7 — local 3D;
-9. Phase 8 — GPU map/global options;
-10. Phase 9 — formats;
-11. Phase 10 — project persistence/reporting;
-12. Phase 11 — plugin boundaries;
-13. Phase 12 — distribution hardening.
-
-Limited format additions may occur earlier when required by real users, but should not interrupt the foundational sequence.
-
----
-
-## 20. First implementation tranche
-
-The first tranche after the active hardening PR should contain four separate pull requests:
-
-### PR-101 — Shared selection model
-
-Deliver:
-
-- workspace selection store;
-- time/index range conversion;
-- selected-range statistics;
-- unit tests;
-- no chart-library replacement yet.
-
-### PR-102 — Linked map/chart/table selection
-
-Deliver:
-
-- chart hover cursor;
-- map nearest-point selection;
-- table row synchronization;
-- selected-range highlighting;
-- integration tests.
-
-### PR-201 — Derived analytics registry
-
-Deliver:
-
-- derivation contract;
-- vertical speed;
-- acceleration;
-- turn rate;
-- sample interval/frequency;
-- quality flags;
-- documentation and tests.
-
-### PR-301 — Chart workspace foundation
-
-Deliver:
-
-- uPlot adapter;
-- altitude, speed, vertical-speed, heading, and quality presets;
-- zoom/pan;
-- synchronized cursor;
-- range brushing;
-- selected-range export.
-
-Do not begin the 3D viewer until these linked-analysis primitives are stable.
-
----
-
-## 21. Agent execution guidance
-
-Recommended default model assignment:
-
-| Work type | Suggested model | Reasoning |
-| --- | --- | --- |
-| Architecture and cross-cutting design | Claude Sonnet or GPT Codex | High |
-| Focused TypeScript implementation | GPT Codex | Medium–High |
-| UI component implementation | Claude Sonnet | Medium |
-| Numerical/geospatial algorithms | strongest available reasoning model | High |
-| Tests, fixtures, and audit | independent model from implementer | High |
-| Documentation and migration notes | Claude Sonnet | Medium |
-
-For every PR, the implementation agent must receive:
-
-- exact scope;
-- excluded scope;
-- acceptance criteria;
-- files likely involved;
-- required tests;
-- performance considerations;
-- backward-compatibility rules.
-
-The audit agent must independently verify claims and produce a report that can be pasted back into the main planning conversation.
-
----
-
-## 22. Definition of done
-
-A phase or PR is complete only when:
-
-- implementation is real and reachable through the UI or documented API;
-- no mock data or placeholder action is presented as complete;
-- types compile;
-- lint passes;
-- tests pass;
-- production web build passes;
-- applicable desktop build passes;
-- fixtures and documentation are included;
-- warnings and failure modes are visible;
-- data mutations are auditable and undoable;
-- performance impact is considered;
-- the PR contains implementation and audit summaries;
-- unresolved risks are explicitly recorded.
-
----
-
-## 23. Immediate next action
-
-Complete Phase 0:
-
-1. fix the active PR's lint failure;
-2. rerun CI;
-3. manually run and inspect the Windows artifact build;
-4. merge the hardening PR;
-5. publish the baseline tagged release;
-6. start `PR-101: Add shared workspace selection model`.
-
-This sequence creates the stable foundation required for every charting, massaging, multi-dataset, and 3D capability that follows.
+- Cesium globe;
+- unrestricted runtime plugins;
+- real-time telemetry;
+- cloud collaboration;
+- broad vendor-format expansion.

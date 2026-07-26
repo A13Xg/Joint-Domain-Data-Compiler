@@ -2,7 +2,7 @@
   "name": "joint-domain-data-compiler",
   "private": true,
   "version": "0.1.0",
-  "description": "Local-first TSPI flight-data workbench: convert, visualize, correct, and massage CSV/GPX/GeoJSON/KML/NMEA/GPB tracks with schema-valid multi-format export.",
+  "description": "Local-first trajectory and TSPI workbench for importing, analyzing, transforming, comparing, visualizing, saving, and exporting track data.",
   "author": {
     "name": "A13Xg",
     "email": "a13xg@users.noreply.github.com"
@@ -18,7 +18,8 @@
     "build:desktop": "npm run build && electron-builder --publish never",
     "build:desktop:linux": "npm run build && electron-builder --linux AppImage deb --publish never",
     "build:desktop:win": "npm run build && electron-builder --win nsis portable --x64 --publish never",
-    "test": "esbuild test/validate.ts --bundle --platform=node --format=esm --outfile=.test-build/validate.mjs && node .test-build/validate.mjs",
+    "test": "node scripts/run-tests.mjs",
+    "test:legacy": "esbuild test/validate.ts --bundle --platform=node --format=esm --outfile=.test-build/validate.mjs && node .test-build/validate.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },

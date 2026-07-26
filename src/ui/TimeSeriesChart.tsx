@@ -35,7 +35,7 @@ export function TimeSeriesChart({ points, channels }: { points: TrackPoint[]; ch
   const [hover, setHover] = useState<number | null>(null)
   const [dragStart, setDragStart] = useState<number | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
-  const { pointIndex, indexRange, selectPoint, selectRange, clearSelection, clearRange } = usePointSelection(points)
+  const { pointIndex, hoverIndex, indexRange, selectPoint, selectRange, setHoverIndex, clearSelection, clearRange, clearHover } = usePointSelection(points)
 
   const hasTime = useMemo(() => points.some((point) => point.time !== undefined), [points])
   const hasDistance = useMemo(() => points.some((point) => typeof point.ext?.distance_m === 'number'), [points])
@@ -63,6 +63,12 @@ export function TimeSeriesChart({ points, channels }: { points: TrackPoint[]; ch
     }
     return Number.isFinite(lo) ? { lo, hi: hi === lo ? lo + 1 : hi } : null
   }, [series])
+
+  const cursorX = useMemo(() => {
+    if (hover !== null) return hover
+    if (hoverIndex === null) return null
+    return pointX(points[hoverIndex], hoverIndex, effectiveX)
+  }, [hover, hoverIndex, points, effectiveX])
 
   const selectedX = useMemo(() => {
     if (pointIndex === null) return null
@@ -138,7 +144,7 @@ export function TimeSeriesChart({ points, channels }: { points: TrackPoint[]; ch
         {indexRange && <button type="button" className="chip chip-on" onClick={clearRange}>range {indexRange.start}–{indexRange.end} ×</button>}
       </div>
 
-      <svg ref={svgRef} className="chart-svg" viewBox={`0 0 ${width} ${height}`} onMouseMove={(event) => setHover(eventX(event))} onMouseLeave={() => { setHover(null); setDragStart(null) }} onMouseDown={onMouseDown} onMouseUp={onMouseUp} style={{ cursor: 'crosshair' }}>
+      <svg ref={svgRef} className="chart-svg" viewBox={`0 0 ${width} ${height}`} onMouseMove={(event) => { const x = eventX(event); setHover(x); const nearest = x === null ? null : nearestValue(series[0]?.values ?? [], x); setHoverIndex(nearest?.sourceIndex ?? null) }} onMouseLeave={() => { setHover(null); setDragStart(null); clearHover() }} onMouseDown={onMouseDown} onMouseUp={onMouseUp} style={{ cursor: 'crosshair' }}>
         {[0, 0.25, 0.5, 0.75, 1].map((grid) => <line key={grid} x1={pad.left} x2={width - pad.right} y1={pad.top + grid * plotH} y2={pad.top + grid * plotH} className="chart-grid" />)}
         {rangeX && <rect x={Math.min(xToPx(rangeX.start), xToPx(rangeX.end))} y={pad.top} width={Math.abs(xToPx(rangeX.end) - xToPx(rangeX.start))} height={plotH} fill="rgba(234,79,47,0.12)" />}
         {series.map((item) => {
@@ -151,13 +157,13 @@ export function TimeSeriesChart({ points, channels }: { points: TrackPoint[]; ch
           }).join(' ')
           return <path key={item.key} d={path} className="chart-line" style={{ stroke: item.color }} />
         })}
-        {hover !== null && xDomain && <line x1={xToPx(hover)} x2={xToPx(hover)} y1={pad.top} y2={pad.top + plotH} className="chart-crosshair" />}
+        {cursorX !== null && xDomain && <line x1={xToPx(cursorX)} x2={xToPx(cursorX)} y1={pad.top} y2={pad.top + plotH} className="chart-crosshair" />}
         {dragStart !== null && hover !== null && <rect x={Math.min(xToPx(dragStart), xToPx(hover))} y={pad.top} width={Math.abs(xToPx(hover) - xToPx(dragStart))} height={plotH} fill="rgba(59,130,246,0.14)" />}
         {selectedX !== null && xDomain && <line x1={xToPx(selectedX)} x2={xToPx(selectedX)} y1={pad.top} y2={pad.top + plotH} style={{ stroke: '#ea4f2f', strokeWidth: 2 }} />}
         {series[0] && series[0].values.length > 1 && <><text x={4} y={pad.top + 4} className="chart-axis-label">{fmt(series[0].max)}</text><text x={4} y={pad.top + plotH} className="chart-axis-label">{fmt(series[0].min)}</text></>}
       </svg>
 
-      {hover !== null && <div className="chart-readout mono"><span className="chart-readout-x">{formatX(hover, effectiveX)}</span>{series.map((item) => { const nearest = nearestValue(item.values, hover); return nearest ? <span key={item.key} style={{ color: item.color }}>{item.key}: {fmt(nearest.y)}</span> : null })}</div>}
+      {cursorX !== null && <div className="chart-readout mono"><span className="chart-readout-x">{formatX(cursorX, effectiveX)}</span>{series.map((item) => { const nearest = nearestValue(item.values, cursorX); return nearest ? <span key={item.key} style={{ color: item.color }}>{item.key}: {fmt(nearest.y)}</span> : null })}</div>}
       {statistics && <div className="chart-readout mono"><strong>{statistics.pointCount.toLocaleString()} pts</strong><span>{fmt(statistics.distanceMeters)} m</span>{statistics.durationSeconds !== undefined && <span>{fmt(statistics.durationSeconds)} s</span>}{Object.entries(statistics.channels).map(([id, summary]) => <span key={id}>{id}: μ {fmt(summary.mean)} · {fmt(summary.min)}–{fmt(summary.max)}</span>)}</div>}
       <div className="muted small">Click to select a point; drag to select a range. Rendering up to {MAX_RENDERED_SAMPLES.toLocaleString()} extrema-preserving samples per channel.</div>
     </div>
