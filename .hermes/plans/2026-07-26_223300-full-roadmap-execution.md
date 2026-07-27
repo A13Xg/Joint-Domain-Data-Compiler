@@ -457,8 +457,9 @@ consistent with Task 5.2's map-only multi-track scope this session.
 
 # Tranche 7 — Projects, reports, and diagnostics
 
-> **Status 2026-07-27:** Tasks 7.1 and 7.3 have their core (non-UI) layer done. Task 7.2 and the
-> recipe/operation-record persistence deferred from Task 3.2 are not started.
+> **Status 2026-07-27:** Tasks 7.1 and 7.3 have their core (non-UI) layer done. Task 7.2's
+> bookmarks (step 1) are done; HTML report generation (steps 2-3) and the recipe/operation-record
+> persistence deferred from Task 3.2 are not started.
 
 ### Task 7.1: Introduce project migration and recovery framework — step 1 done
 
@@ -475,14 +476,22 @@ mechanism is proven before a real v2 ever needs it.
 exists) and step 3 (dirty-state/recovery messaging, compact/excluded history policy — UI/
 persistence-flow decisions in `ProjectPanel.tsx` not attempted here).
 
-### Task 7.2: Add bookmarks, annotations, and HTML reports — not started
+### Task 7.2: Add bookmarks, annotations, and HTML reports — step 1 done
 
-**Files:** `src/ui/{ProjectPanel,ReportPanel}.tsx`, `src/core/report/*`, `src/persistence/project/*`, `test/report-model.ts`.
+**Files:** `src/persistence/project/archive.ts`, `src/App.tsx`, `src/ui/{ProjectPanel,StatsPanel}.tsx`, `test/project-archive.ts`.
 
-**Steps:**
-1. Persist bookmarks/notes bound to dataset, time, index, and selection semantics.
-2. Generate self-contained HTML analysis reports with metadata, source checksums, quality, transforms, selections, comparison/fusion decisions, and supplied image exports.
-3. Add print/PDF styling only after a deterministic HTML report fixture exists.
+Delivered step 1: `ProjectBookmark`/`validateBookmarks` already existed in the manifest schema but
+`buildProjectManifest` hardcoded `bookmarks: []` regardless of input, so nothing could ever create
+or restore one. It now threads through a real array; `App.tsx` holds bookmark state, restores it
+from a loaded archive, and prunes a removed dataset's bookmarks (same cleanup already applied to
+`operationRecords` and comparison selectors). `StatsPanel`'s new Bookmarks section labels/saves the
+selected point and jumps back to it later. Covered by a full build→serialize→parse→archive
+round-trip test.
+
+**Not done:** steps 2-3 — HTML analysis report generation and print/PDF styling. This is a
+standalone, fairly large feature (an HTML template/generation module, wiring in metadata/quality/
+transform/comparison/fusion summaries, image exports from chart/map/3D) not attempted this
+session.
 
 ### Task 7.3: Add local diagnostic bundle export — steps 1-2 done
 
