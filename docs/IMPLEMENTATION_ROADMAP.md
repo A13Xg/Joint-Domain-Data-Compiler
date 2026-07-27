@@ -3,7 +3,7 @@
 **Plan ID:** `JDDC-ROADMAP-2026-02`  
 **Supersedes:** `JDDC-ROADMAP-2026-01`  
 **Repository:** `A13Xg/Joint-Domain-Data-Compiler`  
-**Current integration PR:** #25  
+**Active execution plan:** `.hermes/plans/2026-07-26_223300-full-roadmap-execution.md`  
 **Authority:** This document is the canonical product and implementation roadmap.
 
 ## Product definition
@@ -54,7 +54,7 @@ A feature is complete only when it is:
 
 **Status:** ACTIVE
 
-This stage resolves findings from `docs/PROJECT_REVIEW_2026-07-26.md` before additional feature breadth.
+This stage resolves the correctness findings identified during the 2026-07-26 full project review before additional feature breadth.
 
 ## Required work
 

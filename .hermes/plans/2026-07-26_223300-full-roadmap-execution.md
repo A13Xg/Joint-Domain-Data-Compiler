@@ -16,7 +16,7 @@
 
 - Branch/head: `main` at `3271fb2`.
 - Canonical roadmap: `docs/IMPLEMENTATION_ROADMAP.md`.
-- Prior focused feature plan: `.hermes/plans/2026-07-26_214511-next-workbench-features.md`.
+- Prior focused feature plan `.hermes/plans/2026-07-26_214511-next-workbench-features.md` (Phases 1-4: quality events, multi-source display, fusion, notional smoothing) has been superseded and folded into Tranches 4-6 below; it has been removed to keep one active plan.
 - **Pre-existing uncommitted WIP:** `src/core/quality/events.ts`, `test/quality-events.ts`, and `src/ui/StatsPanel.tsx`. It adds an event core and overview summary; the initial focused test, lint, full regression suite, and build passed before this plan was written. Treat it as **partial** until its table/map/3D integration and final clean-tree gate are complete.
 - Current app remains functional for single active-dataset map/chart/table/3D workflows, project archive v1, basic transforms, comparison, KML/KMZ desktop library, and desktop packaging.
 
@@ -55,7 +55,7 @@
 
 **Files:**
 - Inspect: `package.json`, `package-lock.json`, `.github/workflows/ci.yml`, `.github/workflows/release.yml`
-- Inspect: `docs/IMPLEMENTATION_ROADMAP.md`, `docs/PROJECT_REVIEW_2026-07-26.md`
+- Inspect: `docs/IMPLEMENTATION_ROADMAP.md` (the 2026-07-26 project review that originally informed Stage 0 has since been folded into the roadmap and removed)
 - Do not modify product files in this task.
 
 **Steps:**

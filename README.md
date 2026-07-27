@@ -6,11 +6,10 @@ JDDC runs as a browser application and an Electron desktop application. Data par
 
 ## Current product state
 
-JDDC is a functional engineering workbench with a strong deterministic core. It is not yet production-complete. The canonical current-state review and revised roadmap are:
+JDDC is a functional engineering workbench with a strong deterministic core. It is not yet production-complete. The canonical roadmap and active execution plan are:
 
-- `docs/PROJECT_REVIEW_2026-07-26.md`
-- `docs/IMPLEMENTATION_ROADMAP.md`
-- `docs/EXECUTION_STATUS.md`
+- `docs/IMPLEMENTATION_ROADMAP.md` — product/stage status and definition of done.
+- `.hermes/plans/2026-07-26_223300-full-roadmap-execution.md` — the tranche-by-tranche implementation plan currently being executed.
 
 ## Import
 
