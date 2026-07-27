@@ -285,6 +285,11 @@ code { font-family: var(--mono); background: var(--bg-3); padding: 1px 5px; bord
 .chart-grid { stroke: var(--border); stroke-width: 1; stroke-dasharray: 3 4; }
 .chart-line { fill: none; stroke-width: 1.4; }
 .chart-crosshair { stroke: var(--text-faint); stroke-width: 1; stroke-dasharray: 2 3; }
+.chart-event-marker { stroke-width: 1.5; opacity: 0.75; cursor: help; }
+.chart-event-error { stroke: #ef4444; }
+.chart-event-warning { stroke: #eab308; }
+.chart-event-info { stroke: #64748b; }
+.chart-event-legend { margin-top: 4px; }
 .chart-axis-label { fill: var(--text-faint); font-size: 10px; font-family: var(--mono); }
 .chart-readout { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; background: var(--bg-1); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; }
 .chart-readout-x { color: var(--text-dim); }

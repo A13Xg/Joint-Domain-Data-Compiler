@@ -42,5 +42,35 @@ try { detectQualityEvents(points, { ...DEFAULT_QUALITY_EVENT_CONFIG, gapMs: 0 })
 check('Rejects invalid thresholds', invalidConfigRejected)
 check('Treats a dateline crossing as local movement', !detectQualityEvents([{ lat: 0, lon: 179.999, time: 0 }, { lat: 0, lon: -179.999, time: 1_000 }], { ...DEFAULT_QUALITY_EVENT_CONFIG, coordinateJumpMeters: 1_000 }).some((event) => event.kind === 'coordinate-jump'))
 
+// --- Elevation spike (Task 4.1) ---------------------------------------------
+{
+  const spikeTrack: TrackPoint[] = [100, 101, 100, 500, 99, 100, 100].map((ele, i) => ({ lat: i * 0.001, lon: 0, ele, time: i * 1000 }))
+  const spikeEvents = detectQualityEvents(spikeTrack, { ...DEFAULT_QUALITY_EVENT_CONFIG, elevationSpikeMeters: 100 })
+  check('Detects a single-sample elevation spike', spikeEvents.some((event) => event.kind === 'elevation-spike' && event.startIndex === 3))
+  check('Does not flag a gradual climb as a spike', !spikeEvents.some((event) => event.kind === 'elevation-spike' && event.startIndex === 1))
+}
+{
+  const climbTrack: TrackPoint[] = [100, 200, 300, 400].map((ele, i) => ({ lat: i * 0.001, lon: 0, ele, time: i * 1000 }))
+  check('A sustained climb (no reversal) is never flagged as a spike', !detectQualityEvents(climbTrack, { ...DEFAULT_QUALITY_EVENT_CONFIG, elevationSpikeMeters: 50 }).some((event) => event.kind === 'elevation-spike'))
+}
+
+// --- Elevation flatline (Task 4.1) ------------------------------------------
+{
+  const flatlineTrack: TrackPoint[] = [100, 101, 102, 250, 250, 250, 250, 250, 103, 104].map((ele, i) => ({ lat: i * 0.001, lon: 0, ele, time: i * 1000 }))
+  const flatlineEvents = detectQualityEvents(flatlineTrack, { ...DEFAULT_QUALITY_EVENT_CONFIG, flatlineMinRun: 5 })
+  const flatline = flatlineEvents.find((event) => event.kind === 'elevation-flatline')
+  check('Detects a run of identical elevation values', flatline !== undefined && flatline.startIndex === 3 && flatline.endIndex === 7)
+  check('Flatline records the frozen value and run length', flatline?.measurements?.value === 250 && flatline?.measurements?.runLength === 5)
+}
+{
+  const shortRun: TrackPoint[] = [100, 101, 102, 102, 103].map((ele, i) => ({ lat: i * 0.001, lon: 0, ele, time: i * 1000 }))
+  check('A short repeat below the minimum run is not flagged', !detectQualityEvents(shortRun, { ...DEFAULT_QUALITY_EVENT_CONFIG, flatlineMinRun: 5 }).some((event) => event.kind === 'elevation-flatline'))
+}
+{
+  const trailingFlatline: TrackPoint[] = [100, 101, 100, 100, 100, 100, 100].map((ele, i) => ({ lat: i * 0.001, lon: 0, ele, time: i * 1000 }))
+  const events2 = detectQualityEvents(trailingFlatline, { ...DEFAULT_QUALITY_EVENT_CONFIG, flatlineMinRun: 5 })
+  check('A flatline running to the end of the track is still closed and flagged', events2.some((event) => event.kind === 'elevation-flatline' && event.endIndex === 6))
+}
+
 console.log(`\n${failures === 0 ? 'ALL QUALITY EVENT CHECKS PASSED' : `${failures} QUALITY EVENT CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)
