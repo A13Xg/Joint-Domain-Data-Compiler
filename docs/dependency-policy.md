@@ -7,8 +7,8 @@ time.
 ## Node support
 
 - **Minimum: Node 22.** Vite 8 (rolldown-based) and the native `File`/`Blob`/Web Crypto APIs the
-  parsers and checksum helper rely on require it. CI (`ci.yml`, `release.yml`) pins
-  `actions/setup-node@v4` to `node-version: 22`.
+  parsers and checksum helper rely on require it. CI (`ci.yml`, `release.yml`) pins the
+  `actions/setup-node` implementation to an immutable commit and uses `node-version: 22`.
 - Do not lower the minimum to widen compatibility without first confirming Vite 8 and the parser
   test suite (`test/parser-limits.ts`, `test/csv-import-limits.ts`) still pass on the lower version.
 
@@ -20,9 +20,9 @@ time.
 - **Major versions**: only on a dedicated branch, with the specific breaking-change list from the
   package's changelog reviewed against this codebase's actual usage before merging. Electron and
   React majors in particular can change renderer security defaults or hook semantics.
-- **Electron**: patch upgrades should be verified with a packaged Windows smoke test (the existing
-  `build:desktop:win` + artifact-size/executable-count checks in `release.yml`) before merging,
-  since Electron patch releases can change bundled Chromium/Node behavior.
+- **Electron**: patch upgrades must pass the native packaged renderer smoke jobs on Linux,
+  Windows, and macOS in addition to artifact checks, since Electron patch releases can change
+  bundled Chromium/Node behavior.
 - **electron-builder**: treat separately from other dependencies (see "Known constraint" below).
 
 ## Lockfile discipline
@@ -50,16 +50,25 @@ time.
 
 ## Known constraint: electron-builder vs. its audit-suggested downgrade
 
-As of this writing, `npm audit` may suggest downgrading `electron-builder` from `^26.15.2` to an
-incompatible `25.1.8` to resolve a dev-only transitive finding. Do not take that suggestion
-automatically:
+As of 2026-07-27, `electron-builder` is pinned exactly to `26.15.3`, the version used for the
+verified Linux AppImage/DEB build and packaged renderer launch. `npm audit` reports 16 high
+findings through its build-only `@electron/asar`/`@electron/universal`/glob/minimatch chain and
+suggests a forced downgrade to `22.14.13`. Those packages execute only in the controlled release
+builder and are not present in the shipped runtime dependency set; the runtime audit remains
+zero. Do not take the forced downgrade:
 
 1. First check whether a newer `26.x` (or later major) release of `electron-builder` resolves the
    same finding without downgrading.
-2. If no compatible fixed release exists yet, keep the pinned working version, document the exact
-   finding and why it's build-time-only (never reaches a shipped artifact), and set a review date
-   (e.g. the next time this policy doc's dependencies are audited) rather than leaving it as a
-   silent, undated exception.
+2. If no compatible fixed release exists yet, keep the exact working pin and re-review this
+   exception by 2026-08-31 or at the next release dependency pass, whichever comes first.
+
+## CI supply-chain pins
+
+- GitHub Actions are referenced by immutable commit SHA with the readable major tag retained in
+  an inline comment.
+- The Semgrep Linux/amd64 container is referenced by immutable OCI manifest digest.
+- Resolve and review new commits/digests deliberately during dependency maintenance; do not
+  replace pins with moving major tags or `latest`.
 
 ## Rollback procedure
 
@@ -72,8 +81,9 @@ automatically:
 4. Re-run the full gate (`npm run check:all`, plus `npm run build:desktop:win`/`:linux`/mac build
    locally or via a manual workflow dispatch) before re-tagging.
 
-## What this policy does not yet cover
+## Remaining maintenance work
 
-Electron IPC channel/byte-limit integration tests (Task 9.2 step 3) and the controlled first
-patch/minor update pass across current dependencies (step 4) are not done as of this document —
-see `.hermes/plans/2026-07-26_223300-full-roadmap-execution.md` Tranche 9 for current status.
+The controlled patch/minor update pass remains intentionally incremental. `npm outdated` is
+reviewed at release time; upgrades are not bundled merely to reach the newest version. Native
+Windows/macOS smoke definitions are present in the release workflow but still require a real
+GitHub Actions run after repository billing is restored.

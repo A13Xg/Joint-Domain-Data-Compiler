@@ -1,7 +1,9 @@
 import type { Dataset, TrackPoint } from '../../core/model'
 import { fingerprintDataset } from '../../core/recipes/hash'
+import type { OperationRecord, Recipe } from '../../core/recipes/model'
 import type { WorkspaceSelection } from '../../core/selection'
 import type { WorkspaceState } from '../../state/workspace'
+import type { WorkspaceDisplay } from '../../state/workspaceDisplay'
 import {
   parseProjectManifest,
   serializeProjectManifest,
@@ -165,13 +167,31 @@ export function buildProjectManifest(input: {
   activeTab: string
   selection: WorkspaceSelection
   workspace?: WorkspaceState
+  datasetDisplay?: WorkspaceDisplay
   bookmarks?: ProjectBookmark[]
+  operationRecords?: Readonly<Record<string, readonly OperationRecord[]>>
   projectId?: string
   projectName?: string
   createdAt?: number
   applicationVersion: string
 }): ProjectManifest {
   const now = Date.now()
+  const recipes: Recipe[] = input.datasets.flatMap((dataset) => {
+    const operations = input.operationRecords?.[dataset.id] ?? []
+    if (operations.length === 0) return []
+    return [{
+      schemaVersion: 1 as const,
+      id: `operations_${dataset.id}`,
+      name: `${dataset.name} operation history`,
+      createdAt: operations[0]?.createdAt ?? now,
+      sourceDatasetHash: operations[0]?.inputDatasetHash ?? fingerprintDataset(dataset),
+      operations: operations.map((operation) => structuredClone(operation)),
+    }]
+  })
+  const recipeIdsByDataset = new Map(input.datasets.map((dataset) => [
+    dataset.id,
+    recipes.filter((recipe) => recipe.id === `operations_${dataset.id}`).map((recipe) => recipe.id),
+  ]))
   return {
     schema: 'jddc-project',
     schemaVersion: 1,
@@ -187,10 +207,10 @@ export function buildProjectManifest(input: {
       sourceHash: fingerprintDataset(dataset),
       sourceFileName: dataset.metadata?.source.filename ?? dataset.name,
       embeddedDataPath: `datasets/${dataset.id}.json`,
-      recipeIds: [],
+      recipeIds: recipeIdsByDataset.get(dataset.id) ?? [],
       visible: true,
     })),
-    recipes: [],
+    recipes,
     bookmarks: input.bookmarks ?? [],
     view: {
       activeDatasetId: input.activeDatasetId,
@@ -198,6 +218,7 @@ export function buildProjectManifest(input: {
       selection: input.selection,
       chartLayoutIds: [],
       ...(input.workspace ? { workspace: input.workspace } : {}),
+      ...(input.datasetDisplay ? { datasetDisplay: input.datasetDisplay } : {}),
     },
   }
 }

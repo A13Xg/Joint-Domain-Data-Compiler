@@ -3,7 +3,12 @@ import type { Dataset } from '../core/model'
 import { EMPTY_WORKSPACE_SELECTION } from '../core/selection'
 import { usePointSelection } from '../state/pointSelection'
 import type { WorkspaceState } from '../state/workspace'
+import type { WorkspaceDisplay } from '../state/workspaceDisplay'
 import type { ProjectBookmark } from '../persistence/project/manifest'
+import { buildDiagnosticBundle, serializeDiagnosticBundle } from '../core/diagnostics/bundle'
+import { logger } from '../core/logger'
+import { buildHtmlAnalysisReport } from '../core/reports/htmlReport'
+import type { OperationRecord } from '../core/recipes/model'
 import {
   archiveSummary,
   buildProjectManifest,
@@ -21,16 +26,22 @@ interface Props {
   activeId: string | null
   activeTab: string
   workspace: WorkspaceState
+  datasetDisplay: WorkspaceDisplay
   bookmarks: ProjectBookmark[]
+  operationRecords: Record<string, OperationRecord[]>
+  projectName: string
+  projectDirty: boolean
+  onProjectNameChange: (name: string) => void
+  onProjectSaved: () => void
   onRestoreProject: (archive: ProjectArchive) => void
 }
 
-export function ProjectPanel({ datasets, histories, activeId, activeTab, workspace, bookmarks, onRestoreProject }: Props) {
+export function ProjectPanel({ datasets, histories, activeId, activeTab, workspace, datasetDisplay, bookmarks, operationRecords, projectName, projectDirty, onProjectNameChange, onProjectSaved, onRestoreProject }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
-  const [projectName, setProjectName] = useState('')
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [diagnosticNote, setDiagnosticNote] = useState('')
   const activeDataset = datasets.find((dataset) => dataset.id === activeId) ?? null
   const activeSelection = usePointSelection(activeDataset?.points ?? EMPTY_POINTS)
 
@@ -45,10 +56,12 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
       indexRange: activeSelection.indexRange,
     } : EMPTY_WORKSPACE_SELECTION,
     workspace,
+    datasetDisplay,
     bookmarks,
+    operationRecords,
     projectName: projectName.trim() || undefined,
     applicationVersion: '0.1.0',
-  }), [datasets, activeId, activeTab, activeSelection.pointIndex, activeSelection.indexRange, projectName, workspace, bookmarks])
+  }), [datasets, activeId, activeTab, activeSelection.pointIndex, activeSelection.indexRange, projectName, workspace, datasetDisplay, bookmarks, operationRecords])
 
   const archive = useMemo(() => createProjectArchive({ manifest, datasets, histories }), [manifest, datasets, histories])
   const summary = useMemo(() => archiveSummary(archive), [archive])
@@ -59,6 +72,7 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
     try {
       const blob = await encodeProjectArchive(archive)
       downloadBlob(blob, `${safeName(manifest.name)}.jddc-project`)
+      onProjectSaved()
       setStatus(`Saved ${summary.datasets} dataset(s), ${summary.currentPoints.toLocaleString()} current points, and ${summary.historySnapshots.toLocaleString()} history snapshot(s).`)
     } catch (cause) {
       setError(errorMessage(cause))
@@ -72,14 +86,62 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
     setStatus('Exported the human-readable project manifest without embedded data.')
   }
 
+  const exportReport = () => {
+    const html = buildHtmlAnalysisReport({
+      title: `${manifest.name} — Analysis Report`,
+      generatedAt: Date.now(),
+      applicationVersion: '0.1.0',
+      datasets,
+      bookmarks,
+      operationRecords,
+    })
+    downloadBlob(new Blob([html], { type: 'text/html' }), `${safeName(manifest.name)}-report.html`)
+    setStatus('Exported a self-contained HTML analysis report. Open it in a browser to print or save as PDF.')
+  }
+
+  const exportDiagnostics = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const desktop = window.jointDomainCompiler
+      const text = serializeDiagnosticBundle(buildDiagnosticBundle({
+        appVersion: '0.1.0',
+        platform: desktop ? `electron-${desktop.platform}` : 'web',
+        packaged: Boolean(desktop && window.location.protocol === 'file:'),
+        datasets: datasets.map((dataset) => ({
+          id: dataset.id,
+          name: dataset.name,
+          sourceFormat: dataset.sourceFormat,
+          pointCount: dataset.points.length,
+          warningCount: dataset.warnings.length,
+        })),
+        workspace,
+        logEntries: logger.getEntries(),
+        generatedAt: Date.now(),
+        userNote: diagnosticNote.trim() || undefined,
+      }))
+      if (desktop?.diagnostics) {
+        const savedPath = await desktop.diagnostics.save(text)
+        setStatus(savedPath ? 'Saved the diagnostic bundle.' : 'Diagnostic bundle save canceled.')
+      } else {
+        downloadBlob(new Blob([text], { type: 'application/json' }), `jddc-diagnostics-${new Date().toISOString().slice(0, 10)}.json`)
+        setStatus('Downloaded the diagnostic bundle.')
+      }
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const openProject = async (file: File) => {
+    if (projectDirty && !window.confirm('Open this project and discard unsaved workspace changes?')) return
     setBusy(true)
     setError(null)
     try {
       const loaded = await decodeProjectArchive(file)
       onRestoreProject(loaded)
       const loadedSummary = archiveSummary(loaded)
-      setProjectName(loaded.manifest.name)
       setStatus(`Restored ${loadedSummary.datasets} dataset(s), ${loadedSummary.currentPoints.toLocaleString()} current points, and ${loadedSummary.historySnapshots.toLocaleString()} history snapshot(s).`)
     } catch (cause) {
       setError(errorMessage(cause))
@@ -91,10 +153,12 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
   return (
     <div className="analysis-panel">
       <div className="analysis-toolbar">
-        <label className="num-field"><span>project name</span><input type="text" value={projectName} placeholder={manifest.name} onChange={(event) => setProjectName(event.target.value)} /></label>
+        {projectDirty && <span className="badge">Unsaved changes</span>}
+        <label className="num-field"><span>project name</span><input type="text" value={projectName} placeholder={manifest.name} onChange={(event) => onProjectNameChange(event.target.value)} /></label>
         <button type="button" className="export-btn" disabled={datasets.length === 0 || busy} onClick={() => void saveProject()}>{busy ? 'Working…' : 'Save complete project'}</button>
         <button type="button" disabled={busy} onClick={() => inputRef.current?.click()}>Open project</button>
         <button type="button" disabled={datasets.length === 0 || busy} onClick={exportManifest}>Export manifest only</button>
+        <button type="button" disabled={datasets.length === 0 || busy} onClick={exportReport}>Export HTML report</button>
         <input ref={inputRef} className="hidden-input" type="file" accept=".jddc-project,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void openProject(file); event.target.value = '' }} />
       </div>
       <p className="muted small">A <code>.jddc-project</code> file is a self-contained, gzip-compressed workspace archive. It embeds current datasets, semantic metadata, undo/redo snapshots, the active dataset and tab, and point/range selection. The manifest remains versioned and fingerprint-verified during restore.</p>
@@ -106,6 +170,13 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
         <Metric label="active dataset" value={datasets.find((dataset) => dataset.id === activeId)?.name ?? 'none'} />
         <Metric label="active tab" value={activeTab} />
       </div>
+      <h3>Diagnostics</h3>
+      <p className="muted small">Export app/workspace configuration, dataset summaries, and the most recent application logs for a bug report. Raw trajectory points and KML/KMZ library files are excluded. Review the JSON and your optional note before sharing it.</p>
+      <label className="field">
+        <span>Optional note</span>
+        <textarea rows={3} value={diagnosticNote} placeholder="Describe what happened and how to reproduce it." onChange={(event) => setDiagnosticNote(event.target.value)} />
+      </label>
+      <button type="button" disabled={busy} onClick={() => void exportDiagnostics()}>Export diagnostic bundle</button>
       {error && <div className="error-line">{error}</div>}
       {status && <div className="analysis-summary">{status}</div>}
     </div>

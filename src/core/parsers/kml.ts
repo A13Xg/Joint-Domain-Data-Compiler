@@ -6,7 +6,7 @@ import { parseNumber } from '../format'
 export function parseKml(text: string): ParseResult {
   const warnings: string[] = []
   const doc = new DOMParser().parseFromString(text, 'application/xml')
-  if (doc.querySelector('parsererror')) {
+  if (doc.querySelector('parsererror') || !doc.documentElement) {
     throw new Error('KML is not well-formed XML.')
   }
 

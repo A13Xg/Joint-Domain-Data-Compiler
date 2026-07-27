@@ -60,20 +60,34 @@ export function restoreWorkspaceDisplay(raw: unknown, datasets: readonly Dataset
   const validIds = new Set(datasets.map((dataset) => dataset.id))
   const restored: WorkspaceDisplay = {}
 
-  if (raw && typeof raw === 'object') {
-    for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
-      if (!validIds.has(id)) continue
-      const candidate = value as Partial<DatasetDisplaySettings> | null
-      if (!candidate || typeof candidate !== 'object') continue
-      if (typeof candidate.visible !== 'boolean') continue
-      if (typeof candidate.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(candidate.color)) continue
-      if (typeof candidate.opacity !== 'number' || !Number.isFinite(candidate.opacity) || candidate.opacity < 0 || candidate.opacity > 1) continue
-      if (typeof candidate.label !== 'string') continue
-      restored[id] = { id, visible: candidate.visible, color: candidate.color, opacity: candidate.opacity, label: candidate.label }
-    }
+  for (const [id, candidate] of validWorkspaceDisplayEntries(raw, validIds)) {
+    restored[id] = candidate
   }
 
   return syncWorkspaceDisplay(restored, datasets)
+}
+
+export function isValidWorkspaceDisplay(raw: unknown, validIds: ReadonlySet<string>): raw is WorkspaceDisplay {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false
+  const entries = Object.entries(raw as Record<string, unknown>)
+  return validWorkspaceDisplayEntries(raw, validIds).length === entries.length
+    && entries.every(([id, value]) => Boolean(value && typeof value === 'object' && (value as { id?: unknown }).id === id))
+}
+
+function validWorkspaceDisplayEntries(raw: unknown, validIds: ReadonlySet<string>): Array<[string, DatasetDisplaySettings]> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return []
+  const entries: Array<[string, DatasetDisplaySettings]> = []
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!validIds.has(id)) continue
+    const candidate = value as Partial<DatasetDisplaySettings> | null
+    if (!candidate || typeof candidate !== 'object') continue
+    if (typeof candidate.visible !== 'boolean') continue
+    if (typeof candidate.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(candidate.color)) continue
+    if (typeof candidate.opacity !== 'number' || !Number.isFinite(candidate.opacity) || candidate.opacity < 0 || candidate.opacity > 1) continue
+    if (typeof candidate.label !== 'string') continue
+    entries.push([id, { id, visible: candidate.visible, color: candidate.color, opacity: candidate.opacity, label: candidate.label }])
+  }
+  return entries
 }
 
 export function setVisibility(display: WorkspaceDisplay, id: string, visible: boolean): WorkspaceDisplay {

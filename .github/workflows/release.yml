@@ -14,6 +14,40 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  browser-smoke:
+    name: Browser workbench smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium and system dependencies
+        run: npx playwright install --with-deps chromium
+
+      - name: Exercise the primary browser workflow
+        run: npm run check:e2e
+
+      - name: Upload browser failure report
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-playwright-report-${{ github.sha }}
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: warn
+          retention-days: 14
+
   package:
     name: Package ${{ matrix.platform_name }}
     strategy:
@@ -47,10 +81,10 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
@@ -77,7 +111,41 @@ jobs:
         run: npm run check:unit
 
       - name: Build and package app
+        if: runner.os != 'Windows'
         run: ${{ matrix.build_command }}
+
+      - name: Build and package Windows app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:CSC_LINK)) {
+            $env:CSC_IDENTITY_AUTO_DISCOVERY = "false"
+            "WINDOWS_SIGNING_EXPECTED=false" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            Write-Host "No Windows signing certificate is configured; building unsigned artifacts."
+          } else {
+            "WINDOWS_SIGNING_EXPECTED=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            Write-Host "Windows signing certificate found; electron-builder will sign the artifacts."
+          }
+          npm run build:desktop:win
+
+      - name: Install Linux packaged-smoke dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y xvfb libgtk-3-0
+
+      - name: Launch packaged Linux application
+        if: runner.os == 'Linux'
+        run: npm run check:desktop:linux
+
+      - name: Launch packaged Windows application
+        if: runner.os == 'Windows'
+        run: npm run check:desktop:win
+
+      - name: Launch packaged macOS application
+        if: runner.os == 'macOS'
+        run: npm run check:desktop:mac
 
       - name: Verify Windows executables
         if: runner.os == 'Windows'
@@ -89,6 +157,16 @@ jobs:
           if ($portable.Count -ne 1) { throw "Expected exactly one Windows portable executable, found $($portable.Count)." }
           if ($setup[0].Length -lt 1MB) { throw "Windows setup executable is unexpectedly small." }
           if ($portable[0].Length -lt 1MB) { throw "Windows portable executable is unexpectedly small." }
+          foreach ($artifact in @($setup[0], $portable[0])) {
+            $signature = Get-AuthenticodeSignature -FilePath $artifact.FullName
+            if ($env:WINDOWS_SIGNING_EXPECTED -eq "true") {
+              if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+                throw "Expected a valid signature on $($artifact.Name), got $($signature.Status)."
+              }
+            } elseif ($signature.Status -ne [System.Management.Automation.SignatureStatus]::NotSigned) {
+              throw "Expected unsigned Windows artifact $($artifact.Name), got $($signature.Status)."
+            }
+          }
 
       - name: Generate Windows SHA-256 checksums
         if: runner.os == 'Windows'
@@ -110,7 +188,7 @@ jobs:
         run: node -e "const fs=require('fs');const p='release/JDDC-SBOM-${{ matrix.platform_name }}.cdx.json';const x=JSON.parse(fs.readFileSync(p,'utf8'));if(x.bomFormat!=='CycloneDX'||!Array.isArray(x.components))process.exit(1)"
 
       - name: Upload release-build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-${{ matrix.os }}-${{ github.sha }}
           path: ${{ matrix.artifact_glob }}
@@ -119,11 +197,22 @@ jobs:
 
   publish-release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: package
+    needs: [browser-smoke, package]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     steps:
+      - name: Check out release verifier
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          sparse-checkout: scripts/verify-release-bundle.mjs
+          sparse-checkout-cone-mode: false
+
       - name: Download platform artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: release-*-${{ github.sha }}
           path: release-bundle
@@ -134,17 +223,16 @@ jobs:
         run: |
           mkdir -p release
           find release-bundle -maxdepth 1 -type f -exec cp {} release/ \;
-          find release -maxdepth 1 -type f -name '*Windows*x64*Setup.exe' | grep -q .
-          find release -maxdepth 1 -type f -name '*Windows*x64*Portable.exe' | grep -q .
-          find release -maxdepth 1 -type f -name '*.AppImage' | grep -q .
-          find release -maxdepth 1 -type f -name '*.deb' | grep -q .
-          find release -maxdepth 1 -type f -name '*.dmg' | grep -q .
-          test -f release/SHA256SUMS-Windows.txt
           find release -maxdepth 1 -type f ! -name 'SHA256SUMS.txt' -printf '%f\n' | sort | xargs sha256sum > release/SHA256SUMS.txt
-          (cd release && sha256sum --check SHA256SUMS.txt)
+          node scripts/verify-release-bundle.mjs release
+
+      - name: Attest release artifact provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-path: release/*
 
       - name: Create or update GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: release/*
           fail_on_unmatched_files: true

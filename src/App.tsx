@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CsvAnalysisResult, DetectedColumn } from './types/converter'
 import type { Dataset, TrackPoint } from './core/model'
 import { withPoints } from './core/transforms'
@@ -13,7 +13,7 @@ import { Spinner, ProgressBar } from './ui/Spinner'
 import { LogConsole } from './ui/LogConsole'
 import { MapView, type OtherTrack } from './ui/MapView'
 import { SourcesPanel } from './ui/SourcesPanel'
-import { syncWorkspaceDisplay, type WorkspaceDisplay } from './state/workspaceDisplay'
+import { restoreWorkspaceDisplay, syncWorkspaceDisplay, type WorkspaceDisplay } from './state/workspaceDisplay'
 import { TimeSeriesChart } from './ui/TimeSeriesChart'
 import { DataTable } from './ui/DataTable'
 import { StatsPanel } from './ui/StatsPanel'
@@ -27,9 +27,10 @@ import { ComparisonPanel } from './ui/ComparisonPanel'
 import { Trajectory3dPanel } from './ui/Trajectory3dPanel'
 import { ProjectPanel } from './ui/ProjectPanel'
 import { KmlLibraryPanel } from './ui/KmlLibraryPanel'
-import { restorePointSelection } from './state/pointSelection'
+import { getSelectedPointIndex, getSelectedRange, restorePointSelection } from './state/pointSelection'
 import type { ProjectArchive, ProjectDatasetHistory } from './persistence/project/archive'
 import type { ProjectBookmark } from './persistence/project/manifest'
+import { operationRecordsFromManifest } from './persistence/project/manifest'
 import { parseKml } from './core/parsers/kml'
 import { isDesktopKmlLibraryAvailable, saveKmlLibraryFile } from './desktop/kmlLibrary'
 import { insertDataset } from './core/ids'
@@ -79,6 +80,8 @@ export default function App() {
   const [operationRecords, setOperationRecords] = useState<Record<string, OperationRecord[]>>({})
   const [datasetDisplay, setDatasetDisplay] = useState<WorkspaceDisplay>({})
   const [bookmarks, setBookmarks] = useState<ProjectBookmark[]>([])
+  const [projectName, setProjectName] = useState('')
+  const [projectDirty, setProjectDirty] = useState(false)
   // Reconcile display settings (new datasets get a color; removed datasets'
   // entries are dropped) during render when the dataset list changes,
   // rather than in an effect — same "adjusting state during render"
@@ -100,8 +103,21 @@ export default function App() {
   const history = activeId ? histories[activeId] : undefined
   const selectTab = useCallback((next: Tab) => {
     setTab(next)
-    if (isWorkspaceTab(next)) setWorkspace((current) => ({ ...current, lastWorkspaceTab: next }))
+    if (isWorkspaceTab(next)) {
+      setWorkspace((current) => ({ ...current, lastWorkspaceTab: next }))
+      setProjectDirty(true)
+    }
   }, [])
+
+  useEffect(() => {
+    if (!projectDirty) return
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = true
+    }
+    window.addEventListener('beforeunload', warnBeforeUnload)
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload)
+  }, [projectDirty])
 
   const flashToast = useCallback((message: string) => {
     setToast(message)
@@ -116,6 +132,7 @@ export default function App() {
     setDatasets((current) => insertDataset(current, dataset))
     setActiveId(dataset.id)
     setHistories((current) => ({ ...current, [dataset.id]: { past: [], future: [] } }))
+    setProjectDirty(true)
     setTab('overview')
     const warningNote = dataset.warnings.length > 0 ? `, ${dataset.warnings.length} warning(s)` : ''
     flashToast(`Loaded ${dataset.points.length.toLocaleString()} points from ${dataset.name}${warningNote}`)
@@ -237,9 +254,11 @@ export default function App() {
 
   const onFiles = useCallback((files: FileList | null) => { if (files) for (const file of Array.from(files)) void ingestFile(file) }, [ingestFile])
 
-  const applyTransform = useCallback((points: TrackPoint[], summary: string) => {
+  const applyTransform = useCallback((points: TrackPoint[], summary: string, preserveSelection: boolean) => {
     if (!active) return
     const next = withPoints(active, points)
+    const selectedPointIndex = getSelectedPointIndex(active.points)
+    const selectedRange = getSelectedRange(active.points)
     const record: OperationRecord = {
       id: `op_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       operationId: slugify(summary),
@@ -257,6 +276,15 @@ export default function App() {
       return { ...current, [active.id]: { past: [...existing.past, active], future: [] } }
     })
     setOperationRecords((current) => ({ ...current, [active.id]: [...(current[active.id] ?? []), record] }))
+    setProjectDirty(true)
+    // Index-stable transforms keep linked selection attached to the replacement
+    // array. Reductions and reordering declare that they cannot prove an index
+    // mapping and clear selection deliberately.
+    restorePointSelection(
+      next.points,
+      preserveSelection && next.points.length === active.points.length ? selectedPointIndex : null,
+      preserveSelection && next.points.length === active.points.length ? selectedRange : null,
+    )
     flashToast(summary)
   }, [active, flashToast])
 
@@ -265,6 +293,7 @@ export default function App() {
     const previousDataset = history.past[history.past.length - 1]!
     setDatasets((current) => current.map((dataset) => dataset.id === active.id ? previousDataset : dataset))
     setHistories((current) => { const existing = current[active.id]!; return { ...current, [active.id]: { past: existing.past.slice(0, -1), future: [active, ...existing.future] } } })
+    setProjectDirty(true)
     logger.info('transform', 'Undo')
   }, [active, history])
 
@@ -273,6 +302,7 @@ export default function App() {
     const nextDataset = history.future[0]!
     setDatasets((current) => current.map((dataset) => dataset.id === active.id ? nextDataset : dataset))
     setHistories((current) => { const existing = current[active.id]!; return { ...current, [active.id]: { past: [...existing.past, active], future: existing.future.slice(1) } } })
+    setProjectDirty(true)
     logger.info('transform', 'Redo')
   }, [active, history])
 
@@ -287,6 +317,7 @@ export default function App() {
     // validation used on project restore rather than leaving a phantom ID
     // (which would silently break the comparison with no explanation).
     setWorkspace((current) => normalizeWorkspaceState(current, new Set(remaining.map((dataset) => dataset.id))))
+    setProjectDirty(true)
     if (activeId === id) setActiveId(remaining[0]?.id ?? null)
   }, [activeId, datasets])
 
@@ -298,10 +329,14 @@ export default function App() {
     setDatasets(restoredDatasets)
     setHistories(archive.histories)
     setWorkspace(normalizeWorkspaceState(archive.manifest.view.workspace, new Set(restoredDatasets.map((dataset) => dataset.id))))
+    setDatasetDisplay(restoreWorkspaceDisplay(archive.manifest.view.datasetDisplay, restoredDatasets))
     setBookmarks(archive.manifest.bookmarks)
+    setOperationRecords(operationRecordsFromManifest(archive.manifest))
+    setProjectName(archive.manifest.name)
     setActiveId(restoredActiveId)
     setPendingCsv(null)
     setTab(restoredTab)
+    setProjectDirty(false)
     const activeDataset = restoredDatasets.find((dataset) => dataset.id === restoredActiveId)
     if (activeDataset) {
       const selection = archive.manifest.view.selection
@@ -345,17 +380,17 @@ export default function App() {
             {progress !== null && <div className="global-progress"><ProgressBar value={progress} label={busy ?? 'Working'} />{building && <button type="button" onClick={cancelCsvBuild}>Cancel</button>}</div>}
             {tab === 'import' && <ImportView dragActive={dragActive} setDragActive={setDragActive} onFiles={onFiles} openPicker={() => fileInputRef.current?.click()} />}
             {tab === 'mapping' && pendingCsv && <MappingPanel analysis={pendingCsv.analysis} mapping={pendingCsv.mapping} onChange={(mapping) => setPendingCsv((current) => current ? { ...current, mapping } : current)} additionalHeaders={pendingCsv.additionalHeaders} onToggleAdditionalHeaders={(additionalHeaders) => setPendingCsv((current) => current ? { ...current, additionalHeaders } : current)} onBuild={buildCsvDataset} building={building} />}
-            {tab === 'overview' && active && <StatsPanel dataset={active} bookmarks={bookmarks} onBookmarksChange={setBookmarks} />}
-            {tab === 'map' && active && <MapView points={active.points} channels={active.channels} workspace={workspace.map} onWorkspaceChange={(map) => setWorkspace((current) => ({ ...current, map }))} otherTracks={otherTracks} />}
+            {tab === 'overview' && active && <StatsPanel dataset={active} bookmarks={bookmarks} onBookmarksChange={(next) => { setBookmarks(next); setProjectDirty(true) }} />}
+            {tab === 'map' && active && <MapView points={active.points} channels={active.channels} workspace={workspace.map} onWorkspaceChange={(map) => { setWorkspace((current) => ({ ...current, map })); setProjectDirty(true) }} otherTracks={otherTracks} />}
             {tab === 'charts' && active && <TimeSeriesChart points={active.points} channels={active.channels} />}
             {tab === 'table' && active && <DataTable points={active.points} channels={active.channels} />}
-            {tab === 'compare' && <ComparisonPanel datasets={datasets} activeId={activeId} workspace={workspace.comparison} onWorkspaceChange={(comparison) => setWorkspace((current) => ({ ...current, comparison }))} />}
-            {tab === 'scene3d' && active && <Trajectory3dPanel dataset={active} workspace={workspace.scene3d} onWorkspaceChange={(scene3d) => setWorkspace((current) => ({ ...current, scene3d }))} />}
+            {tab === 'compare' && <ComparisonPanel datasets={datasets} activeId={activeId} workspace={workspace.comparison} onWorkspaceChange={(comparison) => { setWorkspace((current) => ({ ...current, comparison })); setProjectDirty(true) }} />}
+            {tab === 'scene3d' && active && <Trajectory3dPanel dataset={active} workspace={workspace.scene3d} onWorkspaceChange={(scene3d) => { setWorkspace((current) => ({ ...current, scene3d })); setProjectDirty(true) }} />}
             {tab === 'transform' && active && <><TransformPanel dataset={active} onApply={applyTransform} onUndo={undo} onRedo={redo} canUndo={!!history && history.past.length > 0} canRedo={!!history && history.future.length > 0} operationHistory={operationRecords[active.id] ?? []} /><NotionalSmoothingPanel dataset={active} onCreateDataset={addDataset} /></>}
-            {tab === 'project' && <ProjectPanel datasets={datasets} histories={histories} activeId={activeId} activeTab={workspace.lastWorkspaceTab} workspace={workspace} bookmarks={bookmarks} onRestoreProject={restoreProject} />}
+            {tab === 'project' && <ProjectPanel datasets={datasets} histories={histories} activeId={activeId} activeTab={workspace.lastWorkspaceTab} workspace={workspace} datasetDisplay={syncedDisplay} bookmarks={bookmarks} operationRecords={operationRecords} projectName={projectName} projectDirty={projectDirty} onProjectNameChange={(name) => { setProjectName(name); setProjectDirty(true) }} onProjectSaved={() => setProjectDirty(false)} onRestoreProject={restoreProject} />}
             {tab === 'kmlLibrary' && <KmlLibraryPanel onImportKmlText={importKmlText} />}
             {tab === 'export' && active && <ExportPanel dataset={active} />}
-            {tab === 'sources' && <SourcesPanel datasets={datasets} activeId={activeId} display={syncedDisplay} onDisplayChange={setDatasetDisplay} onSelectActive={setActiveId} />}
+            {tab === 'sources' && <SourcesPanel datasets={datasets} activeId={activeId} display={syncedDisplay} onDisplayChange={(next) => { setDatasetDisplay(next); setProjectDirty(true) }} onSelectActive={setActiveId} />}
             {tab === 'fusion' && <FusionPanel datasets={datasets} onCreateDataset={addDataset} />}
           </section>
         </main>

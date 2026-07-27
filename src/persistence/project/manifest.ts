@@ -1,6 +1,7 @@
-import type { Recipe } from '../../core/recipes/model'
+import type { OperationRecord, Recipe } from '../../core/recipes/model'
 import type { WorkspaceSelection } from '../../core/selection'
 import { normalizeWorkspaceState, type WorkspaceState } from '../../state/workspace'
+import { isValidWorkspaceDisplay, type WorkspaceDisplay } from '../../state/workspaceDisplay'
 import { migrateToVersion, PROJECT_MANIFEST_MIGRATORS } from './migrations'
 
 const CURRENT_MANIFEST_SCHEMA_VERSION = 1
@@ -36,6 +37,7 @@ export interface ProjectViewState {
   mapState?: Record<string, unknown>
   scene3dState?: Record<string, unknown>
   workspace?: WorkspaceState
+  datasetDisplay?: WorkspaceDisplay
 }
 
 export interface ProjectManifestV1 {
@@ -95,8 +97,7 @@ export function validateProjectManifest(value: unknown): asserts value is Projec
 
   const recipeIds = new Set<string>()
   for (const recipe of value.recipes) {
-    if (!isRecord(recipe)) throw new Error('recipe entries must be objects')
-    requireNonEmptyString(recipe.id, 'recipe.id')
+    validateRecipe(recipe)
     if (recipeIds.has(recipe.id)) throw new Error(`Duplicate recipe id: ${recipe.id}`)
     recipeIds.add(recipe.id)
   }
@@ -109,6 +110,14 @@ export function validateProjectManifest(value: unknown): asserts value is Projec
 
   validateView(value.view, datasetIds)
   validateBookmarks(value.bookmarks, datasetIds)
+}
+
+export function operationRecordsFromManifest(manifest: ProjectManifest): Record<string, OperationRecord[]> {
+  const recipesById = new Map(manifest.recipes.map((recipe) => [recipe.id, recipe]))
+  return Object.fromEntries(manifest.datasets.map((dataset) => [
+    dataset.id,
+    dataset.recipeIds.flatMap((recipeId) => recipesById.get(recipeId)?.operations ?? []),
+  ]))
 }
 
 function validateDatasetEntry(value: unknown): asserts value is ProjectDatasetEntry {
@@ -131,6 +140,45 @@ function validateDatasetEntry(value: unknown): asserts value is ProjectDatasetEn
   if (value.timeOffsetMs !== undefined) requireFiniteNumber(value.timeOffsetMs, `Dataset ${value.id} timeOffsetMs`)
 }
 
+function validateRecipe(value: unknown): asserts value is Recipe {
+  if (!isRecord(value)) throw new Error('recipe entries must be objects')
+  if (value.schemaVersion !== 1) throw new Error(`Unsupported recipe schema version: ${String(value.schemaVersion)}`)
+  requireNonEmptyString(value.id, 'recipe.id')
+  requireNonEmptyString(value.name, `Recipe ${value.id} name`)
+  requireFiniteNumber(value.createdAt, `Recipe ${value.id} createdAt`)
+  requireNonEmptyString(value.sourceDatasetHash, `Recipe ${value.id} sourceDatasetHash`)
+  if (!Array.isArray(value.operations)) throw new Error(`Recipe ${value.id} operations must be an array`)
+  for (const operation of value.operations) validateOperationRecord(operation, value.id)
+}
+
+function validateOperationRecord(value: unknown, recipeId: string): asserts value is OperationRecord {
+  if (!isRecord(value)) throw new Error(`Recipe ${recipeId} operation entries must be objects`)
+  requireNonEmptyString(value.id, `Recipe ${recipeId} operation.id`)
+  requireNonEmptyString(value.operationId, `Recipe ${recipeId} operation.operationId`)
+  if (!Number.isSafeInteger(value.operationVersion) || (value.operationVersion as number) < 1) {
+    throw new Error(`Recipe ${recipeId} operation.operationVersion must be a positive safe integer`)
+  }
+  requireNonEmptyString(value.inputDatasetHash, `Recipe ${recipeId} operation.inputDatasetHash`)
+  if (value.outputDatasetHash !== undefined) requireNonEmptyString(value.outputDatasetHash, `Recipe ${recipeId} operation.outputDatasetHash`)
+  requireFiniteNumber(value.createdAt, `Recipe ${recipeId} operation.createdAt`)
+  if (typeof value.summary !== 'string') throw new Error(`Recipe ${recipeId} operation.summary must be a string`)
+  if (!Array.isArray(value.warnings) || !value.warnings.every((warning) => typeof warning === 'string')) {
+    throw new Error(`Recipe ${recipeId} operation.warnings must be a string array`)
+  }
+  if (value.scope !== undefined) {
+    if (!isRecord(value.scope)) throw new Error(`Recipe ${recipeId} operation.scope must be an object`)
+    validateRange(value.scope.indexRange, `Recipe ${recipeId} operation.scope.indexRange`)
+    validateRange(value.scope.timeRange, `Recipe ${recipeId} operation.scope.timeRange`)
+  }
+}
+
+function validateRange(value: unknown, field: string): void {
+  if (value === undefined) return
+  if (!isRecord(value)) throw new Error(`${field} must be an object`)
+  requireFiniteNumber(value.start, `${field}.start`)
+  requireFiniteNumber(value.end, `${field}.end`)
+}
+
 function validateView(value: Record<string, unknown>, datasetIds: Set<string>): void {
   if (value.activeDatasetId !== null && typeof value.activeDatasetId !== 'string') {
     throw new Error('view.activeDatasetId must be a string or null')
@@ -145,6 +193,9 @@ function validateView(value: Record<string, unknown>, datasetIds: Set<string>): 
   if (value.workspace !== undefined) {
     const normalized = normalizeWorkspaceState(value.workspace, datasetIds)
     if (JSON.stringify(normalized) !== JSON.stringify(value.workspace)) throw new Error('view.workspace contains invalid or stale state')
+  }
+  if (value.datasetDisplay !== undefined && !isValidWorkspaceDisplay(value.datasetDisplay, datasetIds)) {
+    throw new Error('view.datasetDisplay contains invalid or stale settings')
   }
 }
 

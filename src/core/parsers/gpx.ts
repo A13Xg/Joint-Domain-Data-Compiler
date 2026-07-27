@@ -6,8 +6,8 @@ export function parseGpx(text: string): ParseResult {
   const warnings: string[] = []
   const doc = new DOMParser().parseFromString(text, 'application/xml')
   const parseError = doc.querySelector('parsererror')
-  if (parseError) {
-    throw new Error(`GPX is not well-formed XML: ${parseError.textContent?.slice(0, 200) ?? 'unknown'}`)
+  if (parseError || !doc.documentElement) {
+    throw new Error(`GPX is not well-formed XML: ${parseError?.textContent?.slice(0, 200) ?? 'unknown'}`)
   }
 
   const points: TrackPoint[] = []

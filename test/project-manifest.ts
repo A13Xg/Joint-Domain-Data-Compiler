@@ -110,5 +110,35 @@ try {
 }
 check('Unsupported schema versions are rejected', versionRejected)
 
+let malformedOperationRejected = false
+try {
+  validateProjectManifest({
+    ...manifest,
+    recipes: [{
+      ...manifest.recipes[0],
+      operations: [{ id: 'bad', operationId: 'derive', operationVersion: 0 }],
+    }],
+  })
+} catch {
+  malformedOperationRejected = true
+}
+check('Malformed persisted operation records are rejected', malformedOperationRejected)
+
+let staleDisplayRejected = false
+try {
+  validateProjectManifest({
+    ...manifest,
+    view: {
+      ...manifest.view,
+      datasetDisplay: {
+        ghost: { id: 'ghost', visible: true, color: '#157c88', opacity: 1, label: 'Ghost' },
+      },
+    },
+  })
+} catch {
+  staleDisplayRejected = true
+}
+check('Stale persisted dataset display settings are rejected', staleDisplayRejected)
+
 console.log(`\n${failures === 0 ? 'ALL PROJECT MANIFEST CHECKS PASSED' : `${failures} PROJECT MANIFEST CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)

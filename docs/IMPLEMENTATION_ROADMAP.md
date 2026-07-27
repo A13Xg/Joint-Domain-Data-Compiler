@@ -154,7 +154,7 @@ Rendered browser behavior is covered by the future Stage 11 end-to-end test suit
 
 ## Remaining
 
-- Persist operation records/recipes into the project archive (Stage 9) and build a full recipe save/load/replay UI.
+- Build a full recipe save/load/replay UI; versioned operation records already persist in projects.
 - Expand transforms per the documented priority list: exponential moving average, rolling statistics/derivatives/integrals, timestamp de-jitter/clock-drift correction, distance-based resampling/monotone interpolation (Butterworth remains deferred until sampling-rate assumptions are explicit).
 - Expose segmentation thresholds and segment summaries in the UI.
 - Add saturation detection (needs per-channel calibration bounds not yet in the channel-definition model). Gap, coordinate-jump, elevation-spike and elevation-flatline detection are delivered.
@@ -181,20 +181,21 @@ All analytical results are produced by versioned operations, carry provenance, r
 - Selection-scoped safe transforms.
 - Fixed-rate linear/step resampling with gap protection in a Worker.
 - Tested versioned operation, recipe, registry, hashing and replay foundations.
+- Before/after previews with point-count, bounds, timing and quality impact.
+- Versioned operation records attached to history and persisted in project archives.
+- Median and Hampel elevation filters.
+- Explicit selection preservation/clearing rules for transforms.
 
 ## Remaining
 
-- Before/after preview with point-count, bounds, timing and quality impact.
-- Operation records attached to dataset history.
 - Recipe capture, save, load, replay and compatibility UI.
 - Descriptor-driven transform controls and validation.
-- Median, Hampel, Savitzky–Golay and exponential moving average filters.
+- Savitzky–Golay and exponential moving average filters.
 - Butterworth filters after sampling assumptions are explicit.
 - Rolling statistics, derivatives and integrals.
 - Distance-based resampling and monotone cubic interpolation.
 - Timestamp de-jitter, duplicate-time policies and clock-drift correction.
 - Memory-efficient history using deltas/checkpoints rather than unlimited complete snapshots.
-- Explicit handling of selections after transforms that reorder or remove points.
 
 ## Acceptance target
 
@@ -346,22 +347,20 @@ Comparison is metadata-safe, interpolation-aware, visually linked, reproducible 
 - Self-contained gzip `.jddc-project` archive.
 - Embedded datasets and fingerprint verification.
 - Undo/redo snapshot persistence.
-- Active dataset and basic tab/selection fields.
-- Compressed file, dataset and point-count validation.
-- Archive round-trip and corruption tests.
+- Active dataset, durable view settings and fully validated linked selection state.
+- Compressed/decompressed byte, dataset and point-count validation.
+- Archive round-trip, migration, corruption and bounded fuzz tests.
+- Dataset identity collision protection after restore.
+- Bookmarks and versioned operation-history persistence.
+- Dirty-state indication, open confirmation and unload recovery guard.
+- Self-contained, print-ready light VectorPunk/HUD HTML analysis report covering dataset
+  statistics, metadata, quality evidence, warnings, bookmarks and operation history.
 
 ## Remaining
 
-- Stage 0 correctness fixes for IDs, view state and decompressed-size limits.
-- Project schema migration framework and compatibility tests.
-- Persist recipes and operation records.
-- Persist chart layouts, map state, 3D camera state and comparison settings.
-- Persist time-range/segment semantics rather than only the derived index range.
-- Bookmarks, annotations and notes UI.
-- Save/open dirty-state indication and recovery behavior.
+- Recipe capture/replay plus annotations and notes UI.
 - Compact history storage and optional history exclusion.
-- HTML analysis report with source, metadata, quality, transforms, selections, charts, map and 3D images.
-- Print/PDF-ready report styling after HTML reports are stable.
+- Embedded chart, map and 3D report images.
 
 ## Acceptance target
 
@@ -401,24 +400,26 @@ Defined large datasets complete supported workflows within documented time/memor
 
 # Stage 11 — Automated product verification
 
-**Status:** PLANNED
+**Status:** FUNCTIONAL
 
 ## Delivered
 
-- 20 deterministic Node regression harnesses.
+- 42 deterministic TypeScript regression harnesses.
 - GPX XSD validation.
 - Lint, TypeScript, Vite build, Semgrep, audit, SBOM and focused workflow gates.
 - Documented manual fixture corpus.
+- Chromium end-to-end coverage for the primary linked workflow, persistence, reports,
+  diagnostics and export, with retained failure evidence.
+- Bounded deterministic property/fuzz coverage for parsers, transforms and project archives.
+- Native packaged-launch smoke definitions for Linux, Windows and macOS; Linux locally proven.
 
 ## Remaining
 
 - Browser component-test framework.
-- Playwright end-to-end workflow tests for import, mapping, selection, transforms, Worker resampling, projects and export.
 - Automated fixture matrix for every supported parser and exporter.
 - Visual smoke tests for chart, map, table and 3D.
-- Electron packaged-launch tests on Windows, Linux and macOS.
+- Complete a successful native Windows/macOS Actions run once repository billing permits jobs.
 - Performance regression suite.
-- Property-based and fuzz tests for parsers, archive validation and transforms.
 - Consolidate redundant focused workflows after equivalent diagnostics exist in the main suite.
 
 ## Acceptance target
@@ -501,19 +502,19 @@ First-party capabilities register through one coherent internal extension path. 
 - Semgrep production-source analysis.
 - Release checksums.
 - Tag/version verification and GitHub Release workflow.
+- GitHub/Sigstore build-provenance attestations and complete manifest verification.
+- Reviewed and tested Electron fuse policy.
+- Opportunistic Windows signing with a verified unsigned fallback when no certificate exists.
+- Native packaged smoke definitions for all three platforms; Linux locally proven.
+- Crash/diagnostic bundle export.
+- Immutable GitHub Action commit and scanner-container digest pins.
+- Stable/prerelease policy, release checklist and rollback procedure.
 
 ## Remaining
 
-- Pin Actions and scanner containers to immutable revisions.
-- Windows code signing.
 - macOS signing and notarization.
-- Electron fuse review.
-- Build provenance attestations.
-- Packaged-application launch/smoke tests.
-- Parser and archive fuzzing.
-- Crash/diagnostic bundle export.
-- Stable, prerelease and migration policy.
-- Release checklist and rollback procedure.
+- Complete native Windows/macOS packaged-smoke runs once repository Actions billing permits jobs.
+- Resolve or re-review the isolated electron-builder build-only audit chain by its documented date.
 
 ## Acceptance target
 

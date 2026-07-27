@@ -1,16 +1,18 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron')
 const fs = require('fs')
 const path = require('path')
 const zlib = require('zlib')
+const {
+  DEV_ORIGIN,
+  IPC_CHANNELS,
+  MAX_KML_LIBRARY_BYTES,
+  diagnosticBundleText,
+  ipcBytes,
+  isAllowedAppUrl,
+  resolveLibraryPath,
+} = require('./security.cjs')
 
 const isDev = !app.isPackaged
-const DEV_ORIGIN = 'http://localhost:5173'
-const MAX_KML_LIBRARY_BYTES = 50 * 1024 * 1024
-
-function isAllowedAppUrl(url) {
-  if (isDev) return url.startsWith(DEV_ORIGIN)
-  return url.startsWith('file://')
-}
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -35,7 +37,7 @@ function createWindow() {
   })
 
   window.webContents.on('will-navigate', (event, url) => {
-    if (!isAllowedAppUrl(url)) {
+    if (!isAllowedAppUrl(url, isDev)) {
       event.preventDefault()
       if (url.startsWith('https://')) void shell.openExternal(url)
     }
@@ -66,23 +68,9 @@ function ensureKmlLibraryDir() {
   return dir
 }
 
-function safeLibraryName(name) {
-  const base = path.basename(String(name || '')).replace(/[^a-z0-9._ -]+/gi, '_').trim()
-  if (!base) throw new Error('KML/KMZ filename is empty')
-  const ext = path.extname(base).toLowerCase()
-  if (ext !== '.kml' && ext !== '.kmz') throw new Error('Only .kml and .kmz files can be stored in the KML/KMZ library')
-  return base
-}
-
 function libraryPath(name) {
   const dir = ensureKmlLibraryDir()
-  // `safe` is basename-only with a strict charset whitelist (safeLibraryName),
-  // and the join result is re-verified below to stay inside `dir`, so this is
-  // not a traversal despite the shape of the call.
-  const safe = safeLibraryName(name)
-  const filePath = path.join(dir, safe) // nosemgrep
-  if (!filePath.startsWith(dir + path.sep)) throw new Error('KML/KMZ path escaped the library directory')
-  return filePath
+  return resolveLibraryPath(dir, name)
 }
 
 function dosDateTimeToMs(date, time) {
@@ -132,7 +120,7 @@ function firstKmlFromKmz(bytes) {
 }
 
 function registerKmlLibraryIpc() {
-  ipcMain.handle('kml-library:list', async () => {
+  ipcMain.handle(IPC_CHANNELS.list, async () => {
     const dir = ensureKmlLibraryDir()
     return fs.readdirSync(dir, { withFileTypes: true })
       .filter((entry) => entry.isFile() && /\.km?l$/i.test(entry.name))
@@ -145,16 +133,15 @@ function registerKmlLibraryIpc() {
       .sort((a, b) => b.modifiedAt - a.modifiedAt)
   })
 
-  ipcMain.handle('kml-library:save', async (_event, name, bytes) => {
+  ipcMain.handle(IPC_CHANNELS.save, async (_event, name, bytes) => {
     const filePath = libraryPath(name)
-    const buffer = Buffer.from(bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : bytes)
-    if (buffer.byteLength > MAX_KML_LIBRARY_BYTES) throw new Error('KML/KMZ file exceeds safety limit')
+    const buffer = ipcBytes(bytes)
     fs.writeFileSync(filePath, buffer)
     const stat = fs.statSync(filePath)
     return { name: path.basename(filePath), bytes: stat.size, modifiedAt: stat.mtimeMs, kind: path.extname(filePath).toLowerCase().slice(1) }
   })
 
-  ipcMain.handle('kml-library:read-text', async (_event, name) => {
+  ipcMain.handle(IPC_CHANNELS.readText, async (_event, name) => {
     const filePath = libraryPath(name)
     const stat = fs.statSync(filePath)
     if (stat.size > MAX_KML_LIBRARY_BYTES) throw new Error('KML/KMZ file exceeds safety limit')
@@ -163,20 +150,35 @@ function registerKmlLibraryIpc() {
     return { text: buffer.toString('utf8'), entryName: path.basename(filePath), modifiedAt: stat.mtimeMs }
   })
 
-  ipcMain.handle('kml-library:remove', async (_event, name) => {
+  ipcMain.handle(IPC_CHANNELS.remove, async (_event, name) => {
     fs.rmSync(libraryPath(name), { force: true })
     return true
   })
 
-  ipcMain.handle('kml-library:reveal', async () => {
+  ipcMain.handle(IPC_CHANNELS.reveal, async () => {
     const dir = ensureKmlLibraryDir()
     await shell.openPath(dir)
     return dir
   })
 }
 
+function registerDiagnosticIpc() {
+  ipcMain.handle(IPC_CHANNELS.saveDiagnostics, async (_event, text) => {
+    const content = diagnosticBundleText(text)
+    const result = await dialog.showSaveDialog({
+      title: 'Save diagnostic bundle',
+      defaultPath: `jddc-diagnostics-${new Date().toISOString().slice(0, 10)}.json`,
+      filters: [{ name: 'JSON diagnostic bundle', extensions: ['json'] }],
+    })
+    if (result.canceled || !result.filePath) return null
+    fs.writeFileSync(result.filePath, content, 'utf8')
+    return result.filePath
+  })
+}
+
 app.whenReady().then(() => {
   registerKmlLibraryIpc()
+  registerDiagnosticIpc()
   createWindow()
 
   app.on('activate', () => {
