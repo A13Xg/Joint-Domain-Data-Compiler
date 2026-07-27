@@ -157,7 +157,7 @@ Rendered browser behavior is covered by the future Stage 11 end-to-end test suit
 - Persist operation records/recipes into the project archive (Stage 9) and build a full recipe save/load/replay UI.
 - Expand transforms per the documented priority list: exponential moving average, rolling statistics/derivatives/integrals, timestamp de-jitter/clock-drift correction, distance-based resampling/monotone interpolation (Butterworth remains deferred until sampling-rate assumptions are explicit).
 - Expose segmentation thresholds and segment summaries in the UI.
-- Add gap, spike, flatline, saturation and coordinate-jump detection.
+- Add saturation detection (needs per-channel calibration bounds not yet in the channel-definition model). Gap, coordinate-jump, elevation-spike and elevation-flatline detection are delivered.
 - Add altitude/time-reference-aware analytical guards.
 - Add anomaly/event overlays consumable by charts, map and reports.
 
@@ -223,7 +223,7 @@ Every mutation is previewable, versioned, reproducible and explainable, with bou
 - Explicit independent/shared Y-axis controls and visible scales for every series.
 - Zoom, pan and range reset.
 - Raw-versus-processed overlays.
-- Segment, gap, anomaly and event overlays.
+- Segment overlays (quality-event overlays — gap, coordinate-jump, elevation-spike, elevation-flatline, duplicate-timestamp, invalid-coordinate — are delivered, with severity-based non-color patterns and hover detail).
 - Histograms, scatter plots, box plots and correlation matrix.
 - PNG and SVG export.
 - Persisted chart layouts in projects.

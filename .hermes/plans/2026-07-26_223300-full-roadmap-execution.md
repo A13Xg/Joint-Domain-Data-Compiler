@@ -280,16 +280,27 @@ specified.
 
 # Tranche 4 — Quality, chart, map, and 3D linked visualization
 
-### Task 4.1: Finish event overlays and configurable segmentation
+> **Status 2026-07-27:** Task 4.1 done (scoped). Tasks 4.2 and 4.3 **not started** —
+> stopped here at a clean, fully-green checkpoint rather than spreading further
+> across an already-large remaining surface (this tranche's remaining two tasks,
+> plus all of Tranches 5-9, realistically represent weeks of further work). See
+> the session report for the full rationale and recommended next steps.
 
-**Files:** `src/core/quality/*`, `src/core/analytics/segments.ts`, `src/ui/{StatsPanel,DataTable,TimeSeriesChart,MapView,Trajectory3dPanel}.tsx`, `test/quality-events.ts`, `test/segments.ts`.
+### Task 4.1: Finish event overlays and configurable segmentation — done (scoped)
 
-**Steps:**
-1. Expose validated segmentation thresholds and segment summaries.
-2. Add spike, flatline, saturation, and coordinate-jump detection with per-event provenance and no duplicate algorithm in UI.
-3. Render events in all linked views, including visible labels/patterns for accessibility.
+**Files:** `src/core/quality/events.ts`, `src/ui/{StatsPanel,TimeSeriesChart}.tsx`, `test/quality-events.ts`.
 
-### Task 4.2: Upgrade the chart workspace without misleading scales
+Delivered: `elevation-spike` (single-sample deviation that reverses on the next sample) and
+`elevation-flatline` (a run of bit-identical elevation values ≥ a configurable minimum length)
+quality-event kinds, plus event rendering in `TimeSeriesChart.tsx` (the one linked view — of
+StatsPanel/DataTable/MapView/Trajectory3dPanel/TimeSeriesChart — that had no quality-event
+integration at all), using severity-based dash patterns rather than color alone.
+
+**Deferred:** saturation detection (needs per-channel calibration bounds not present in the
+current channel-definition model) and UI-exposed thresholds for the separate flight/data-state
+segmentation engine (`src/core/analytics/segments.ts`) — a settings-panel-sized task on its own.
+
+### Task 4.2: Upgrade the chart workspace without misleading scales — not started
 
 **Files:** `src/state/workspace.ts`, `src/ui/TimeSeriesChart.tsx`, `src/visualization/chart/*`, `test/chart-series.ts`, `test/chart-layout.ts`.
 
@@ -299,7 +310,7 @@ specified.
 3. Add histogram/scatter/box/correlation views after shared selection and scale semantics are established.
 4. Add SVG/PNG export with source/selection metadata.
 
-### Task 4.3: Complete offline-aware map and time-driven 3D behavior
+### Task 4.3: Complete offline-aware map and time-driven 3D behavior — not started
 
 **Files:** `src/ui/{MapView,Trajectory3dPanel}.tsx`, `src/visualization/{map,scene3d}/*`, `src/state/workspace.ts`, `test/map-track-layers.ts`, `test/trajectory-3d.ts`, `test/playback.ts`.
 
@@ -313,6 +324,8 @@ specified.
 ---
 
 # Tranche 5 — Multi-source workspace and comparison
+
+> **Status 2026-07-27:** Not started.
 
 ### Task 5.1: Add multi-dataset display state and Sources panel
 
@@ -347,6 +360,8 @@ specified.
 ---
 
 # Tranche 6 — Auditable fusion and notional output
+
+> **Status 2026-07-27:** Not started. Depends on Tranche 5's multi-source workspace state.
 
 ### Task 6.1: Define entity, source, candidate, and decision contracts
 
@@ -389,6 +404,9 @@ specified.
 
 # Tranche 7 — Projects, reports, and diagnostics
 
+> **Status 2026-07-27:** Not started. This is the designated home for the recipe/operation-record
+> persistence deferred from Task 3.2.
+
 ### Task 7.1: Introduce project migration and recovery framework
 
 **Files:** `src/persistence/project/{manifest,archive,migrations}.ts`, `test/project-migrations.ts`, `test/project-archive.ts`, `src/ui/ProjectPanel.tsx`.
@@ -420,6 +438,9 @@ specified.
 
 # Tranche 8 — Scale architecture and measured interoperability
 
+> **Status 2026-07-27:** Not started. The plan explicitly gates this tranche on benchmark
+> evidence before any architectural replacement — not attempted without that evidence.
+
 ### Task 8.1: Benchmark before architectural replacement
 
 **Files:** `benchmarks/*`, `scripts/run-benchmarks.mjs`, `docs/performance-baseline.md`, CI workflow additions only after local benchmark is deterministic.
@@ -448,6 +469,10 @@ specified.
 ---
 
 # Tranche 9 — Test automation, dependency maintenance, and release hardening
+
+> **Status 2026-07-27:** Not started. Note for whoever picks this up: Task 9.3's Windows/macOS
+> code signing and notarization are structurally blocked without secrets/certificates only the
+> repository owner holds — no amount of agent effort substitutes for that.
 
 ### Task 9.1: Establish browser and Electron smoke gates
 
