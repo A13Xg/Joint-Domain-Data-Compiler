@@ -280,11 +280,9 @@ specified.
 
 # Tranche 4 — Quality, chart, map, and 3D linked visualization
 
-> **Status 2026-07-27:** Task 4.1 done (scoped). Tasks 4.2 and 4.3 **not started** —
-> stopped here at a clean, fully-green checkpoint rather than spreading further
-> across an already-large remaining surface (this tranche's remaining two tasks,
-> plus all of Tranches 5-9, realistically represent weeks of further work). See
-> the session report for the full rationale and recommended next steps.
+> **Status 2026-07-27:** All three tasks have a done (scoped) slice landed. Deeper items in
+> each — chart pane model/histograms/export, 3D draw-loop/timestamp-accurate playback,
+> multi-source map/3D rendering — remain and are called out per task below.
 
 ### Task 4.1: Finish event overlays and configurable segmentation — done (scoped)
 
@@ -300,26 +298,31 @@ integration at all), using severity-based dash patterns rather than color alone.
 current channel-definition model) and UI-exposed thresholds for the separate flight/data-state
 segmentation engine (`src/core/analytics/segments.ts`) — a settings-panel-sized task on its own.
 
-### Task 4.2: Upgrade the chart workspace without misleading scales — not started
+### Task 4.2: Upgrade the chart workspace without misleading scales — step 1 partial
 
-**Files:** `src/state/workspace.ts`, `src/ui/TimeSeriesChart.tsx`, `src/visualization/chart/*`, `test/chart-series.ts`, `test/chart-layout.ts`.
+**Files:** `src/visualization/charts/zoom.ts` (new), `src/ui/TimeSeriesChart.tsx`, `test/chart-zoom.ts`.
 
-**Steps:**
-1. Add pane model, visible independent/shared Y axes, crosshairs, zoom/pan/reset, and raw-vs-processed overlays.
-2. Persist chart layouts only after pure layout validation is tested.
-3. Add histogram/scatter/box/correlation views after shared selection and scale semantics are established.
-4. Add SVG/PNG export with source/selection metadata.
+Delivered: cursor-anchored wheel zoom with bounds clamping and a "Reset zoom" control (pure domain
+math in `zoom.ts`, 10 test cases); fixed the chart's actual namesake problem — every series is
+independently normalized to the full plot height, but only `series[0]`'s min/max was ever labeled,
+so every other line had an invisible scale. Every series now gets its own color-matched label.
 
-### Task 4.3: Complete offline-aware map and time-driven 3D behavior — not started
+**Not done:** a real pane model (separate plot lanes instead of one shared area), persisted chart
+layouts, histogram/scatter/box/correlation views, SVG/PNG export, raw-vs-processed overlays.
 
-**Files:** `src/ui/{MapView,Trajectory3dPanel}.tsx`, `src/visualization/{map,scene3d}/*`, `src/state/workspace.ts`, `test/map-track-layers.ts`, `test/trajectory-3d.ts`, `test/playback.ts`.
+### Task 4.3: Complete offline-aware map and time-driven 3D behavior — step 1 done
 
-**Steps:**
-1. Show basemap network state and preserve usable offline/no-basemap behavior.
-2. Finish antimeridian/gap-safe path helpers and derive markers from shared quality events.
-3. Refactor 3D draw-loop ownership so playback does not recreate React effects per frame.
-4. Replace fraction-only playback with timestamp-aware playback that synchronizes chart/map/3D and gives gap annotations.
-5. Add persisted camera/render state, image exports, and 20k/100k performance measurements before considering WebGL.
+**Files:** `src/ui/MapView.tsx`, `src/index.css`.
+
+Delivered step 1: the map already had a working offline "grid" basemap mode; it now also reports
+`tileload`/`tileerror` from the OSM `TileLayer` and shows a visible warning with a one-click
+"Switch to offline grid" action when tiles actually fail to load, instead of silently rendering
+blank tiles with no explanation.
+
+**Not done:** steps 2-5 — antimeridian/gap-safe path helper completion, 3D draw-loop ownership
+refactor, timestamp-accurate playback synchronized across chart/map/3D, persisted camera/render
+state, image export, and 20k/100k 3D performance measurement (the benchmark harness from Task 8.1
+covers core-pipeline operations, not 3D geometry/render specifically — see Tranche 8 notes).
 
 ---
 
@@ -367,27 +370,33 @@ does nothing, so it was intentionally left for whoever tackles 5.1's UI and 5.2 
 
 # Tranche 6 — Auditable fusion and notional output
 
-> **Status 2026-07-27:** Not started. Depends on Tranche 5's multi-source workspace state.
+> **Status 2026-07-27:** Tasks 6.1-6.2 (the pure contracts/grouping/scoring layer) done.
+> Tasks 6.3-6.4 (Auto-Combine, UI, notional smoothing) not started — they need Tranche 5's
+> multi-source workspace UI (Sources panel, multi-track rendering) as a foundation, which
+> itself only has its data layer done, not its UI.
 
-### Task 6.1: Define entity, source, candidate, and decision contracts
+### Task 6.1: Define entity, source, candidate, and decision contracts — done
 
-**Files:** `src/core/fusion/model.ts`, `src/core/model.ts`, `test/fusion-model.ts`.
+**Files:** `src/core/fusion/model.ts` (new), `test/fusion-model.ts`.
 
-**Steps:**
-1. Add entity fields (display name, optional callsign, platform type, description) without ranking/categorization.
-2. Define source registrations, candidate groups, source scores, manual interval overrides, and point-level decision provenance.
-3. Test validation, serialization, compatibility guards, and raw source immutability.
+Delivered all three steps: `Entity`/`SourceRegistration`/`CandidatePoint`/`CandidateGroup`/
+`SourceScore`/override types/`FusedPointDecision`, with validation that rejects malformed input,
+JSON round-trip serialization, and `candidateFromSourcePoint` copying plain values (never a
+reference into a dataset's `TrackPoint`) so raw sources can't be mutated through a candidate.
 
-### Task 6.2: Implement deterministic candidate grouping and source scoring
+### Task 6.2: Implement deterministic candidate grouping and source scoring — done
 
-**Files:** `src/core/fusion/{grouping,scoring}.ts`, `test/fusion-grouping.ts`.
+**Files:** `src/core/fusion/{grouping,scoring}.ts` (new), `test/fusion-grouping.ts`.
 
-**Steps:**
-1. Group candidates by configured time/spatial tolerance and compatible metadata.
-2. Score real candidates using known accuracy/HDOP/satellite/timing/gap inputs plus explicit source priority.
-3. Make ties deterministic and explainable. Never synthesize a fused point in this MVP.
+Delivered: `groupCandidatesByTime` (anchor-based time clustering — see the code comment for the
+documented anchor-vs-rolling-window trade-off) and `scoreCandidate` (source priority dominant,
+bounded HDOP/satellite-count adjustments, timing-consistency penalty, deterministic
+`rankScores` tie-break by sourceId). Never synthesizes a point, per the MVP rule. Spatial
+tolerance and cross-dataset metadata-compatibility screening (the rest of step 1) are not
+implemented — grouping is time-only today; compatibility screening was scoped to the caller
+(one level up, where per-dataset metadata actually lives) and that caller doesn't exist yet.
 
-### Task 6.3: Build Auto-Combine, audit report, and timeline overrides
+### Task 6.3: Build Auto-Combine, audit report, and timeline overrides — not started
 
 **Files:** `src/core/fusion/{autoCombine,report}.ts`, `src/ui/{FusionPanel,FusionTimeline}.tsx`, `src/App.tsx`, `src/persistence/project/*`, `test/fusion-auto-combine.ts`.
 
@@ -397,7 +406,7 @@ does nothing, so it was intentionally left for whoever tackles 5.1's UI and 5.2 
 3. Add manual interval selection snapped to candidate group boundaries; overrides survive recombination until reset.
 4. Default exports to fused output and provide provenance/report export.
 
-### Task 6.4: Add non-destructive notional smoothing
+### Task 6.4: Add non-destructive notional smoothing — not started
 
 **Files:** `src/core/derivations/notionalSmoothing.ts`, `src/ui/NotionalSmoothingPanel.tsx`, `src/ui/{MapView,Trajectory3dPanel}.tsx`, `test/notional-smoothing.ts`.
 
@@ -410,19 +419,25 @@ does nothing, so it was intentionally left for whoever tackles 5.1's UI and 5.2 
 
 # Tranche 7 — Projects, reports, and diagnostics
 
-> **Status 2026-07-27:** Not started. This is the designated home for the recipe/operation-record
-> persistence deferred from Task 3.2.
+> **Status 2026-07-27:** Tasks 7.1 and 7.3 have their core (non-UI) layer done. Task 7.2 and the
+> recipe/operation-record persistence deferred from Task 3.2 are not started.
 
-### Task 7.1: Introduce project migration and recovery framework
+### Task 7.1: Introduce project migration and recovery framework — step 1 done
 
-**Files:** `src/persistence/project/{manifest,archive,migrations}.ts`, `test/project-migrations.ts`, `test/project-archive.ts`, `src/ui/ProjectPanel.tsx`.
+**Files:** `src/persistence/project/migrations.ts` (new), `src/persistence/project/manifest.ts`, `test/project-migrations.ts`.
 
-**Steps:**
-1. Define supported schema versions and pure sequential migrators; reject unknown future versions safely.
-2. Add v1 fixture archives plus migration/corruption/round-trip tests.
-3. Add dirty-state/recovery messaging and optional compact/excluded history policy.
+Delivered step 1: a generic sequential schema-migration engine (`migrateToVersion`) — applies
+registered migrators in order, rejects a schema version from a newer app build outright, rejects a
+version with no migration path, and detects a migrator that doesn't actually advance the version.
+Wired into `parseProjectManifest` ahead of validation. Only schema v1 exists today, so the
+production migrator list is empty; tested generically with synthetic migrators (13 cases) so the
+mechanism is proven before a real v2 ever needs it.
 
-### Task 7.2: Add bookmarks, annotations, and HTML reports
+**Not done:** step 2 (v1 fixture archives specifically for migration testing — moot until a v2
+exists) and step 3 (dirty-state/recovery messaging, compact/excluded history policy — UI/
+persistence-flow decisions in `ProjectPanel.tsx` not attempted here).
+
+### Task 7.2: Add bookmarks, annotations, and HTML reports — not started
 
 **Files:** `src/ui/{ProjectPanel,ReportPanel}.tsx`, `src/core/report/*`, `src/persistence/project/*`, `test/report-model.ts`.
 
@@ -431,32 +446,47 @@ does nothing, so it was intentionally left for whoever tackles 5.1's UI and 5.2 
 2. Generate self-contained HTML analysis reports with metadata, source checksums, quality, transforms, selections, comparison/fusion decisions, and supplied image exports.
 3. Add print/PDF styling only after a deterministic HTML report fixture exists.
 
-### Task 7.3: Add local diagnostic bundle export
+### Task 7.3: Add local diagnostic bundle export — steps 1-2 done
 
-**Files:** `src/core/diagnostics/*`, `src/ui/ProjectPanel.tsx`, `electron/main.cjs`, `electron/preload.cjs`, `test/diagnostics.ts`.
+**Files:** `src/core/diagnostics/bundle.ts` (new), `src/core/logger.ts`, `test/diagnostics.ts`.
 
-**Steps:**
-1. Export app/version/platform, sanitized configuration, logs, validation summaries, and optional user-selected project metadata.
-2. Never include raw data, secrets, or KML library contents by default.
-3. Add Electron bridge limits/allow-list tests consistent with existing persistent-library security patterns.
+Delivered steps 1-2: `buildDiagnosticBundle` assembles app version/platform/packaged flag,
+dataset *summaries* only (id/name/format/point count/warning count), workspace UI config, and a
+capped most-recent slice of log entries, plus an optional explicitly-provided user note. By
+construction there is no code path here that reaches into a dataset's points or a KML/KMZ
+library — callers can only pass pre-summarized inputs. 14 tests, including an explicit check
+that no lat/lon-shaped data ever appears in the serialized output.
+
+**Not done:** step 3 — the Electron IPC bridge to actually save a bundle to disk
+(`electron/{main,preload}.cjs`) and the `ProjectPanel.tsx` trigger button; the bridge allow-list
+tests depend on that integration existing first.
 
 ---
 
 # Tranche 8 — Scale architecture and measured interoperability
 
-> **Status 2026-07-27:** Not started. The plan explicitly gates this tranche on benchmark
-> evidence before any architectural replacement — not attempted without that evidence.
+> **Status 2026-07-27:** Task 8.1 step 1 done and a first measured baseline established (step 2
+> partial). Tasks 8.2-8.3 correctly remain not started — the plan gates them on benchmark
+> evidence this session only partially produced (see below).
 
-### Task 8.1: Benchmark before architectural replacement
+### Task 8.1: Benchmark before architectural replacement — step 1 done, step 2 partial
 
-**Files:** `benchmarks/*`, `scripts/run-benchmarks.mjs`, `docs/performance-baseline.md`, CI workflow additions only after local benchmark is deterministic.
+**Files:** `benchmarks/{generate,run}.ts` (new), `scripts/run-benchmarks.mjs` (new), `docs/performance-baseline.md` (new).
 
-**Steps:**
-1. Add reproducible 100k, 500k, and 1M point generators that do not enter normal test fixtures.
-2. Measure import, transform, selection, chart preparation, map/3D geometry, comparison, archive save/open, and export time/memory.
-3. Establish documented budgets and graceful warning/refusal thresholds.
+Delivered step 1 in full: a deterministic seeded synthetic-track generator, sizeable to any point
+count, that does not enter `npm test`. Delivered a slice of step 2: actually measured (not
+estimated) dataset construction, `sortByTime`, `dedupe`, standard-kinematics derivation,
+quality-event detection, and GPX export at 100k/500k/1M points — real numbers in
+`docs/performance-baseline.md`, including the headline finding that GPX export dominates cost at
+every size (~4.2s / ~74% of the measured total at 1M points).
 
-### Task 8.2: Move proven heavy work to columnar Worker execution
+**Not done:** most of step 2 (parse-time per format, chart preparation, map/3D geometry,
+comparison, project archive save/open) and all of step 3 (documented budgets, graceful
+warning/refusal thresholds beyond the byte/point import budgets already added in Task 2.1). This
+means Tasks 8.2-8.3 still lack the full evidence base the plan requires before proceeding — the
+one concrete lead so far is the GPX exporter, not the `TrackPoint[]` representation itself.
+
+### Task 8.2: Move proven heavy work to columnar Worker execution — not started (correctly gated)
 
 **Files:** `src/core/compute/*`, `src/workers/*`, `src/core/columns/*`, adapters from `TrackPoint[]`, focused Worker tests.
 
@@ -466,7 +496,7 @@ does nothing, so it was intentionally left for whoever tackles 5.1's UI and 5.2 
 3. Move chart preparation and selected-range statistics only where benchmarks demonstrate a renderer benefit.
 4. Add a worker pool/memory budget only after one multi-task workload proves it necessary.
 
-### Task 8.3: Add Arrow/Parquet only after columnar internal stability
+### Task 8.3: Add Arrow/Parquet only after columnar internal stability — not started (correctly gated)
 
 **Files:** new format modules and fixtures; `package.json` only when a tested interchange use case exists.
 
@@ -476,11 +506,13 @@ does nothing, so it was intentionally left for whoever tackles 5.1's UI and 5.2 
 
 # Tranche 9 — Test automation, dependency maintenance, and release hardening
 
-> **Status 2026-07-27:** Not started. Note for whoever picks this up: Task 9.3's Windows/macOS
-> code signing and notarization are structurally blocked without secrets/certificates only the
-> repository owner holds — no amount of agent effort substitutes for that.
+> **Status 2026-07-27:** Task 9.2 step 1 done. Everything else in this tranche not started.
+> Task 9.1 (Playwright) needs browser-binary installation whose feasibility in a given CI/sandbox
+> environment wasn't verified this session — flagged rather than attempted partially. Task 9.3's
+> Windows/macOS code signing and notarization are structurally blocked without secrets/
+> certificates only the repository owner holds — no amount of agent effort substitutes for that.
 
-### Task 9.1: Establish browser and Electron smoke gates
+### Task 9.1: Establish browser and Electron smoke gates — not started
 
 **Files:** `package.json`, `playwright.config.ts`, `test/e2e/*`, `scripts/*`, `.github/workflows/{ci,release}.yml`.
 
@@ -490,19 +522,24 @@ does nothing, so it was intentionally left for whoever tackles 5.1's UI and 5.2 
 3. Add packaged launch/smoke tests per platform; distinguish skipped signing/notarization from a passing package launch.
 4. Add property/fuzz tests for parsers, archive validation, and transforms with bounded input/time budgets.
 
-### Task 9.2: Refactor dependency and Electron-builder maintenance into controlled upgrade lanes
+### Task 9.2: Refactor dependency and Electron-builder maintenance into controlled upgrade lanes — step 1 done
 
-**Files:** `package.json`, `package-lock.json`, `electron/{main,preload}.cjs`, `vite.config.ts`, `scripts/run-tests.mjs`, `.github/workflows/{ci,release}.yml`, `docs/dependency-policy.md`, `test/electron-bridge.ts`.
+**Files:** `package.json`, `.github/workflows/{ci,release}.yml`.
 
-**Steps:**
-1. Separate npm scripts into explicit lanes: `check:unit`, `check:web`, `check:desktop`, `check:e2e`, `check:release`, and `check:all`; make CI call them rather than duplicating opaque shell blocks.
+Delivered step 1: `check:unit` (lint + full regression suite) and `check:web` (production build)
+npm scripts, called from both `ci.yml` and `release.yml` instead of duplicating the same shell
+block in two workflow files. Verified locally and confirmed green on real GitHub Actions runs for
+both workflows. `check:desktop`/`check:e2e` were not added as empty aliases — they'd have no
+distinct content until per-OS desktop verification or e2e tests (Task 9.1) actually exist.
+
+**Not done (steps 2-6):**
 2. Add a dependency policy documenting Node support, patch/minor cadence, major-upgrade branch policy, lockfile discipline, runtime versus build-only audit thresholds, and rollback procedure.
 3. Create an Electron integration seam that tests IPC channel names, validation, byte limits, and packaged path behavior without enabling Node in the renderer.
 4. Update direct patch/minor dependencies one at a time with a clean install and all applicable gates. Test Electron patch upgrades using a packaged Windows smoke test.
 5. Treat electron-builder separately: investigate supported releases/lockfile graph and upgrade only to a release that resolves the known dev-only chain without downgrading from 26 to the audit-suggested incompatible 25.1.8. If no compatible fixed release exists, document the isolated build-time exposure, pin exact version/integrity, and add a review date.
 6. Pin GitHub Actions and scanner containers to immutable full commit revisions after verifying their exact behavior; retain update documentation.
 
-### Task 9.3: Release integrity and operational hardening
+### Task 9.3: Release integrity and operational hardening — not started (code signing blocked without secrets)
 
 **Files:** `.github/workflows/release.yml`, `docs/release-checklist.md`, `docs/rollback.md`, Electron config/build field, release smoke scripts.
 
