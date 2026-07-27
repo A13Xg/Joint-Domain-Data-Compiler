@@ -10,11 +10,14 @@ import {
 } from '../model'
 import { logger } from '../logger'
 import { createDatasetId } from '../ids'
+import { sha256Hex } from '../checksum'
 import { parseGpx } from './gpx'
 import { parseGeoJson } from './geojson'
 import { parseKml } from './kml'
 import { parseNmea } from './nmea'
 import { parseGpb, looksLikeGpb } from './gpb'
+import { assertByteBudget, assertPointBudget } from './limits'
+import { describeSignatureMismatch, sniffBinarySignature, sniffTextSignature } from './contentSignature'
 
 export interface FormatDescriptor {
   id: SourceFormat
@@ -49,6 +52,7 @@ export function makeDataset(
   format: SourceFormat,
   result: ParseResult,
   sourceBytes?: number,
+  checksum?: string,
 ): Dataset {
   const channels = result.channels.length > 0 ? result.channels : collectChannels(result.points)
   const createdAt = nowSafe()
@@ -72,6 +76,7 @@ export function makeDataset(
         filename: name,
         byteLength: sourceBytes,
         importedAt: createdAt,
+        checksum,
         parserId: format,
         parserVersion: PARSER_VERSION,
       },
@@ -92,17 +97,24 @@ function nowSafe(): number {
 /** Parse a non-CSV file fully into a Dataset. */
 export async function parseFileToDataset(file: File, format: FormatDescriptor): Promise<Dataset> {
   return logger.time('parser', `Parse ${file.name} as ${format.label}`, async () => {
+    assertByteBudget(format.id, file.size)
+
+    const buffer = await file.arrayBuffer()
+    const bytes = new Uint8Array(buffer)
+    const checksum = await sha256Hex(bytes)
+
     let result: ParseResult
+    let mismatch: string | null
     if (format.binary) {
-      const buffer = await file.arrayBuffer()
-      const bytes = new Uint8Array(buffer)
       if (format.id === 'gpb' || looksLikeGpb(bytes)) {
         result = parseGpb(buffer)
       } else {
         throw new Error(`No binary parser available for ${file.name}.`)
       }
+      mismatch = describeSignatureMismatch(format.id, sniffBinarySignature(bytes))
     } else {
-      const text = await file.text()
+      const text = new TextDecoder('utf-8').decode(bytes)
+      mismatch = describeSignatureMismatch(format.id, sniffTextSignature(text))
       switch (format.id) {
         case 'gpx':
           result = parseGpx(text)
@@ -120,12 +132,17 @@ export async function parseFileToDataset(file: File, format: FormatDescriptor): 
           throw new Error(`Format ${format.id} must be imported through the CSV mapping flow.`)
       }
     }
+    if (mismatch) result.warnings.push(mismatch)
+
+    assertPointBudget(format.id, result.points.length)
 
     for (const warning of result.warnings) logger.warn('parser', `${file.name}: ${warning}`)
-    const dataset = makeDataset(file.name, format.id, result, file.size)
+    const dataset = makeDataset(file.name, format.id, result, file.size, checksum)
     logger.success('parser', `Loaded ${dataset.points.length} points from ${file.name}`, {
       format: format.id,
       channels: dataset.channels,
+      checksum,
+      warnings: dataset.warnings.length,
     })
     return dataset
   })

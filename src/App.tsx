@@ -4,6 +4,9 @@ import type { Dataset, TrackPoint } from './core/model'
 import { withPoints } from './core/transforms'
 import { detectFormat, makeDataset, parseFileToDataset, INPUT_FORMATS } from './core/parsers'
 import { buildPointsFromCsvRows, parseCsvFile, type CsvMapping } from './core/parsers/csv'
+import { assertByteBudget, assertPointBudget } from './core/parsers/limits'
+import { describeSignatureMismatch, sniffTextSignature } from './core/parsers/contentSignature'
+import { sha256Hex } from './core/checksum'
 import { logger } from './core/logger'
 import { formatBytes } from './core/format'
 import { Spinner, ProgressBar } from './ui/Spinner'
@@ -90,10 +93,18 @@ export default function App() {
     setActiveId(dataset.id)
     setHistories((current) => ({ ...current, [dataset.id]: { past: [], future: [] } }))
     setTab('overview')
-    flashToast(`Loaded ${dataset.points.length.toLocaleString()} points from ${dataset.name}`)
+    const warningNote = dataset.warnings.length > 0 ? `, ${dataset.warnings.length} warning(s)` : ''
+    flashToast(`Loaded ${dataset.points.length.toLocaleString()} points from ${dataset.name}${warningNote}`)
   }, [datasets, flashToast])
 
   const analyzeCsv = useCallback((file: File) => {
+    try {
+      assertByteBudget('csv', file.size)
+    } catch (error) {
+      logger.error('import', `CSV rejected: ${(error as Error).message}`)
+      flashToast((error as Error).message)
+      return
+    }
     setBusy(`Analyzing ${file.name}`)
     setProgress(0)
     logger.info('import', `Analyzing CSV ${file.name} (${formatBytes(file.size)})`)
@@ -125,9 +136,20 @@ export default function App() {
         pendingCsv.analysis.dataStartRow, (fraction) => setProgress(fraction * 100),
       ))
       const result = buildPointsFromCsvRows(rows, pendingCsv.mapping, columns)
+      assertPointBudget('csv', result.points.length)
+      // Full-file checksum/signature read is separate from the chunked row
+      // parse above; it is a one-time cost paid once per import, not held
+      // alongside the row/point representations.
+      const bytes = new Uint8Array(await pendingCsv.file.arrayBuffer())
+      const checksum = await sha256Hex(bytes)
+      const mismatch = describeSignatureMismatch('csv', sniffTextSignature(new TextDecoder('utf-8').decode(bytes)))
+      if (mismatch) result.warnings.push(mismatch)
       for (const warning of result.warnings) logger.warn('import', `${pendingCsv.file.name}: ${warning}`)
-      const dataset = makeDataset(pendingCsv.file.name, 'csv', result, pendingCsv.file.size)
-      logger.success('import', `Built ${dataset.points.length.toLocaleString()} points from ${pendingCsv.file.name}`)
+      const dataset = makeDataset(pendingCsv.file.name, 'csv', result, pendingCsv.file.size, checksum)
+      logger.success('import', `Built ${dataset.points.length.toLocaleString()} points from ${pendingCsv.file.name}`, {
+        checksum,
+        warnings: dataset.warnings.length,
+      })
       setPendingCsv(null); addDataset(dataset)
     } catch (error) {
       logger.error('import', `CSV build failed: ${(error as Error).message}`)
@@ -159,11 +181,15 @@ export default function App() {
     finally { setBusy(null) }
   }, [analyzeCsv, addDataset, flashToast])
 
-  const importKmlText = useCallback((name: string, text: string, sourceBytes?: number) => {
+  const importKmlText = useCallback(async (name: string, text: string, sourceBytes?: number) => {
     try {
       const result = parseKml(text)
+      const mismatch = describeSignatureMismatch('kml', sniffTextSignature(text))
+      if (mismatch) result.warnings.push(mismatch)
+      assertPointBudget('kml', result.points.length)
       for (const warning of result.warnings) logger.warn('parser', `${name}: ${warning}`)
-      addDataset(makeDataset(name, 'kml', result, sourceBytes))
+      const checksum = await sha256Hex(new TextEncoder().encode(text))
+      addDataset(makeDataset(name, 'kml', result, sourceBytes, checksum))
     } catch (error) {
       logger.error('parser', `Failed to parse ${name}: ${(error as Error).message}`)
       flashToast(`Failed to parse ${name}: ${(error as Error).message}`)
