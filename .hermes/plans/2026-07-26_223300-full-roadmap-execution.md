@@ -356,18 +356,22 @@ still renders only the active dataset. 3D needs a real decision about a shared E
 change was. Step 4 (separation vectors/closest-approach graphics) depends on that 3D work existing
 first.
 
-### Task 5.3: Make comparison durable and interpolation-aware — step 1 done
+### Task 5.3: Make comparison durable and interpolation-aware — steps 1-2 done
 
-### Task 5.3: Make comparison durable and interpolation-aware — step 1 done
-
-**Files:** `src/core/relativeAnalytics.ts`, `src/ui/ComparisonPanel.tsx`, `src/state/workspace.ts`, `src/persistence/project/*`, `test/relative-analytics.ts`, `test/comparison-workspace.ts`.
+**Files:** `src/core/analytics/relative.ts`, `src/core/geoInterpolation.ts` (new), `test/relative-analytics.ts`.
 
 **Steps:**
 1. ✅ Reconcile selectors when datasets disappear/change; test stale-state removal. Done: `removeDataset`
    in `src/App.tsx` now calls the existing `normalizeWorkspaceState` with the post-removal dataset ID
    set, clearing a comparison selector that pointed at the removed dataset instead of leaving it
    silently stale. Covered in `test/workspace-state.ts`.
-2. Add optional interpolation at reference times with clear derived status. **Not started.**
+2. ✅ Add optional interpolation at reference times with clear derived status. Done:
+   `alignTracksByInterpolation` + `deriveInterpolatedRelativePosition` interpolate the target
+   position to exactly the reference time (never extrapolating beyond real target coverage, never
+   bridging a gap wider than a configurable limit, antimeridian-safe); every resulting sample is
+   marked `derived: true`. The existing nearest-time path is unchanged and remains the default —
+   this is an additional alignment mode, not a replacement. 10 new tests. **Not wired into
+   `ComparisonPanel.tsx`'s UI as a toggle yet.**
 3. Add event/correlation alignment, clock offset/drift estimation, along/cross-track errors, residual distributions, and report export in separate tested operations. **Not started.**
 4. Persist comparison settings and link selected comparison samples across all views. **Not started.**
 
@@ -375,10 +379,11 @@ first.
 
 # Tranche 6 — Auditable fusion and notional output
 
-> **Status 2026-07-27:** Tasks 6.1-6.2 (the pure contracts/grouping/scoring layer) done.
-> Tasks 6.3-6.4 (Auto-Combine, UI, notional smoothing) not started — they need Tranche 5's
-> multi-source workspace UI (Sources panel, multi-track rendering) as a foundation, which
-> itself only has its data layer done, not its UI.
+> **Status 2026-07-27:** Tasks 6.1, 6.2, and the core (non-UI) logic of 6.3 and 6.4 are done —
+> contracts, grouping/scoring, Auto-Combine/report, and notional gap-fill all work and are
+> tested standalone. What's left across this tranche is entirely UI: FusionPanel/FusionTimeline,
+> NotionalSmoothingPanel, and wiring any of it into App.tsx/the map/3D views — all of which
+> build on Tranche 5's Sources panel patterns (map-side rendering is now done there; 3D is not).
 
 ### Task 6.1: Define entity, source, candidate, and decision contracts — done
 
@@ -401,15 +406,23 @@ tolerance and cross-dataset metadata-compatibility screening (the rest of step 1
 implemented — grouping is time-only today; compatibility screening was scoped to the caller
 (one level up, where per-dataset metadata actually lives) and that caller doesn't exist yet.
 
-### Task 6.3: Build Auto-Combine, audit report, and timeline overrides — not started
+### Task 6.3: Build Auto-Combine, audit report, and timeline overrides — core logic done
 
-**Files:** `src/core/fusion/{autoCombine,report}.ts`, `src/ui/{FusionPanel,FusionTimeline}.tsx`, `src/App.tsx`, `src/persistence/project/*`, `test/fusion-auto-combine.ts`.
+**Files:** `src/core/fusion/{autoCombine,report}.ts` (new), `test/fusion-auto-combine.ts`.
 
-**Steps:**
-1. Output a new fused track while retaining all raw sources visibly color-coded.
-2. Record selected/skipped candidates by source/time/reason/score.
-3. Add manual interval selection snapped to candidate group boundaries; overrides survive recombination until reset.
-4. Default exports to fused output and provide provenance/report export.
+Delivered the decision engine behind steps 1-3: `autoCombine` produces one fused `TrackPoint` per
+`CandidateGroup` by copying a real candidate's coordinates exactly (never averaging/synthesizing),
+recording every choice as a `FusedPointDecision` (chosen/skipped source IDs, human-readable reason,
+confidence). Manual point overrides (exact group match) beat manual interval overrides (time-window
+match) beat normal scoring; an override for a source absent from a given group falls back to
+scoring rather than erroring. `buildFusionReport` + JSON/Markdown/CSV export cover step 4's
+provenance/report export. 23 tests.
+
+**Not done:** "retaining all raw sources visibly color-coded" and "manual interval selection
+snapped to candidate group boundaries" are UI concerns (`FusionPanel.tsx`/`FusionTimeline.tsx`,
+not built) — the override *data structures* work and are tested, but there's no interactive
+timeline to create them from yet. Wiring fused-track export/default behavior into `App.tsx` and
+the project archive is also not done.
 
 ### Task 6.4: Add non-destructive notional smoothing — steps 1-2 done
 
