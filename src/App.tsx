@@ -19,10 +19,13 @@ import { ImportView } from './ui/ImportView'
 import { ComparisonPanel } from './ui/ComparisonPanel'
 import { Trajectory3dPanel } from './ui/Trajectory3dPanel'
 import { ProjectPanel } from './ui/ProjectPanel'
+import { KmlLibraryPanel } from './ui/KmlLibraryPanel'
 import { restorePointSelection } from './state/pointSelection'
 import type { ProjectArchive, ProjectDatasetHistory } from './persistence/project/archive'
+import { parseKml } from './core/parsers/kml'
+import { isDesktopKmlLibraryAvailable, saveKmlLibraryFile } from './desktop/kmlLibrary'
 
-export type Tab = 'import' | 'mapping' | 'overview' | 'map' | 'charts' | 'table' | 'compare' | 'scene3d' | 'transform' | 'project' | 'export'
+export type Tab = 'import' | 'mapping' | 'overview' | 'map' | 'charts' | 'table' | 'compare' | 'scene3d' | 'transform' | 'project' | 'kmlLibrary' | 'export'
 
 type History = ProjectDatasetHistory
 interface PendingCsv { file: File; analysis: CsvAnalysisResult; mapping: CsvMapping; additionalHeaders: boolean }
@@ -122,6 +125,20 @@ export default function App() {
   }, [pendingCsv, addDataset, flashToast])
 
   const ingestFile = useCallback(async (file: File) => {
+    const ext = file.name.toLowerCase().split('.').pop() ?? ''
+    if ((ext === 'kml' || ext === 'kmz') && isDesktopKmlLibraryAvailable()) {
+      try {
+        await saveKmlLibraryFile(file)
+        logger.success('import', `Saved ${file.name} to persistent KML/KMZ library`)
+      } catch (error) {
+        logger.warn('import', `Could not save ${file.name} to KML/KMZ library: ${(error as Error).message}`)
+      }
+    }
+    if (ext === 'kmz') {
+      flashToast(isDesktopKmlLibraryAvailable() ? `${file.name} saved to KML/KMZ library; open it from the KML/KMZ tab.` : 'KMZ import requires the Electron desktop KML/KMZ library.')
+      setTab('kmlLibrary')
+      return
+    }
     const format = detectFormat(file.name)
     if (!format) { logger.error('import', `Unsupported file type: ${file.name}`); flashToast(`Unsupported file type: ${file.name}`); return }
     if (format.needsMapping) { analyzeCsv(file); return }
@@ -130,6 +147,17 @@ export default function App() {
     catch (error) { logger.error('import', `Failed to parse ${file.name}: ${(error as Error).message}`); flashToast(`Failed to parse ${file.name}: ${(error as Error).message}`) }
     finally { setBusy(null) }
   }, [analyzeCsv, addDataset, flashToast])
+
+  const importKmlText = useCallback((name: string, text: string, sourceBytes?: number) => {
+    try {
+      const result = parseKml(text)
+      for (const warning of result.warnings) logger.warn('parser', `${name}: ${warning}`)
+      addDataset(makeDataset(name, 'kml', result, sourceBytes))
+    } catch (error) {
+      logger.error('parser', `Failed to parse ${name}: ${(error as Error).message}`)
+      flashToast(`Failed to parse ${name}: ${(error as Error).message}`)
+    }
+  }, [addDataset, flashToast])
 
   const onFiles = useCallback((files: FileList | null) => { if (files) for (const file of Array.from(files)) void ingestFile(file) }, [ingestFile])
 
@@ -191,6 +219,7 @@ export default function App() {
     { id: 'charts', label: 'Charts', enabled: !!active }, { id: 'table', label: 'Table', enabled: !!active },
     { id: 'compare', label: 'Compare', enabled: datasets.length >= 2 }, { id: 'scene3d', label: '3D', enabled: !!active },
     { id: 'transform', label: 'Transform', enabled: !!active }, { id: 'project', label: 'Project', enabled: datasets.length > 0 },
+    { id: 'kmlLibrary', label: 'KML/KMZ', enabled: true },
     { id: 'export', label: 'Export', enabled: !!active },
   ]
 
@@ -200,7 +229,7 @@ export default function App() {
       <div className="app-body">
         <aside className="sidebar">
           <button type="button" className="primary-action" onClick={() => fileInputRef.current?.click()}>+ Load data</button>
-          <input ref={fileInputRef} type="file" multiple className="hidden-input" accept=".csv,.tsv,.txt,.gpx,.geojson,.json,.kml,.nmea,.gps,.log,.gpb,.bin" onChange={(event) => { onFiles(event.target.files); event.target.value = '' }} />
+          <input ref={fileInputRef} type="file" multiple className="hidden-input" accept=".csv,.tsv,.txt,.gpx,.geojson,.json,.kml,.kmz,.nmea,.gps,.log,.gpb,.bin" onChange={(event) => { onFiles(event.target.files); event.target.value = '' }} />
           <div className="dataset-list">{datasets.length === 0 && <p className="muted small pad">No datasets yet.</p>}{datasets.map((dataset) => <div key={dataset.id} className={`dataset-item${dataset.id === activeId ? ' active' : ''}`} onClick={() => { setActiveId(dataset.id); if (tab === 'import' || tab === 'mapping') setTab('overview') }}><div className="dataset-item-main"><span className="dataset-name">{dataset.name}</span><span className="dataset-sub mono">{dataset.sourceFormat} · {dataset.points.length.toLocaleString()} pts</span></div><button type="button" className="dataset-remove" onClick={(event) => { event.stopPropagation(); removeDataset(dataset.id) }} aria-label="Remove dataset">×</button></div>)}</div>
           <div className="sidebar-foot"><span className="muted small">Supported in:</span><div className="format-badges">{INPUT_FORMATS.map((format) => <span key={format.id} className="badge" title={format.description}>{format.label}</span>)}</div></div>
         </aside>
@@ -218,6 +247,7 @@ export default function App() {
             {tab === 'scene3d' && active && <Trajectory3dPanel dataset={active} />}
             {tab === 'transform' && active && <TransformPanel dataset={active} onApply={applyTransform} onUndo={undo} onRedo={redo} canUndo={!!history && history.past.length > 0} canRedo={!!history && history.future.length > 0} />}
             {tab === 'project' && <ProjectPanel datasets={datasets} histories={histories} activeId={activeId} activeTab={tab} onRestoreProject={restoreProject} />}
+            {tab === 'kmlLibrary' && <KmlLibraryPanel onImportKmlText={importKmlText} />}
             {tab === 'export' && active && <ExportPanel dataset={active} />}
           </section>
         </main>
@@ -229,5 +259,5 @@ export default function App() {
 }
 
 function isTab(value: unknown): value is Tab {
-  return typeof value === 'string' && ['import', 'mapping', 'overview', 'map', 'charts', 'table', 'compare', 'scene3d', 'transform', 'project', 'export'].includes(value)
+  return typeof value === 'string' && ['import', 'mapping', 'overview', 'map', 'charts', 'table', 'compare', 'scene3d', 'transform', 'project', 'kmlLibrary', 'export'].includes(value)
 }

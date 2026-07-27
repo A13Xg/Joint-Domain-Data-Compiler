@@ -1,6 +1,7 @@
 import { mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { buildSync } from 'esbuild'
 
 const testDirectory = 'test'
 const outputDirectory = '.test-build/all'
@@ -17,12 +18,17 @@ for (const testFile of tests) {
   const output = join(outputDirectory, `${basename(testFile, '.ts')}.mjs`)
   console.log(`\n=== ${testFile} ===`)
 
-  const build = spawnSync(
-    process.platform === 'win32' ? 'npx.cmd' : 'npx',
-    ['esbuild', source, '--bundle', '--platform=node', '--format=esm', `--outfile=${output}`],
-    { stdio: 'inherit' },
-  )
-  if (build.status !== 0) {
+  try {
+    buildSync({
+      entryPoints: [source],
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      outfile: output,
+      logLevel: 'silent',
+    })
+  } catch (error) {
+    console.error(error)
     failures++
     continue
   }

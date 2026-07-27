@@ -1,43 +1,27 @@
-name: CI
+name: Quality Gates
 
 on:
   pull_request:
+    branches: [main]
   push:
-    branches:
-      - main
-      - agent/roadmap-integration
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: quality-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  validate:
+  quality:
+    name: Lint, test, and web build
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Check out source
         uses: actions/checkout@v4
-
-      - name: Upload source snapshot
-        uses: actions/upload-artifact@v4
-        with:
-          name: source-snapshot
-          path: |
-            src
-            test
-            scripts
-            electron
-            docs
-            package.json
-            package-lock.json
-            tsconfig*.json
-            vite.config.*
-            eslint.config.js
-          if-no-files-found: error
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -52,52 +36,66 @@ jobs:
         run: npm ci
 
       - name: Lint
-        id: lint
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -o pipefail
-          npm run lint -- --format stylish 2>&1 | tee lint-report.txt
-
-      - name: Upload lint report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: lint-report
-          path: lint-report.txt
-          if-no-files-found: error
-
-      - name: Enforce lint result
-        if: steps.lint.outcome == 'failure'
-        run: exit 1
+        run: npm run lint
 
       - name: Run complete regression suite
         run: npm test
 
       - name: Build web application
-        id: build
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -o pipefail
-          npm run build 2>&1 | tee build-report.txt
+        run: npm run build
 
-      - name: Upload build report
+      - name: Upload web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist-${{ github.sha }}
+          path: dist
+          if-no-files-found: error
+          retention-days: 7
+
+  security:
+    name: Runtime dependency audit and SBOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit shipped runtime dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Generate CycloneDX SBOM
+        run: npm sbom --sbom-format=cyclonedx > jddc-sbom.cdx.json
+
+      - name: Validate SBOM JSON
+        run: node -e "const fs=require('fs');const x=JSON.parse(fs.readFileSync('jddc-sbom.cdx.json','utf8'));if(x.bomFormat!=='CycloneDX'||!Array.isArray(x.components))process.exit(1)"
+
+      - name: Upload security report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-report
-          path: build-report.txt
-          if-no-files-found: error
+          name: security-report-${{ github.sha }}
+          path: jddc-sbom.cdx.json
+          if-no-files-found: warn
+          retention-days: 30
 
-      - name: Upload web application
-        if: steps.build.outcome == 'success'
-        uses: actions/upload-artifact@v4
-        with:
-          name: web-dist
-          path: dist
-          if-no-files-found: error
+  static-analysis:
+    name: Semgrep static analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: semgrep/semgrep
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
 
-      - name: Enforce build result
-        if: steps.build.outcome == 'failure'
-        run: exit 1
+      - name: Scan production source
+        run: semgrep scan --config auto --error src electron scripts

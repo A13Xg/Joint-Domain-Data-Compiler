@@ -19,13 +19,17 @@ export function parseKml(text: string): ParseResult {
   for (const track of tracks) {
     const whens = Array.from(track.children).filter((c) => c.localName === 'when')
     const coords = Array.from(track.children).filter((c) => c.localName === 'coord')
+    const trackName = nearestPlacemarkName(track) ?? 'gx:Track'
+    if (whens.length > 0 && whens.length !== coords.length) {
+      warnings.push(`${trackName} has ${whens.length} timestamps for ${coords.length} coordinates; timestamps were paired by index.`)
+    }
     for (let i = 0; i < coords.length; i++) {
       const parts = coords[i].textContent?.trim().split(/\s+/) ?? []
       const lon = parseNumber(parts[0])
       const lat = parseNumber(parts[1])
       const ele = parseNumber(parts[2] ?? '')
       if (lat === null || lon === null) continue
-      const point: TrackPoint = { lat, lon }
+      const point: TrackPoint = { lat, lon, provenance: { sourceSegment: trackName } }
       if (ele !== null) point.ele = ele
       const when = whens[i]?.textContent?.trim()
       if (when) {
@@ -36,25 +40,25 @@ export function parseKml(text: string): ParseResult {
     }
   }
 
-  // Plain <coordinates> blocks (LineString / Point / Polygon rings).
-  if (points.length === 0) {
-    const coordEls = Array.from(doc.getElementsByTagName('*')).filter(
-      (el) => el.localName === 'coordinates',
-    )
-    for (const el of coordEls) {
-      const tuples = el.textContent?.trim().split(/\s+/) ?? []
-      const placemarkName = nearestPlacemarkName(el)
-      for (const tuple of tuples) {
-        const [lonS, latS, eleS] = tuple.split(',')
-        const lon = parseNumber(lonS)
-        const lat = parseNumber(latS)
-        if (lat === null || lon === null) continue
-        const point: TrackPoint = { lat, lon }
-        const ele = parseNumber(eleS ?? '')
-        if (ele !== null) point.ele = ele
-        if (placemarkName && tuples.length === 1) point.name = placemarkName
-        points.push(point)
-      }
+  // Plain <coordinates> blocks (LineString / Point / Polygon rings). Parse these
+  // even when gx:Track exists so mixed KML files do not silently drop placemarks.
+  const coordEls = Array.from(doc.getElementsByTagName('*')).filter(
+    (el) => el.localName === 'coordinates',
+  )
+  for (const el of coordEls) {
+    const tuples = el.textContent?.trim().split(/\s+/).filter(Boolean) ?? []
+    const placemarkName = nearestPlacemarkName(el)
+    for (const tuple of tuples) {
+      const [lonS, latS, eleS] = tuple.split(',')
+      const lon = parseNumber(lonS)
+      const lat = parseNumber(latS)
+      if (lat === null || lon === null) continue
+      const point: TrackPoint = { lat, lon }
+      const ele = parseNumber(eleS ?? '')
+      if (ele !== null) point.ele = ele
+      if (placemarkName) point.provenance = { sourceSegment: placemarkName }
+      if (placemarkName && tuples.length === 1) point.name = placemarkName
+      points.push(point)
     }
   }
 

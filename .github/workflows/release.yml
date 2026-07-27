@@ -1,16 +1,21 @@
-name: Release
+name: Release Build
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: release-build-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
-  build-and-release:
+  package:
+    name: Package ${{ matrix.platform_name }}
     strategy:
       fail-fast: false
       matrix:
@@ -39,7 +44,7 @@ jobs:
               release/JDDC-SBOM-macOS.cdx.json
 
     runs-on: ${{ matrix.os }}
-
+    timeout-minutes: 45
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -61,18 +66,17 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: |
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
-          test "$TAG_VERSION" = "$PACKAGE_VERSION" || {
-            echo "Tag version $TAG_VERSION does not match package.json $PACKAGE_VERSION"
+          tag_version="${GITHUB_REF_NAME#v}"
+          package_version="$(node -p "require('./package.json').version")"
+          test "$tag_version" = "$package_version" || {
+            echo "Tag version $tag_version does not match package.json $package_version"
             exit 1
           }
 
-      - name: Lint
-        run: npm run lint
-
-      - name: Run conversion validation tests
-        run: npm test
+      - name: Lint and test
+        run: |
+          npm run lint
+          npm test
 
       - name: Build and package app
         run: ${{ matrix.build_command }}
@@ -107,50 +111,39 @@ jobs:
         shell: bash
         run: node -e "const fs=require('fs');const p='release/JDDC-SBOM-${{ matrix.platform_name }}.cdx.json';const x=JSON.parse(fs.readFileSync(p,'utf8'));if(x.bomFormat!=='CycloneDX'||!Array.isArray(x.components))process.exit(1)"
 
-      - name: Upload build artifacts
+      - name: Upload release-build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: release-${{ matrix.os }}
+          name: release-${{ matrix.os }}-${{ github.sha }}
           path: ${{ matrix.artifact_glob }}
           if-no-files-found: error
+          retention-days: 30
 
   publish-release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build-and-release
+    needs: package
     runs-on: ubuntu-latest
-
     steps:
-      - name: Download build artifacts
+      - name: Download platform artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: release-*-${{ github.sha }}
           path: release-bundle
+          merge-multiple: true
 
-      - name: Flatten artifacts
+      - name: Verify and checksum release bundle
+        shell: bash
         run: |
           mkdir -p release
-          find release-bundle -type f -exec cp {} release/ \;
-          echo "Files to publish:"
-          find release -maxdepth 1 -type f -printf '%f\n' | sort
-
-      - name: Verify release bundle
-        run: |
+          find release-bundle -maxdepth 1 -type f -exec cp {} release/ \;
           find release -maxdepth 1 -type f -name '*Windows*x64*Setup.exe' | grep -q .
           find release -maxdepth 1 -type f -name '*Windows*x64*Portable.exe' | grep -q .
           find release -maxdepth 1 -type f -name '*.AppImage' | grep -q .
           find release -maxdepth 1 -type f -name '*.deb' | grep -q .
           find release -maxdepth 1 -type f -name '*.dmg' | grep -q .
           test -f release/SHA256SUMS-Windows.txt
-          test -f release/JDDC-SBOM-Linux.cdx.json
-          test -f release/JDDC-SBOM-Windows.cdx.json
-          test -f release/JDDC-SBOM-macOS.cdx.json
-
-      - name: Generate complete release checksums
-        run: |
-          cd release
-          find . -maxdepth 1 -type f ! -name 'SHA256SUMS.txt' -printf '%f\n' \
-            | sort \
-            | xargs sha256sum > SHA256SUMS.txt
-          sha256sum --check SHA256SUMS.txt
+          find release -maxdepth 1 -type f ! -name 'SHA256SUMS.txt' -printf '%f\n' | sort | xargs sha256sum > release/SHA256SUMS.txt
+          (cd release && sha256sum --check SHA256SUMS.txt)
 
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2

@@ -7,6 +7,8 @@
 .compact-table { max-height: 430px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); }
 .compact-table table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 11px; }
 .compact-table th, .compact-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
+.compact-table .left-cell { text-align: left; }
+.kml-library-table td:last-child { min-width: 170px; }
 .compact-table th { position: sticky; top: 0; background: var(--bg-2); z-index: 1; }
 .trajectory-three-canvas { width: 100%; min-height: 560px; height: min(68vh, 760px); display: block; border: 1px solid var(--border); border-radius: var(--radius); background: #070b12; cursor: grab; touch-action: none; }
 .trajectory-three-canvas:active { cursor: grabbing; }

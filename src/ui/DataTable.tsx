@@ -86,6 +86,7 @@ export function DataTable({ points, channels }: { points: TrackPoint[]; channels
       <div className="data-table-toolbar">
         <input className="data-search" placeholder="filter rows…" value={query} onChange={(event) => setQuery(event.target.value)} />
         <span className="data-meta">{total.toLocaleString()} / {points.length.toLocaleString()} rows</span>
+        <button type="button" disabled={sorted.length === 0} onClick={() => downloadRows(sorted, columns)}>Export visible CSV</button>
         {indexRange && <label className="chk"><input type="checkbox" checked={rangeOnly} onChange={(event) => setRangeOnly(event.target.checked)} />selected range only</label>}
         {pointIndex !== null && <button type="button" className="chip chip-on" onClick={clearSelection}>selected #{pointIndex} ×</button>}
         {indexRange && <button type="button" className="chip chip-range" onClick={() => { setRangeOnly(false); clearRange() }}>range {indexRange.start}–{indexRange.end} ×</button>}
@@ -120,4 +121,20 @@ function fmtCell(value: number | string | boolean | undefined): string {
     return value.toFixed(Math.abs(value) < 1 ? 6 : 5)
   }
   return String(value)
+}
+
+function downloadRows(rows: Array<{ point: TrackPoint; index: number }>, columns: Column[]): void {
+  const header = ['source_index', ...columns.map((column) => column.label)]
+  const body = rows.map(({ point, index }) => [String(index), ...columns.map((column) => csvCell(fmtCell(column.get(point))))].join(','))
+  const csv = `${header.map(csvCell).join(',')}\n${body.join('\n')}\n`
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `jddc-visible-rows-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`
+  anchor.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
+function csvCell(value: string): string {
+  return value.includes(',') || value.includes('"') || value.includes('\n') || value.includes(String.fromCharCode(13)) ? `"${value.replace(/"/g, '""')}"` : value
 }

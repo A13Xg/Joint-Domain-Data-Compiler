@@ -244,11 +244,13 @@ Users can build, synchronize, save and export trustworthy multi-chart analytical
 - Point, cursor and selected-range synchronization.
 - Fit-all and fit-range controls.
 - Tooltips with source values.
+- Gap-aware path splitting and an offline/no-basemap grid mode.
+- Persistent desktop KML/KMZ library import path for stored overlays/tracks.
 
 ## Remaining
 
-- Offline/no-basemap mode with clear network status.
-- Gap-aware and antimeridian-safe path rendering.
+- Clearer network status for online basemap failures.
+- More comprehensive antimeridian-safe path rendering.
 - Multi-track visibility, colors and ordering.
 - Timestamp-driven playback synchronized with chart and 3D.
 - Segment/anomaly overlays.
@@ -277,11 +279,12 @@ The map remains useful without network access, represents gaps/dateline crossing
 - Channel coloring, altitude exaggeration, ground grid and vertical curtain.
 - Start/end and playback markers.
 - Fraction-based playback and speed controls.
+- Gap-aware 3D path splitting and top/side camera presets.
 
 ## Remaining
 
 - Stable render-loop ownership independent from React effect recreation per playback frame.
-- Timestamp-accurate playback and gap behavior.
+- Timestamp-accurate playback and richer gap annotations.
 - Follow/chase camera and automatic rotation if still desired.
 - Multi-track rendering.
 - Separation vectors and closest-approach visualization.

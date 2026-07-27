@@ -7,6 +7,7 @@ import { epochMsToIso } from '../core/format'
 import { usePointSelection } from '../state/pointSelection'
 
 type DisplayMode = 'both' | 'path' | 'points'
+type BasemapMode = 'osm' | 'none'
 const MAX_RENDER_POINTS = 4000
 
 function FitBounds({ positions, request }: { positions: LatLngTuple[]; request: number }) {
@@ -40,6 +41,8 @@ function downsample<T>(values: T[], maxPoints: number): T[] {
 export function MapView({ points, channels }: { points: TrackPoint[]; channels: string[] }) {
   const [mode, setMode] = useState<DisplayMode>('both')
   const [colorBy, setColorBy] = useState('none')
+  const [basemap, setBasemap] = useState<BasemapMode>('osm')
+  const [maxGapMinutes, setMaxGapMinutes] = useState(5)
   const [fitRequest, setFitRequest] = useState(0)
   const [fitSelection, setFitSelection] = useState(false)
   const { pointIndex, hoverIndex, indexRange, selectPoint, setHoverIndex, clearSelection, clearRange, clearHover } = usePointSelection(points)
@@ -55,6 +58,7 @@ export function MapView({ points, channels }: { points: TrackPoint[]; channels: 
   )
   const renderedSelection = useMemo(() => downsample(selectedValid, MAX_RENDER_POINTS), [selectedValid])
   const positions = useMemo<LatLngTuple[]>(() => rendered.map(({ point }) => [point.lat, point.lon]), [rendered])
+  const pathSegments = useMemo(() => splitPathSegments(rendered, maxGapMinutes * 60_000), [rendered, maxGapMinutes])
   const selectionPositions = useMemo<LatLngTuple[]>(() => renderedSelection.map(({ point }) => [point.lat, point.lon]), [renderedSelection])
   const hoveredPoint = hoverIndex === null ? null : points[hoverIndex]
   const hoveredPosition: LatLngTuple | null = hoveredPoint && isValidLat(hoveredPoint.lat) && isValidLon(hoveredPoint.lon) ? [hoveredPoint.lat, hoveredPoint.lon] : null
@@ -72,7 +76,9 @@ export function MapView({ points, channels }: { points: TrackPoint[]; channels: 
     <div className="map-view">
       <div className="map-toolbar">
         <label>display<select value={mode} onChange={(event) => setMode(event.target.value as DisplayMode)}><option value="both">Path + Points</option><option value="path">Path only</option><option value="points">Points only</option></select></label>
+        <label>basemap<select value={basemap} onChange={(event) => setBasemap(event.target.value as BasemapMode)}><option value="osm">OpenStreetMap</option><option value="none">offline grid</option></select></label>
         <label>color by<select value={colorBy} onChange={(event) => setColorBy(event.target.value)}>{colorChannels.map((channel) => <option key={channel} value={channel}>{channel}</option>)}</select></label>
+        <label>split gaps<input type="number" min={0} step={1} value={maxGapMinutes} onChange={(event) => setMaxGapMinutes(Math.max(0, Number(event.target.value) || 0))} /> min</label>
         <button type="button" onClick={() => { setFitSelection(false); setFitRequest((value) => value + 1) }}>Fit all</button>
         <button type="button" disabled={!indexRange || selectionPositions.length === 0} onClick={() => { setFitSelection(true); setFitRequest((value) => value + 1) }}>Fit range</button>
         <span className="map-meta">{valid.length.toLocaleString()} valid pts{rendered.length < valid.length && ` · ${rendered.length.toLocaleString()} drawn`}</span>
@@ -82,8 +88,8 @@ export function MapView({ points, channels }: { points: TrackPoint[]; channels: 
       </div>
       <div className="map-canvas-wrap">
         <MapContainer center={positions[0]} zoom={10} className="map-canvas" scrollWheelZoom>
-          <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          {mode !== 'points' && <Polyline positions={positions} pathOptions={{ color: indexRange ? '#64748b' : '#ea4f2f', weight: 2.5, opacity: indexRange ? 0.45 : 0.85 }} />}
+          {basemap === 'osm' && <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />}
+          {mode !== 'points' && pathSegments.map((segment, index) => <Polyline key={index} positions={segment} pathOptions={{ color: indexRange ? '#64748b' : '#ea4f2f', weight: 2.5, opacity: indexRange ? 0.45 : 0.85 }} />)}
           {mode !== 'points' && selectionPositions.length > 1 && <Polyline positions={selectionPositions} pathOptions={{ color: '#facc15', weight: 5, opacity: 0.95 }} />}
           {mode !== 'path' && rendered.map(({ point, index }) => {
             const selected = pointIndex === index
@@ -124,6 +130,24 @@ function channelValue(point: TrackPoint, key: string): number | null {
   if (value === undefined) return null
   const number = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(number) ? number : null
+}
+
+function splitPathSegments(values: Array<{ point: TrackPoint; index: number }>, maxGapMs: number): LatLngTuple[][] {
+  const segments: LatLngTuple[][] = []
+  let current: LatLngTuple[] = []
+  let previous: TrackPoint | null = null
+  for (const { point } of values) {
+    const timedGap = previous?.time !== undefined && point.time !== undefined ? point.time - previous.time : 0
+    const antimeridianJump = previous ? Math.abs(point.lon - previous.lon) > 180 : false
+    if (current.length > 0 && (antimeridianJump || (maxGapMs > 0 && timedGap > maxGapMs))) {
+      if (current.length > 1) segments.push(current)
+      current = []
+    }
+    current.push([point.lat, point.lon])
+    previous = point
+  }
+  if (current.length > 1) segments.push(current)
+  return segments
 }
 
 function fmt(value: number): string {

@@ -28,7 +28,7 @@ export const INPUT_FORMATS: FormatDescriptor[] = [
   { id: 'csv', label: 'CSV / TSV', extensions: ['csv', 'tsv', 'txt'], binary: false, needsMapping: true, description: 'Delimited tabular data with header row.' },
   { id: 'gpx', label: 'GPX', extensions: ['gpx'], binary: false, needsMapping: false, description: 'GPS Exchange tracks, routes, waypoints (1.0/1.1).' },
   { id: 'geojson', label: 'GeoJSON', extensions: ['geojson', 'json'], binary: false, needsMapping: false, description: 'RFC 7946 features and geometries.' },
-  { id: 'kml', label: 'KML', extensions: ['kml'], binary: false, needsMapping: false, description: 'Google Earth placemarks and gx:Track.' },
+  { id: 'kml', label: 'KML / KMZ', extensions: ['kml', 'kmz'], binary: false, needsMapping: false, description: 'Google Earth placemarks, gx:Track, and desktop KMZ library files.' },
   { id: 'nmea', label: 'NMEA 0183', extensions: ['nmea', 'gps', 'log'], binary: false, needsMapping: false, description: 'Raw receiver sentences (GGA/RMC/GLL).' },
   { id: 'gpb', label: 'GPB (binary)', extensions: ['gpb', 'bin'], binary: true, needsMapping: false, description: 'JDDC Geo Point Binary container.' },
 ]

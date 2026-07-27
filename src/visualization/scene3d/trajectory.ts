@@ -14,6 +14,7 @@ export interface Trajectory3dVertex {
   northM: number
   upM: number
   colorValue?: number
+  time?: number
 }
 
 export interface Trajectory3dBounds {
@@ -68,6 +69,7 @@ export function buildTrajectory3dGeometry(
       northM: enu.northM,
       upM: enu.upM * altitudeExaggeration,
       colorValue: colorValue ?? undefined,
+      time: point.time,
     }
   })
 
