@@ -327,17 +327,20 @@ segmentation engine (`src/core/analytics/segments.ts`) — a settings-panel-size
 
 > **Status 2026-07-27:** Not started.
 
-### Task 5.1: Add multi-dataset display state and Sources panel
+### Task 5.1: Add multi-dataset display state and Sources panel — done (data layer only)
 
-**Files:** `src/state/workspace.ts`, `src/ui/SourcesPanel.tsx`, `src/App.tsx`, `src/persistence/project/{manifest,archive}.ts`, `test/workspace-display.ts`.
+**Files:** `src/state/workspaceDisplay.ts` (new), `test/workspace-display.ts`.
 
-**Steps:**
-1. Define per-track visibility, color, label, ordering, opacity, raw/derived role, and source quality status.
-2. Use deterministic fallback colors; validate restored display entries and strip stale dataset IDs.
-3. Add accessible toggles/controls without mutating `Dataset` or raw points.
-4. Persist the source workspace model in the migration-capable project schema.
+Delivered steps 1-2: `syncWorkspaceDisplay`/`restoreWorkspaceDisplay`/`createDisplaySettings` — per-dataset
+visibility/color/opacity/label, deterministic fallback colors, and validated restore that strips
+stale/malformed entries rather than trusting them (18 test cases).
 
-### Task 5.2: Render multiple tracks in map and 3D
+**Deferred:** step 3 (an actual Sources panel UI) and step 4 (persistence) require restructuring
+`MapView`/`Trajectory3dPanel` to receive all datasets instead of just the active one — the same
+prerequisite Task 5.2 needs. Building the UI without that wiring would ship a control that visibly
+does nothing, so it was intentionally left for whoever tackles 5.1's UI and 5.2 together.
+
+### Task 5.2: Render multiple tracks in map and 3D — not started
 
 **Files:** `src/visualization/map/trackLayers.ts`, `src/visualization/scene3d/multiTrack.ts`, `src/ui/{MapView,Trajectory3dPanel}.tsx`, `test/map-track-layers.ts`, `test/multi-track-3d.ts`.
 
@@ -347,15 +350,18 @@ segmentation engine (`src/core/analytics/segments.ts`) — a settings-panel-size
 3. Provide fit-visible/focus-active controls, legend, source emphasis, and bounded rendering per source.
 4. Add separation vectors and closest-approach graphics after multi-track geometry tests pass.
 
-### Task 5.3: Make comparison durable and interpolation-aware
+### Task 5.3: Make comparison durable and interpolation-aware — step 1 done
 
 **Files:** `src/core/relativeAnalytics.ts`, `src/ui/ComparisonPanel.tsx`, `src/state/workspace.ts`, `src/persistence/project/*`, `test/relative-analytics.ts`, `test/comparison-workspace.ts`.
 
 **Steps:**
-1. Reconcile selectors when datasets disappear/change; test stale-state removal.
-2. Add optional interpolation at reference times with clear derived status.
-3. Add event/correlation alignment, clock offset/drift estimation, along/cross-track errors, residual distributions, and report export in separate tested operations.
-4. Persist comparison settings and link selected comparison samples across all views.
+1. ✅ Reconcile selectors when datasets disappear/change; test stale-state removal. Done: `removeDataset`
+   in `src/App.tsx` now calls the existing `normalizeWorkspaceState` with the post-removal dataset ID
+   set, clearing a comparison selector that pointed at the removed dataset instead of leaving it
+   silently stale. Covered in `test/workspace-state.ts`.
+2. Add optional interpolation at reference times with clear derived status. **Not started.**
+3. Add event/correlation alignment, clock offset/drift estimation, along/cross-track errors, residual distributions, and report export in separate tested operations. **Not started.**
+4. Persist comparison settings and link selected comparison samples across all views. **Not started.**
 
 ---
 
