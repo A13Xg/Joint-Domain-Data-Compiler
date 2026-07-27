@@ -9,6 +9,7 @@ import {
   resolvePresetChannels,
   type ChartXAxis,
 } from '../visualization/charts/series'
+import { zoomDomain, isFullyZoomedOut, type Domain } from '../visualization/charts/zoom'
 import { usePointSelection } from '../state/pointSelection'
 
 /** Non-color patterns per severity so event markers remain distinguishable for colorblind/low-vision users. */
@@ -42,6 +43,7 @@ export function TimeSeriesChart({ points, channels }: { points: TrackPoint[]; ch
   const [presetId, setPresetId] = useState('altitude-time')
   const [hover, setHover] = useState<number | null>(null)
   const [dragStart, setDragStart] = useState<number | null>(null)
+  const [zoomedDomain, setZoomedDomain] = useState<Domain | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const { pointIndex, hoverIndex, indexRange, selectPoint, selectRange, setHoverIndex, clearPointSelection, clearRangeSelection, clearHover } = usePointSelection(points)
 
@@ -72,6 +74,9 @@ export function TimeSeriesChart({ points, channels }: { points: TrackPoint[]; ch
     }
     return Number.isFinite(lo) ? { lo, hi: hi === lo ? lo + 1 : hi } : null
   }, [series])
+
+  const effectiveDomain = zoomedDomain ?? xDomain
+  const isZoomed = zoomedDomain !== null && xDomain !== null && !isFullyZoomedOut(zoomedDomain, xDomain)
 
   const cursorX = useMemo(() => {
     if (hover !== null) return hover
@@ -114,20 +119,31 @@ export function TimeSeriesChart({ points, channels }: { points: TrackPoint[]; ch
     setPresetId(id)
     setXAxis(preset.xAxis)
     setSelected(resolved.length > 0 ? resolved : ['elevation'])
+    setZoomedDomain(null)
   }
 
   const toggle = (key: string) => setSelected((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key])
 
   if (available.length === 0) return <div className="chart-empty">No numeric channels available to plot.</div>
 
-  const xToPx = (x: number) => xDomain ? pad.left + ((x - xDomain.lo) / (xDomain.hi - xDomain.lo)) * plotW : pad.left
+  const xToPx = (x: number) => effectiveDomain ? pad.left + ((x - effectiveDomain.lo) / (effectiveDomain.hi - effectiveDomain.lo)) * plotW : pad.left
 
   const eventX = (event: React.MouseEvent<SVGSVGElement>): number | null => {
-    if (!svgRef.current || !xDomain) return null
+    if (!svgRef.current || !effectiveDomain) return null
     const rect = svgRef.current.getBoundingClientRect()
     const px = ((event.clientX - rect.left) / rect.width) * width
     const fraction = (px - pad.left) / plotW
-    return xDomain.lo + Math.max(0, Math.min(1, fraction)) * (xDomain.hi - xDomain.lo)
+    return effectiveDomain.lo + Math.max(0, Math.min(1, fraction)) * (effectiveDomain.hi - effectiveDomain.lo)
+  }
+
+  const onWheelZoom = (event: React.WheelEvent<SVGSVGElement>) => {
+    if (!svgRef.current || !xDomain) return
+    event.preventDefault()
+    const rect = svgRef.current.getBoundingClientRect()
+    const px = ((event.clientX - rect.left) / rect.width) * width
+    const fraction = (px - pad.left) / plotW
+    const factor = event.deltaY > 0 ? 1.2 : 1 / 1.2
+    setZoomedDomain((current) => zoomDomain(current ?? xDomain, xDomain, fraction, factor))
   }
 
   const onMouseDown = (event: React.MouseEvent<SVGSVGElement>) => setDragStart(eventX(event))
@@ -153,12 +169,13 @@ export function TimeSeriesChart({ points, channels }: { points: TrackPoint[]; ch
       <div className="chart-toolbar">
         <label className="chart-xaxis">preset<select value={presetId} onChange={(event) => applyPreset(event.target.value)}>{BUILT_IN_CHART_PRESETS.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}</select></label>
         <div className="chart-channels">{available.map((key) => <button key={key} type="button" className={`chip${selected.includes(key) ? ' chip-on' : ''}`} style={selected.includes(key) ? { borderColor: PALETTE[selected.indexOf(key) % PALETTE.length] } : undefined} onClick={() => toggle(key)}><span className="chip-dot" style={{ background: selected.includes(key) ? PALETTE[selected.indexOf(key) % PALETTE.length] : '#475569' }} />{key}</button>)}</div>
-        <label className="chart-xaxis">x-axis<select value={effectiveX} onChange={(event) => { setPresetId('custom'); setXAxis(event.target.value as ChartXAxis) }}>{hasTime && <option value="time">time</option>}<option value="index">index</option>{hasDistance && <option value="distance">distance</option>}</select></label>
+        <label className="chart-xaxis">x-axis<select value={effectiveX} onChange={(event) => { setPresetId('custom'); setXAxis(event.target.value as ChartXAxis); setZoomedDomain(null) }}>{hasTime && <option value="time">time</option>}<option value="index">index</option>{hasDistance && <option value="distance">distance</option>}</select></label>
         {pointIndex !== null && <button type="button" className="chip chip-on" onClick={clearPointSelection}>point #{pointIndex} ×</button>}
         {indexRange && <button type="button" className="chip chip-range" onClick={clearRangeSelection}>range {indexRange.start}–{indexRange.end} ×</button>}
+        {isZoomed && <button type="button" className="chip" onClick={() => setZoomedDomain(null)}>Reset zoom ×</button>}
       </div>
 
-      <svg ref={svgRef} className="chart-svg" viewBox={`0 0 ${width} ${height}`} onMouseMove={(event) => { const x = eventX(event); setHover(x); const nearest = x === null ? null : nearestValue(series[0]?.values ?? [], x); setHoverIndex(nearest?.sourceIndex ?? null) }} onMouseLeave={() => { setHover(null); setDragStart(null); clearHover() }} onMouseDown={onMouseDown} onMouseUp={onMouseUp} style={{ cursor: 'crosshair' }}>
+      <svg ref={svgRef} className="chart-svg" viewBox={`0 0 ${width} ${height}`} onMouseMove={(event) => { const x = eventX(event); setHover(x); const nearest = x === null ? null : nearestValue(series[0]?.values ?? [], x); setHoverIndex(nearest?.sourceIndex ?? null) }} onMouseLeave={() => { setHover(null); setDragStart(null); clearHover() }} onMouseDown={onMouseDown} onMouseUp={onMouseUp} onWheel={onWheelZoom} style={{ cursor: 'crosshair' }}>
         {[0, 0.25, 0.5, 0.75, 1].map((grid) => <line key={grid} x1={pad.left} x2={width - pad.right} y1={pad.top + grid * plotH} y2={pad.top + grid * plotH} className="chart-grid" />)}
         {rangeX && <rect x={Math.min(xToPx(rangeX.start), xToPx(rangeX.end))} y={pad.top} width={Math.abs(xToPx(rangeX.end) - xToPx(rangeX.start))} height={plotH} fill="rgba(234,79,47,0.12)" />}
         {series.map((item) => {
@@ -175,7 +192,7 @@ export function TimeSeriesChart({ points, channels }: { points: TrackPoint[]; ch
         {cursorX !== null && xDomain && <line x1={xToPx(cursorX)} x2={xToPx(cursorX)} y1={pad.top} y2={pad.top + plotH} className="chart-crosshair" />}
         {dragStart !== null && hover !== null && <rect x={Math.min(xToPx(dragStart), xToPx(hover))} y={pad.top} width={Math.abs(xToPx(hover) - xToPx(dragStart))} height={plotH} fill="rgba(59,130,246,0.14)" />}
         {selectedX !== null && xDomain && <line x1={xToPx(selectedX)} x2={xToPx(selectedX)} y1={pad.top} y2={pad.top + plotH} style={{ stroke: '#ea4f2f', strokeWidth: 2 }} />}
-        {series[0] && series[0].values.length > 1 && <><text x={4} y={pad.top + 4} className="chart-axis-label">{fmt(series[0].max)}</text><text x={4} y={pad.top + plotH} className="chart-axis-label">{fmt(series[0].min)}</text></>}
+        {series.filter((item) => item.values.length > 1).map((item, row) => <g key={item.key}><text x={4} y={pad.top + 4 + row * 11} className="chart-axis-label" style={{ fill: item.color }}>{fmt(item.max)}</text><text x={4} y={pad.top + plotH - row * 11} className="chart-axis-label" style={{ fill: item.color }}>{fmt(item.min)}</text></g>)}
       </svg>
 
       {cursorX !== null && <div className="chart-readout mono"><span className="chart-readout-x">{formatX(cursorX, effectiveX)}</span>{series.map((item) => { const nearest = nearestValue(item.values, cursorX); return nearest ? <span key={item.key} style={{ color: item.color }}>{item.key}: {fmt(nearest.y)}</span> : null })}</div>}
