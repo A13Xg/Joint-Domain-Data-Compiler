@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Dataset, TrackPoint } from '../core/model'
 import {
-  decimate, dedupe, deriveKinematics, dropInvalid, offsetElevation, removeElevationOutliers,
+  decimate, dedupe, dropInvalid, offsetElevation, removeElevationOutliers,
   shiftTime, simplify, smooth, sortByTime, swapLatLon, type TransformResult,
 } from '../core/transforms'
+import { runDerivation } from '../core/analytics/registry'
 import { fixedRateResampleOperation, type InterpolationMode, type ResampleParams } from '../core/operations/resample'
 import { applyTransformToRange } from '../core/rangeTransform'
 import { usePointSelection } from '../state/pointSelection'
@@ -43,10 +44,11 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
 
   useEffect(() => () => computeClientRef.current?.dispose(), [])
 
-  const run = (fn: () => TransformResult) => {
+  const run = (fn: () => TransformResult & { warnings?: string[] }) => {
     try {
       const result = fn()
       logger.info('transform', result.summary)
+      for (const warning of result.warnings ?? []) logger.warn('transform', warning)
       onApply(result.points, result.summary)
     } catch (error) {
       logger.error('transform', `Transform failed: ${(error as Error).message}`)
@@ -114,7 +116,7 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
         </Op>
         <Op title="Simplify (Douglas–Peucker)" desc="Shape-preserving reduction within an epsilon. Full dataset only."><NumField label="ε (m)" value={simplifyEps} onChange={setSimplifyEps} min={0.1} step={0.5} /><button type="button" onClick={() => run(() => simplify(points, simplifyEps))}>Apply</button></Op>
         <Op title="Smooth" desc="Moving-average filter to reduce GPS jitter. Supports selected-range scope."><NumField label="window" value={smoothWindow} onChange={setSmoothWindow} min={2} step={1} /><label className="chk"><input type="checkbox" checked={smoothCoords} onChange={(event) => setSmoothCoords(event.target.checked)} /> position</label><label className="chk"><input type="checkbox" checked={smoothEle} onChange={(event) => setSmoothEle(event.target.checked)} /> elevation</label><button type="button" onClick={() => runScoped((selected) => smooth(selected, smoothWindow, { coords: smoothCoords, elevation: smoothEle }))}>Apply{scoped ? ' to range' : ''}</button></Op>
-        <Op title="Derive kinematics" desc="Compute distance, speed, and heading channels. Full dataset only."><button type="button" onClick={() => run(() => deriveKinematics(points))}>Apply</button></Op>
+        <Op title="Derive kinematics" desc="Compute distance, ground/vertical speed, heading, turn rate, acceleration, and sample timing. Full dataset only."><button type="button" onClick={() => run(() => runDerivation('standard-kinematics', dataset))}>Apply</button></Op>
         <Op title="Shift time" desc="Add a fixed offset to timestamps. Supports selected-range scope."><NumField label="seconds" value={timeShift} onChange={setTimeShift} step={1} /><button type="button" onClick={() => runScoped((selected) => shiftTime(selected, timeShift))}>Apply{scoped ? ' to range' : ''}</button></Op>
         <Op title="Offset elevation" desc="Datum correction. Supports selected-range scope."><NumField label="meters" value={eleOffset} onChange={setEleOffset} step={1} /><button type="button" onClick={() => runScoped((selected) => offsetElevation(selected, eleOffset))}>Apply{scoped ? ' to range' : ''}</button></Op>
         <Op title="Remove elevation outliers" desc="MAD-based spike rejection on elevation. Supports selected-range scope."><NumField label="σ threshold" value={outlierSigma} onChange={setOutlierSigma} min={1} step={0.5} /><button type="button" onClick={() => runScoped((selected) => removeElevationOutliers(selected, outlierSigma))}>Apply{scoped ? ' to range' : ''}</button></Op>

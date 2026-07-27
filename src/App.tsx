@@ -29,6 +29,9 @@ import { parseKml } from './core/parsers/kml'
 import { isDesktopKmlLibraryAvailable, saveKmlLibraryFile } from './desktop/kmlLibrary'
 import { insertDataset } from './core/ids'
 import { DEFAULT_WORKSPACE_STATE, normalizeWorkspaceState, type WorkspaceState } from './state/workspace'
+import { ensureBuiltinDerivationsRegistered } from './core/analytics/bootstrap'
+
+ensureBuiltinDerivationsRegistered()
 
 export type Tab = 'import' | 'mapping' | 'overview' | 'map' | 'charts' | 'table' | 'compare' | 'scene3d' | 'transform' | 'project' | 'kmlLibrary' | 'export'
 

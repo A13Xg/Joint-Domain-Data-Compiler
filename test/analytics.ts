@@ -7,6 +7,7 @@ import {
   registerDerivation,
   runDerivation,
 } from '../src/core/analytics/registry.ts'
+import { ensureBuiltinDerivationsRegistered } from '../src/core/analytics/bootstrap.ts'
 
 let failures = 0
 function check(name: string, condition: boolean): void {
@@ -42,6 +43,16 @@ check('Sample interval is derived', result.points[1]?.ext?.sample_interval_s ===
 check('Acceleration is derived after two intervals', typeof result.points[2]?.ext?.horizontal_accel_mps2 === 'number')
 check('Output channel metadata includes units', result.outputChannels.some((channel) => channel.id === 'turn_rate_dps' && channel.unit === 'deg/s'))
 
+// Independently-computed distance/heading regression values (Task 3.1): these
+// pin the exact haversine-distance and bearing formulas this engine uses —
+// the same formulas the now-removed duplicate `deriveKinematics` in
+// transforms.ts used — so consolidating onto this single engine did not
+// silently change distance/heading behavior relied on elsewhere in the app.
+check('Cumulative distance matches an independently computed haversine value', Math.abs((result.points[1]?.ext?.distance_m as number) - 111.195) < 0.001)
+check('Cumulative distance accumulates across points', Math.abs((result.points[2]?.ext?.distance_m as number) - 222.39) < 0.001)
+check('Heading matches an independently computed bearing (due east)', result.points[1]?.ext?.heading_deg === 90)
+check('Heading matches an independently computed bearing (due north)', result.points[2]?.ext?.heading_deg === 0)
+
 let duplicateRejected = false
 try {
   registerDerivation(standardKinematicsDerivation)
@@ -58,6 +69,18 @@ try {
   missingInputRejected = true
 }
 check('Missing required inputs are rejected', missingInputRejected)
+
+// --- Product bootstrap wiring (Task 3.1: this is what App.tsx calls) -------
+clearDerivationsForTests()
+ensureBuiltinDerivationsRegistered()
+check('Bootstrap registers the standard kinematics derivation', getDerivation('standard-kinematics') !== null)
+let bootstrapIdempotent = true
+try {
+  ensureBuiltinDerivationsRegistered()
+} catch {
+  bootstrapIdempotent = false
+}
+check('Bootstrap is idempotent across repeated calls', bootstrapIdempotent)
 
 console.log(`\n${failures === 0 ? 'ALL ANALYTICS CHECKS PASSED' : `${failures} ANALYTICS CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)

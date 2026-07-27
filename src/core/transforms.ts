@@ -19,12 +19,6 @@ function clone(points: TrackPoint[]): TrackPoint[] {
   }))
 }
 
-function addQualityFlag(point: TrackPoint, flag: string): void {
-  const flags = new Set(point.provenance?.qualityFlags ?? [])
-  flags.add(flag)
-  point.provenance = { ...point.provenance, qualityFlags: [...flags] }
-}
-
 export function sortByTime(points: TrackPoint[]): TransformResult {
   const out = clone(points).sort((a, b) => {
     if (a.time === undefined && b.time === undefined) return 0
@@ -144,45 +138,6 @@ export function smooth(points: TrackPoint[], window: number, targets: { coords: 
 
   const what = [targets.coords && 'position', targets.elevation && 'elevation'].filter(Boolean).join(' + ')
   return { points: out, summary: `Smoothed ${what} (window ${w})` }
-}
-
-export function deriveKinematics(points: TrackPoint[]): TransformResult {
-  const out = clone(points)
-  let cumDist = 0
-  for (let i = 0; i < out.length; i++) {
-    const current = out[i]
-    if (!current) continue
-    const ext = current.ext ?? {}
-    if (i === 0) {
-      ext.distance_m = 0
-      ext.speed_mps = 0
-    } else {
-      const prev = out[i - 1]
-      if (!prev) continue
-      const d = haversineMeters(prev.lat, prev.lon, current.lat, current.lon)
-      cumDist += d
-      ext.distance_m = Math.round(cumDist * 1000) / 1000
-      if (current.time !== undefined && prev.time !== undefined) {
-        const dt = (current.time - prev.time) / 1000
-        if (dt > 0) {
-          ext.speed_mps = Math.round((d / dt) * 1000) / 1000
-        } else {
-          delete ext.speed_mps
-          addQualityFlag(current, dt === 0 ? 'duplicate_timestamp' : 'non_monotonic_timestamp')
-        }
-      }
-      ext.heading_deg = Math.round(bearing(prev, current) * 100) / 100
-    }
-    current.ext = ext
-  }
-  return { points: out, summary: 'Derived distance, speed, and heading channels; flagged invalid time deltas' }
-}
-
-function bearing(a: TrackPoint, b: TrackPoint): number {
-  const toRad = Math.PI / 180
-  const y = Math.sin((b.lon - a.lon) * toRad) * Math.cos(b.lat * toRad)
-  const x = Math.cos(a.lat * toRad) * Math.sin(b.lat * toRad) - Math.sin(a.lat * toRad) * Math.cos(b.lat * toRad) * Math.cos((b.lon - a.lon) * toRad)
-  return (Math.atan2(y, x) * (180 / Math.PI) + 360) % 360
 }
 
 export function shiftTime(points: TrackPoint[], seconds: number): TransformResult {

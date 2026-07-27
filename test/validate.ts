@@ -9,11 +9,11 @@ import { buildGpb, parseGpb } from '../src/core/parsers/gpb.ts'
 import { parseGeoJson } from '../src/core/parsers/geojson.ts'
 import {
   clipTimeRange,
-  deriveKinematics,
   removeElevationOutliers,
   simplify,
   smooth,
 } from '../src/core/transforms.ts'
+import { standardKinematicsDerivation } from '../src/core/analytics/kinematics.ts'
 
 const XSD = process.env.GPX_XSD ?? join(process.cwd(), 'test', 'schemas', 'gpx.xsd')
 
@@ -147,12 +147,16 @@ const projectedTrack: TrackPoint[] = [
 const simplified = simplify(projectedTrack, 5)
 check('Simplification uses meter-scale projected distance', simplified.points.length >= 2)
 
-const duplicateTime = deriveKinematics([
+const kinematicsPoints: TrackPoint[] = [
   { lat: 0, lon: 0, time: 1000 },
   { lat: 0, lon: 0.001, time: 1000 },
-]).points[1]
+]
+const duplicateTime = standardKinematicsDerivation.derive({
+  dataset: { ...dataset, points: kinematicsPoints },
+  points: kinematicsPoints,
+}).points[1]
 check('Duplicate timestamp is flagged', duplicateTime.provenance?.qualityFlags?.includes('duplicate_timestamp') === true)
-check('Invalid time delta does not fabricate zero speed', duplicateTime.ext?.speed_mps === undefined)
+check('Invalid time delta does not fabricate zero speed', duplicateTime.ext?.ground_speed_mps === undefined)
 
 const clipped = clipTimeRange([
   { lat: 0, lon: 0 },
