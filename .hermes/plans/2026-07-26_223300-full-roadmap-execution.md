@@ -226,30 +226,55 @@ sized performance measurement.
 
 # Tranche 3 — Reproducible analytics, operations, and transforms
 
-### Task 3.1: Wire the versioned kinematics engine into the normal workflow
+> **Completed 2026-07-27:** all three tasks landed and passed the tranche gate
+> (lint, full regression suite, build, `npm audit --omit=dev
+> --audit-level=high`, clean Semgrep scan). See commits `8e7f71b`, `a9afc34`,
+> `cd19fdf` on `main`. Task 3.2 and 3.3 shipped a deliberately scoped-down
+> slice of their original step lists; see the notes under each task for
+> exactly what was deferred and why.
 
-**Files:** `src/core/analytics/registry.ts`, `src/core/analytics/*`, `src/ui/TransformPanel.tsx`, `src/App.tsx`, `test/analytics.ts`, `test/operation-history.ts`.
+### Task 3.1: Wire the versioned kinematics engine into the normal workflow — done
 
-**Steps:**
-1. Test that invoking the UI-facing derivation path uses the registered versioned definition and records provenance.
-2. Consolidate/remove duplicate simple derivation logic only after outputs are compared on fixtures.
-3. Preserve currently available distance/speed/heading controls while adding vertical speed, turn rate, acceleration, sample interval/frequency when valid.
+**Files:** `src/core/analytics/{registry,bootstrap}.ts`, `src/ui/TransformPanel.tsx`, `src/App.tsx`, `test/analytics.ts`, `test/validate.ts`.
 
-### Task 3.2: Add operation preview and durable recipe/history records
+Delivered: `standardKinematicsDerivation` is now registered once from `App.tsx` via a new
+`bootstrap.ts` and invoked from the "Derive kinematics" button through `runDerivation`. The
+duplicate `deriveKinematics`/`bearing`/`addQualityFlag` in `transforms.ts` were removed after
+confirming (by direct code comparison, then by pinning independently-computed distance/heading
+values in `test/analytics.ts`) that both used identical haversine/bearing formulas. Users now get
+vertical speed, turn rate, acceleration, and sample interval/frequency in addition to the
+previous distance/speed/heading, plus per-point quality-flag provenance.
 
-**Files:** `src/core/operations/*` (create only if needed), `src/core/recipes/*`, `src/ui/TransformPanel.tsx`, `src/ui/ProjectPanel.tsx`, `src/persistence/project/{manifest,archive}.ts`, `test/recipes.ts`, `test/project-archive.ts`.
+### Task 3.2: Add operation preview and durable recipe/history records — done (scoped)
 
-**Steps:**
-1. Define a stable operation record with input/output fingerprints, parameters, timestamp, engine version, warning and quality impact.
-2. Compute before/after count, bounds, duration, quality-event, and selected-range impact in a pure preview helper.
-3. Require preview confirmation for destructive-looking transforms while producing a new dataset/history state non-destructively.
-4. Persist and replay recipes; report compatibility failures rather than guessing.
+**Files:** `src/core/recipes/preview.ts` (new), `src/ui/TransformPanel.tsx`, `src/App.tsx`,
+`test/operation-preview.ts`.
 
-### Task 3.3: Expand transforms only behind explicit sampling/metadata rules
+Delivered: `computeOperationPreview` (pure, before/after point count, bounds, duration,
+quality-event, and selected-range impact) gates any transform that would shrink the point count
+behind a confirmation dialog; `App.tsx` now builds and retains an `OperationRecord` per applied
+transform (dataset fingerprints, timestamp, summary), shown as a collapsible history list in the
+Transform tab.
 
-**Files:** `src/core/transforms.ts`, `src/core/derivations/*`, `src/ui/TransformPanel.tsx`, focused tests per filter.
+**Deferred to Tranche 7** (the plan's designated home for project-persistence schema work):
+persisting operation records/recipes into the project archive/manifest, and a full recipe
+save/load/replay UI (`src/ui/ProjectPanel.tsx`, `src/persistence/project/*`, `test/recipes.ts`,
+`test/project-archive.ts` were not touched). The underlying recipe executor/replay/fingerprint
+primitives already existed pre-Tranche-3 and are unaffected.
 
-**Priority:** median/Hampel/exponential filters → rolling stats/derivatives/integrals → timestamp de-jitter/clock correction → distance resample/monotone interpolation. Defer Butterworth until sampling stability and filter parameters are documented.
+### Task 3.3: Expand transforms only behind explicit sampling/metadata rules — done (first tier)
+
+**Files:** `src/core/transforms.ts`, `src/ui/TransformPanel.tsx`, `test/transform-filters.ts`.
+
+Delivered the first item of the plan's priority list: `medianFilterElevation` and
+`hampelFilterElevation` (MAD-based outlier replacement rather than removal, preserving point
+count, with `hampel_corrected` provenance flags). Both are index-window based, matching the
+plan's Butterworth-deferral rationale (no uniform-sampling assumption).
+
+**Deferred**, per the plan's own priority ordering, to a future pass: exponential moving average,
+rolling statistics/derivatives/integrals, timestamp de-jitter/clock-drift correction, and
+distance-based resampling/monotone interpolation. Butterworth remains deferred as originally
+specified.
 
 ---
 

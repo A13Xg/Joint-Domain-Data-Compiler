@@ -144,21 +144,22 @@ Rendered browser behavior is covered by the future Stage 11 end-to-end test suit
 ## Delivered
 
 - Overview statistics and basic quality checks.
-- Basic UI transform for cumulative distance, speed and heading.
-- Tested versioned standard-kinematics engine for distance, ground speed, vertical speed, heading, turn rate, horizontal acceleration, sample interval and sample frequency.
+- Tested versioned standard-kinematics engine for distance, ground speed, vertical speed, heading, turn rate, horizontal acceleration, sample interval and sample frequency, wired into the "Derive kinematics" UI control and operation history (the prior duplicate basic derivation was removed).
+- Median and Hampel elevation filters (index-window, point-count-preserving) with correction provenance flags.
+- A pure operation-preview helper (before/after count, bounds, duration, quality-event and selected-range impact) gating destructive transforms behind confirmation.
+- Per-transform operation records (input/output dataset fingerprints, timestamp, engine/operation id, summary) retained for the session and shown in a Transform-tab history list.
 - Tested flight/data-state segmentation engine.
 - Segment selection in the Overview UI using default configuration.
 - Quality flags for missing, duplicate and non-monotonic timestamps.
 
 ## Remaining
 
-- Wire the versioned standard-kinematics engine into the normal UI and operation history.
-- Remove or consolidate the duplicate basic derivation implementation.
+- Persist operation records/recipes into the project archive (Stage 9) and build a full recipe save/load/replay UI.
+- Expand transforms per the documented priority list: exponential moving average, rolling statistics/derivatives/integrals, timestamp de-jitter/clock-drift correction, distance-based resampling/monotone interpolation (Butterworth remains deferred until sampling-rate assumptions are explicit).
 - Expose segmentation thresholds and segment summaries in the UI.
 - Add gap, spike, flatline, saturation and coordinate-jump detection.
 - Add altitude/time-reference-aware analytical guards.
 - Add anomaly/event overlays consumable by charts, map and reports.
-- Add analysis provenance: engine ID, version, parameters and source hash.
 
 ## Acceptance target
 
