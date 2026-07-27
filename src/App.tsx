@@ -3,8 +3,8 @@ import type { CsvAnalysisResult, DetectedColumn } from './types/converter'
 import type { Dataset, TrackPoint } from './core/model'
 import { withPoints } from './core/transforms'
 import { detectFormat, makeDataset, parseFileToDataset, INPUT_FORMATS } from './core/parsers'
-import { buildPointsFromCsvRows, parseCsvFile, type CsvMapping } from './core/parsers/csv'
-import { assertByteBudget, assertPointBudget } from './core/parsers/limits'
+import { streamCsvFileToPoints, CsvImportCancelledError, type CsvMapping } from './core/parsers/csv'
+import { assertByteBudget, assertPointBudget, DEFAULT_FORMAT_BUDGETS } from './core/parsers/limits'
 import { describeSignatureMismatch, sniffTextSignature } from './core/parsers/contentSignature'
 import { sha256Hex } from './core/checksum'
 import { logger } from './core/logger'
@@ -70,6 +70,7 @@ export default function App() {
   const [building, setBuilding] = useState(false)
   const [dragActive, setDragActive] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const cancelCsvRef = useRef(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const active = useMemo(() => datasets.find((dataset) => dataset.id === activeId) ?? null, [datasets, activeId])
@@ -129,17 +130,25 @@ export default function App() {
 
   const buildCsvDataset = useCallback(async () => {
     if (!pendingCsv) return
+    cancelCsvRef.current = false
     setBuilding(true); setBusy(`Building dataset from ${pendingCsv.file.name}`); setProgress(0)
     try {
-      const { rows, columns } = await logger.time('import', `Full CSV parse ${pendingCsv.file.name}`, () => parseCsvFile(
+      // Rows are mapped into TrackPoints as each chunk streams in, so only the
+      // point array — the representation the rest of the app needs — is held
+      // for the lifetime of the import; a full raw-row array is never built
+      // alongside it.
+      const result = await logger.time('import', `Streaming CSV parse ${pendingCsv.file.name}`, () => streamCsvFileToPoints(
         pendingCsv.file, pendingCsv.analysis.delimiter, pendingCsv.analysis.columns.map((column) => column.name),
-        pendingCsv.analysis.dataStartRow, (fraction) => setProgress(fraction * 100),
+        pendingCsv.analysis.dataStartRow, pendingCsv.mapping,
+        {
+          onProgress: (fraction) => setProgress(fraction * 100),
+          isCancelled: () => cancelCsvRef.current,
+          maxPoints: DEFAULT_FORMAT_BUDGETS.csv.maxPoints,
+        },
       ))
-      const result = buildPointsFromCsvRows(rows, pendingCsv.mapping, columns)
-      assertPointBudget('csv', result.points.length)
-      // Full-file checksum/signature read is separate from the chunked row
-      // parse above; it is a one-time cost paid once per import, not held
-      // alongside the row/point representations.
+      // Full-file checksum/signature read is separate from the streamed
+      // point construction above; it is a one-time cost paid once per
+      // import, not held alongside the growing point array.
       const bytes = new Uint8Array(await pendingCsv.file.arrayBuffer())
       const checksum = await sha256Hex(bytes)
       const mismatch = describeSignatureMismatch('csv', sniffTextSignature(new TextDecoder('utf-8').decode(bytes)))
@@ -152,10 +161,17 @@ export default function App() {
       })
       setPendingCsv(null); addDataset(dataset)
     } catch (error) {
-      logger.error('import', `CSV build failed: ${(error as Error).message}`)
-      flashToast(`CSV build failed: ${(error as Error).message}`)
+      if (error instanceof CsvImportCancelledError) {
+        logger.info('import', `CSV build cancelled for ${pendingCsv.file.name}`)
+        flashToast('CSV import cancelled.')
+      } else {
+        logger.error('import', `CSV build failed: ${(error as Error).message}`)
+        flashToast(`CSV build failed: ${(error as Error).message}`)
+      }
     } finally { setBuilding(false); setBusy(null); setProgress(null) }
   }, [pendingCsv, addDataset, flashToast])
+
+  const cancelCsvBuild = useCallback(() => { cancelCsvRef.current = true }, [])
 
   const ingestFile = useCallback(async (file: File) => {
     const ext = file.name.toLowerCase().split('.').pop() ?? ''
@@ -274,7 +290,7 @@ export default function App() {
         <main className="workspace">
           <nav className="tab-bar">{tabs.map((item) => <button key={item.id} type="button" disabled={!item.enabled} className={`tab${tab === item.id ? ' active' : ''}`} onClick={() => selectTab(item.id)}>{item.label}</button>)}{active && <span className="tab-active-name mono">{active.name}</span>}</nav>
           <section className="tab-content">
-            {progress !== null && <div className="global-progress"><ProgressBar value={progress} label={busy ?? 'Working'} /></div>}
+            {progress !== null && <div className="global-progress"><ProgressBar value={progress} label={busy ?? 'Working'} />{building && <button type="button" onClick={cancelCsvBuild}>Cancel</button>}</div>}
             {tab === 'import' && <ImportView dragActive={dragActive} setDragActive={setDragActive} onFiles={onFiles} openPicker={() => fileInputRef.current?.click()} />}
             {tab === 'mapping' && pendingCsv && <MappingPanel analysis={pendingCsv.analysis} mapping={pendingCsv.mapping} onChange={(mapping) => setPendingCsv((current) => current ? { ...current, mapping } : current)} additionalHeaders={pendingCsv.additionalHeaders} onToggleAdditionalHeaders={(additionalHeaders) => setPendingCsv((current) => current ? { ...current, additionalHeaders } : current)} onBuild={buildCsvDataset} building={building} />}
             {tab === 'overview' && active && <StatsPanel dataset={active} />}
