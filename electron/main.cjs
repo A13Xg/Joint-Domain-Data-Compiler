@@ -76,7 +76,11 @@ function safeLibraryName(name) {
 
 function libraryPath(name) {
   const dir = ensureKmlLibraryDir()
+  // `safe` is basename-only with a strict charset whitelist (safeLibraryName),
+  // and the join result is re-verified below to stay inside `dir`, so this is
+  // not a traversal despite the shape of the call.
   const safe = safeLibraryName(name)
+  // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal
   const filePath = path.join(dir, safe)
   if (!filePath.startsWith(dir + path.sep)) throw new Error('KML/KMZ path escaped the library directory')
   return filePath
@@ -134,6 +138,9 @@ function registerKmlLibraryIpc() {
     return fs.readdirSync(dir, { withFileTypes: true })
       .filter((entry) => entry.isFile() && /\.km?l$/i.test(entry.name))
       .map((entry) => {
+        // `entry.name` is an OS-reported directory-entry name from the
+        // readdirSync call on `dir` above, not attacker-controlled input.
+        // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal
         const stat = fs.statSync(path.join(dir, entry.name))
         return { name: entry.name, bytes: stat.size, modifiedAt: stat.mtimeMs, kind: path.extname(entry.name).toLowerCase().slice(1) }
       })

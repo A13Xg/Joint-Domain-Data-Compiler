@@ -1,6 +1,5 @@
 // Task 2.1: per-format import budgets, source checksums, and content-signature
 // mismatch warnings.
-import assert from 'node:assert/strict'
 import { DOMParser } from 'linkedom'
 ;(globalThis as unknown as { DOMParser: unknown }).DOMParser = DOMParser
 
