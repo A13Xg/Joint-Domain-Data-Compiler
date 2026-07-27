@@ -379,11 +379,10 @@ first.
 
 # Tranche 6 — Auditable fusion and notional output
 
-> **Status 2026-07-27:** Tasks 6.1, 6.2, and the core (non-UI) logic of 6.3 and 6.4 are done —
-> contracts, grouping/scoring, Auto-Combine/report, and notional gap-fill all work and are
-> tested standalone. What's left across this tranche is entirely UI: FusionPanel/FusionTimeline,
-> NotionalSmoothingPanel, and wiring any of it into App.tsx/the map/3D views — all of which
-> build on Tranche 5's Sources panel patterns (map-side rendering is now done there; 3D is not).
+> **Status 2026-07-27:** Tasks 6.1, 6.2, and 6.4 done (6.4 including its UI: panel, map styling,
+> export gate). Task 6.3's core decision engine (Auto-Combine + report) is done and tested; its
+> FusionPanel/FusionTimeline UI is what's left in this tranche, following the same pattern
+> NotionalSmoothingPanel just established.
 
 ### Task 6.1: Define entity, source, candidate, and decision contracts — done
 
@@ -424,19 +423,25 @@ not built) — the override *data structures* work and are tested, but there's n
 timeline to create them from yet. Wiring fused-track export/default behavior into `App.tsx` and
 the project archive is also not done.
 
-### Task 6.4: Add non-destructive notional smoothing — steps 1-2 done
+### Task 6.4: Add non-destructive notional smoothing — done
 
-**Files:** `src/core/derivations/notionalSmoothing.ts` (new), `test/notional-smoothing.ts`.
+**Files:** `src/core/derivations/notionalSmoothing.ts`, `src/ui/{NotionalSmoothingPanel,ExportPanel,MapView}.tsx`, `src/App.tsx`, `test/notional-smoothing.ts`.
 
-Delivered steps 1-2: `deriveNotionalSmoothedTrack` fills gaps above a configurable threshold
-(default 3000ms) with linearly-interpolated points at the neighboring median observed interval,
-each flagged `notional` in provenance and ext, with antimeridian-safe longitude interpolation.
+Delivered all three steps. Core (steps 1-2): `deriveNotionalSmoothedTrack` fills gaps above a
+configurable threshold (default 3000ms) with linearly-interpolated points at the neighboring
+median observed interval, flagged `notional` in provenance and ext, antimeridian-safe.
 `deriveNotionalSmoothedDataset` wraps this into a new `{name}_notionalSmoothed` Dataset without
-mutating the source (verified by a snapshot-equality test). 21 test cases.
+mutating the source. 21 test cases.
 
-**Not done:** step 3 — the `NotionalSmoothingPanel.tsx` UI, map/3D rendering of notional points
-with distinct styling, and the export-acknowledgement gate. These depend on the Tranche 5
-multi-track UI patterns.
+UI (step 3): `NotionalSmoothingPanel.tsx` (shown in the Transform tab, previews gap/insertion
+counts, creates the derived track as a new dataset — it doesn't fit TransformPanel's in-place
+model since it always produces a new dataset); `MapView` renders notional points with a distinct
+gray dashed-ring style and an explicit tooltip label instead of normal selection/channel-color
+styling; `ExportPanel` blocks exporting any dataset containing notional points behind an explicit
+acknowledgment checkbox, reset per dataset.
+
+Not done: 3D rendering of notional points (Trajectory3dPanel doesn't distinguish them) — map-only,
+consistent with Task 5.2's map-only multi-track scope this session.
 
 ---
 
