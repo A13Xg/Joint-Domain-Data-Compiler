@@ -30,6 +30,8 @@ import { isDesktopKmlLibraryAvailable, saveKmlLibraryFile } from './desktop/kmlL
 import { insertDataset } from './core/ids'
 import { DEFAULT_WORKSPACE_STATE, normalizeWorkspaceState, type WorkspaceState } from './state/workspace'
 import { ensureBuiltinDerivationsRegistered } from './core/analytics/bootstrap'
+import { fingerprintDataset } from './core/recipes/hash'
+import type { OperationRecord } from './core/recipes/model'
 
 ensureBuiltinDerivationsRegistered()
 
@@ -38,6 +40,10 @@ export type Tab = 'import' | 'mapping' | 'overview' | 'map' | 'charts' | 'table'
 type History = ProjectDatasetHistory
 interface PendingCsv { file: File; analysis: CsvAnalysisResult; mapping: CsvMapping; additionalHeaders: boolean }
 const CSV_SAMPLE_LIMIT = 5000
+
+function slugify(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'transform'
+}
 
 function suggestColumn(columns: DetectedColumn[], field: string, threshold = 0.45): string {
   let best = ''
@@ -65,6 +71,7 @@ export default function App() {
   const [datasets, setDatasets] = useState<Dataset[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [histories, setHistories] = useState<Record<string, History>>({})
+  const [operationRecords, setOperationRecords] = useState<Record<string, OperationRecord[]>>({})
   const [tab, setTab] = useState<Tab>('import')
   const [workspace, setWorkspace] = useState<WorkspaceState>(DEFAULT_WORKSPACE_STATE)
   const [busy, setBusy] = useState<string | null>(null)
@@ -220,11 +227,23 @@ export default function App() {
   const applyTransform = useCallback((points: TrackPoint[], summary: string) => {
     if (!active) return
     const next = withPoints(active, points)
+    const record: OperationRecord = {
+      id: `op_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      operationId: slugify(summary),
+      operationVersion: 1,
+      params: {},
+      inputDatasetHash: fingerprintDataset(active),
+      outputDatasetHash: fingerprintDataset(next),
+      createdAt: Date.now(),
+      summary,
+      warnings: [],
+    }
     setDatasets((current) => current.map((dataset) => dataset.id === active.id ? next : dataset))
     setHistories((current) => {
       const existing = current[active.id] ?? { past: [], future: [] }
       return { ...current, [active.id]: { past: [...existing.past, active], future: [] } }
     })
+    setOperationRecords((current) => ({ ...current, [active.id]: [...(current[active.id] ?? []), record] }))
     flashToast(summary)
   }, [active, flashToast])
 
@@ -302,7 +321,7 @@ export default function App() {
             {tab === 'table' && active && <DataTable points={active.points} channels={active.channels} />}
             {tab === 'compare' && <ComparisonPanel datasets={datasets} activeId={activeId} workspace={workspace.comparison} onWorkspaceChange={(comparison) => setWorkspace((current) => ({ ...current, comparison }))} />}
             {tab === 'scene3d' && active && <Trajectory3dPanel dataset={active} workspace={workspace.scene3d} onWorkspaceChange={(scene3d) => setWorkspace((current) => ({ ...current, scene3d }))} />}
-            {tab === 'transform' && active && <TransformPanel dataset={active} onApply={applyTransform} onUndo={undo} onRedo={redo} canUndo={!!history && history.past.length > 0} canRedo={!!history && history.future.length > 0} />}
+            {tab === 'transform' && active && <TransformPanel dataset={active} onApply={applyTransform} onUndo={undo} onRedo={redo} canUndo={!!history && history.past.length > 0} canRedo={!!history && history.future.length > 0} operationHistory={operationRecords[active.id] ?? []} />}
             {tab === 'project' && <ProjectPanel datasets={datasets} histories={histories} activeId={activeId} activeTab={workspace.lastWorkspaceTab} workspace={workspace} onRestoreProject={restoreProject} />}
             {tab === 'kmlLibrary' && <KmlLibraryPanel onImportKmlText={importKmlText} />}
             {tab === 'export' && active && <ExportPanel dataset={active} />}

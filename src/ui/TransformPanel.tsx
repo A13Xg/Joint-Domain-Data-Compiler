@@ -7,6 +7,8 @@ import {
 import { runDerivation } from '../core/analytics/registry'
 import { fixedRateResampleOperation, type InterpolationMode, type ResampleParams } from '../core/operations/resample'
 import { applyTransformToRange } from '../core/rangeTransform'
+import { computeOperationPreview, describeOperationPreview } from '../core/recipes/preview'
+import type { OperationRecord } from '../core/recipes/model'
 import { usePointSelection } from '../state/pointSelection'
 import { ComputeClient, type ComputeRunHandle } from '../compute/client'
 import { logger } from '../core/logger'
@@ -18,11 +20,12 @@ interface Props {
   onRedo: () => void
   canUndo: boolean
   canRedo: boolean
+  operationHistory: OperationRecord[]
 }
 
 interface ResampleWorkerResult { dataset: Dataset; summary: string; warnings?: string[] }
 
-export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canRedo }: Props) {
+export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canRedo, operationHistory }: Props) {
   const [dedupeTol, setDedupeTol] = useState(0)
   const [decimateFactor, setDecimateFactor] = useState(2)
   const [simplifyEps, setSimplifyEps] = useState(5)
@@ -47,6 +50,14 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
   const run = (fn: () => TransformResult & { warnings?: string[] }) => {
     try {
       const result = fn()
+      const preview = computeOperationPreview(dataset, { ...dataset, points: result.points }, { indexRange })
+      if (preview.isDestructive) {
+        const proceed = window.confirm(`This will change ${describeOperationPreview(preview)}. Continue?`)
+        if (!proceed) {
+          logger.info('transform', `Declined: ${result.summary} (${describeOperationPreview(preview)})`)
+          return
+        }
+      }
       logger.info('transform', result.summary)
       for (const warning of result.warnings ?? []) logger.warn('transform', warning)
       onApply(result.points, result.summary)
@@ -101,6 +112,7 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
         <span className="muted small">{points.length.toLocaleString()} points</span>
         <label className="chk"><input type="checkbox" checked={scopeToSelection} disabled={!indexRange} onChange={(event) => setScopeToSelection(event.target.checked)} />selected range only{indexRange ? ` (${indexRange.start}–${indexRange.end})` : ''}</label>
       </div>
+      {operationHistory.length > 0 && <details className="operation-history"><summary>Operation history ({operationHistory.length})</summary><ul>{[...operationHistory].reverse().slice(0, 20).map((record) => <li key={record.id} className="mono small"><span className="muted">{new Date(record.createdAt).toLocaleTimeString()}</span> {record.summary}</li>)}</ul></details>}
       <div className="transform-grid">
         <Op title="Sort by time" desc="Order points chronologically. Required by most track players."><button type="button" onClick={() => run(() => sortByTime(points))}>Apply</button></Op>
         <Op title="Swap lat / lon" desc="Fix transposed coordinate columns. Supports selected-range scope."><button type="button" onClick={() => runScoped((selected) => swapLatLon(selected))}>Apply{scoped ? ' to range' : ''}</button></Op>

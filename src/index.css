@@ -309,6 +309,9 @@ code { font-family: var(--mono); background: var(--bg-3); padding: 1px 5px; bord
 /* ---------- Transform ---------- */
 .transform-panel { display: flex; flex-direction: column; gap: 14px; }
 .transform-history { display: flex; align-items: center; gap: 10px; }
+.operation-history { background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 14px; }
+.operation-history summary { cursor: pointer; color: var(--text-dim); }
+.operation-history ul { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 160px; overflow-y: auto; }
 .transform-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
 .op-card { background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 .op-head h4 { margin: 0 0 3px; font-size: 13.5px; }
