@@ -264,9 +264,16 @@ export default function App() {
   }, [active, history])
 
   const removeDataset = useCallback((id: string) => {
-    setDatasets((current) => current.filter((dataset) => dataset.id !== id))
+    const remaining = datasets.filter((dataset) => dataset.id !== id)
+    setDatasets(remaining)
     setHistories((current) => { const next = { ...current }; delete next[id]; return next })
-    if (activeId === id) { const remaining = datasets.filter((dataset) => dataset.id !== id); setActiveId(remaining[0]?.id ?? null) }
+    setOperationRecords((current) => { const next = { ...current }; delete next[id]; return next })
+    // Reference/target dataset selectors in the comparison workspace state
+    // can point at a removed dataset; reconcile them with the same
+    // validation used on project restore rather than leaving a phantom ID
+    // (which would silently break the comparison with no explanation).
+    setWorkspace((current) => normalizeWorkspaceState(current, new Set(remaining.map((dataset) => dataset.id))))
+    if (activeId === id) setActiveId(remaining[0]?.id ?? null)
   }, [activeId, datasets])
 
   const restoreProject = useCallback((archive: ProjectArchive) => {
