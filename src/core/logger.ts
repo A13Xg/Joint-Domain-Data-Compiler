@@ -125,14 +125,15 @@ class Logger {
 
   /** Serialize the buffer for download/export. */
   toText(): string {
-    return this.entries
-      .map((e) => {
-        const time = new Date(e.ts).toISOString()
-        const detail = e.detail !== undefined ? ` ${safeJson(e.detail)}` : ''
-        return `${time} ${e.level.toUpperCase().padEnd(7)} ${e.category}: ${e.message}${detail}`
-      })
-      .join('\n')
+    return this.entries.map(formatLogEntry).join('\n')
   }
+}
+
+/** Shared single-line rendering for a log entry, used by Logger.toText() and diagnostic bundle export. */
+export function formatLogEntry(entry: LogEntry): string {
+  const time = new Date(entry.ts).toISOString()
+  const detail = entry.detail !== undefined ? ` ${safeJson(entry.detail)}` : ''
+  return `${time} ${entry.level.toUpperCase().padEnd(7)} ${entry.category}: ${entry.message}${detail}`
 }
 
 export function serializeError(err: unknown): { message: string; stack?: string } {
