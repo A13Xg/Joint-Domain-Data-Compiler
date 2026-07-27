@@ -73,10 +73,8 @@ jobs:
             exit 1
           }
 
-      - name: Lint and test
-        run: |
-          npm run lint
-          npm test
+      - name: Lint and run the complete regression suite (check:unit)
+        run: npm run check:unit
 
       - name: Build and package app
         run: ${{ matrix.build_command }}

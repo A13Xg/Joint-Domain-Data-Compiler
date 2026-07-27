@@ -22,6 +22,9 @@
     "test:legacy": "esbuild test/validate.ts --bundle --platform=node --format=esm --outfile=.test-build/validate.mjs && node .test-build/validate.mjs",
     "bench": "node --expose-gc scripts/run-benchmarks.mjs",
     "lint": "eslint .",
+    "check:unit": "npm run lint && npm test",
+    "check:web": "npm run build",
+    "check:all": "npm run check:unit && npm run check:web",
     "preview": "vite preview"
   },
   "build": {
