@@ -1,4 +1,9 @@
-import { alignTracksByNearestTime, deriveRelativePosition } from '../src/core/analytics/relative.ts'
+import {
+  alignTracksByInterpolation,
+  alignTracksByNearestTime,
+  deriveInterpolatedRelativePosition,
+  deriveRelativePosition,
+} from '../src/core/analytics/relative.ts'
 import type { TrackPoint } from '../src/core/model.ts'
 
 let failures = 0
@@ -44,6 +49,68 @@ try {
   invalidToleranceRejected = true
 }
 check('Negative alignment tolerance is rejected', invalidToleranceRejected)
+
+// --- Interpolated alignment (Task 5.3 step 2) -------------------------------
+{
+  // Reference at t=1500, exactly halfway between target samples at t=1000 and t=2000.
+  const ref: TrackPoint[] = [{ lat: 0, lon: 0, ele: 100, time: 1500 }]
+  const tgt: TrackPoint[] = [
+    { lat: 0, lon: 0, ele: 100, time: 1000 },
+    { lat: 0, lon: 0.01, ele: 110, time: 2000 },
+  ]
+  const interpPairs = alignTracksByInterpolation(ref, tgt, { maxBracketGapMs: 5000 })
+  check('Interpolated alignment finds one bracketed pair', interpPairs.length === 1)
+  check('Interpolation fraction is exactly halfway', interpPairs[0]?.interpolationFraction === 0.5)
+  check('Bracket indices point at the surrounding real samples', interpPairs[0]?.targetBeforeIndex === 0 && interpPairs[0]?.targetAfterIndex === 1)
+
+  const interpSamples = deriveInterpolatedRelativePosition(ref, tgt, interpPairs)
+  check('Interpolated samples are explicitly marked derived', interpSamples[0]?.derived === true)
+  check('Nearest-time samples are not marked derived', samples[0]?.derived === undefined)
+  check('Interpolated deltaTimeMs is always zero (aligned to the exact reference time)', interpSamples[0]?.deltaTimeMs === 0)
+}
+
+// --- Refuses to extrapolate beyond real target coverage ---------------------
+{
+  const ref: TrackPoint[] = [{ lat: 0, lon: 0, time: 500 }, { lat: 0, lon: 0, time: 2500 }]
+  const tgt: TrackPoint[] = [{ lat: 0, lon: 0, time: 1000 }, { lat: 0, lon: 0, time: 2000 }]
+  const interpPairs = alignTracksByInterpolation(ref, tgt, { maxBracketGapMs: 5000 })
+  check('A reference time before target coverage starts is not extrapolated', !interpPairs.some((p) => p.referenceIndex === 0))
+  check('A reference time after target coverage ends is not extrapolated', !interpPairs.some((p) => p.referenceIndex === 1))
+}
+
+// --- Refuses to bridge a large target gap -----------------------------------
+{
+  const ref: TrackPoint[] = [{ lat: 0, lon: 0, time: 5000 }]
+  const tgt: TrackPoint[] = [{ lat: 0, lon: 0, time: 0 }, { lat: 0, lon: 0, time: 10_000 }]
+  const tooWide = alignTracksByInterpolation(ref, tgt, { maxBracketGapMs: 5000 })
+  check('A bracket gap wider than maxBracketGapMs is refused', tooWide.length === 0)
+  const wideEnough = alignTracksByInterpolation(ref, tgt, { maxBracketGapMs: 10_000 })
+  check('A bracket gap at or under maxBracketGapMs is accepted', wideEnough.length === 1)
+}
+
+// --- Exact-match boundary (fraction 0, no divide-by-zero) -------------------
+{
+  const ref: TrackPoint[] = [{ lat: 0, lon: 0, time: 1000 }]
+  const tgt: TrackPoint[] = [{ lat: 5, lon: 5, ele: 50, time: 1000 }]
+  const interpPairs = alignTracksByInterpolation(ref, tgt, { maxBracketGapMs: 5000 })
+  check('An exact single-sample time match interpolates cleanly at fraction 0', interpPairs.length === 1 && interpPairs[0]?.interpolationFraction === 0)
+}
+
+// --- Antimeridian-safe interpolation -----------------------------------------
+{
+  const ref: TrackPoint[] = [{ lat: 0, lon: 0, time: 500 }]
+  const tgt: TrackPoint[] = [{ lat: 0, lon: 179.9, time: 0 }, { lat: 0, lon: -179.9, time: 1000 }]
+  const interpPairs = alignTracksByInterpolation(ref, tgt, { maxBracketGapMs: 5000 })
+  const interpSamples = deriveInterpolatedRelativePosition(ref, tgt, interpPairs)
+  check('Interpolation across the antimeridian does not wrap through 0 (produces a large, not near-zero, range)', (interpSamples[0]?.horizontalRangeM ?? 0) < 2000)
+}
+
+// --- Rejects invalid options --------------------------------------------------
+{
+  let threw = false
+  try { alignTracksByInterpolation(reference, target, { maxBracketGapMs: 0 }) } catch { threw = true }
+  check('A non-positive maxBracketGapMs is rejected', threw)
+}
 
 console.log(`\n${failures === 0 ? 'ALL RELATIVE ANALYTICS CHECKS PASSED' : `${failures} RELATIVE ANALYTICS CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)

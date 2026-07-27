@@ -5,6 +5,7 @@
 // telemetry downstream (charts, map, export).
 import type { Dataset, TrackPoint } from '../model'
 import { withPoints } from '../transforms'
+import { lerp, lerpLon } from '../geoInterpolation'
 
 export interface NotionalSmoothingOptions {
   /** Gaps at or below this duration are left alone. Defaults to 3000ms per the plan. */
@@ -47,18 +48,6 @@ function estimateSampleIntervalMs(points: readonly TrackPoint[], gapThresholdMs:
   return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!
 }
 
-function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * t
-}
-
-/** Shortest-path longitude interpolation so an antimeridian-crossing gap doesn't produce points that wrap the wrong way around the globe. */
-function lerpLon(a: number, b: number, t: number): number {
-  let delta = b - a
-  if (delta > 180) delta -= 360
-  else if (delta < -180) delta += 360
-  const result = a + delta * t
-  return ((result + 540) % 360) - 180
-}
 
 export function deriveNotionalSmoothedTrack(
   points: readonly TrackPoint[],
