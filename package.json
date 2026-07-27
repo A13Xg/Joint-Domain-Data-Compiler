@@ -20,6 +20,7 @@
     "build:desktop:win": "npm run build && electron-builder --win nsis portable --x64 --publish never",
     "test": "node scripts/run-tests.mjs",
     "test:legacy": "esbuild test/validate.ts --bundle --platform=node --format=esm --outfile=.test-build/validate.mjs && node .test-build/validate.mjs",
+    "bench": "node --expose-gc scripts/run-benchmarks.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },
