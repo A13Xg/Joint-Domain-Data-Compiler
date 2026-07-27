@@ -181,6 +181,78 @@ export function removeElevationOutliers(points: TrackPoint[], threshold = 4, win
   return { points: clone(out), summary: `Removed ${removed} rolling elevation outliers (>${threshold}σ, window=${radius * 2 + 1})` }
 }
 
+/**
+ * Rolling median filter over elevation. Robust to spikes without the
+ * amplitude/phase distortion a moving-average filter introduces; unlike
+ * removeElevationOutliers, this never changes the point count. Index-window
+ * based (not time-window based), so it makes no assumption about uniform
+ * sample spacing — the reason it is safe to ship ahead of a Butterworth
+ * filter, which is deferred until sampling-rate assumptions are explicit.
+ */
+export function medianFilterElevation(points: TrackPoint[], window: number): TransformResult {
+  const w = Math.max(1, Math.floor(window))
+  const half = Math.floor(w / 2)
+  const out = clone(points)
+  let changed = 0
+
+  for (let i = 0; i < points.length; i++) {
+    if (points[i].ele === undefined) continue
+    const local = points
+      .slice(Math.max(0, i - half), Math.min(points.length, i + half + 1))
+      .map((candidate) => candidate.ele)
+      .filter((value): value is number => value !== undefined)
+    if (local.length === 0) continue
+    const median = quantile(local, 0.5)
+    if (out[i].ele !== median) changed++
+    out[i].ele = median
+  }
+
+  return { points: out, summary: `Applied median filter to elevation (window ${w}, ${changed} point(s) changed)` }
+}
+
+/**
+ * Hampel identifier over elevation: like removeElevationOutliers, but
+ * replaces an outlier with the local median instead of dropping the point,
+ * so the point count and timing are preserved. Flagged points carry
+ * `hampel_corrected` provenance so the correction is traceable.
+ */
+export function hampelFilterElevation(points: TrackPoint[], sigmaThreshold = 3, window = 11): TransformResult {
+  if (points.filter((p) => p.ele !== undefined).length < 5) return { points: clone(points), summary: 'Too few elevations for Hampel filtering' }
+  const radius = Math.max(2, Math.floor(window / 2))
+  const out = clone(points)
+  let replaced = 0
+
+  for (let i = 0; i < out.length; i++) {
+    const current = out[i]
+    if (current.ele === undefined) continue
+    const local = points
+      .slice(Math.max(0, i - radius), Math.min(points.length, i + radius + 1))
+      .map((candidate) => candidate.ele)
+      .filter((value): value is number => value !== undefined)
+    if (local.length < 5) continue
+    const median = quantile(local, 0.5)
+    const mad = quantile(local.map((value) => Math.abs(value - median)), 0.5)
+    // A zero MAD means the window is otherwise uniform: any deviation is
+    // unbounded in score terms, so treat "differs from the median at all" as
+    // the outlier condition rather than skipping (which would silently miss
+    // the clearest possible spike — a single value in a flat run).
+    const isOutlier = mad === 0 ? current.ele !== median : Math.abs(current.ele - median) / (1.4826 * mad) > sigmaThreshold
+    if (isOutlier) {
+      current.ele = median
+      addFlag(current, 'hampel_corrected')
+      replaced++
+    }
+  }
+
+  return { points: out, summary: `Hampel filter replaced ${replaced} elevation outlier(s) with the local median (>${sigmaThreshold}σ, window=${radius * 2 + 1})` }
+}
+
+function addFlag(point: TrackPoint, flag: string): void {
+  const flags = new Set(point.provenance?.qualityFlags ?? [])
+  flags.add(flag)
+  point.provenance = { ...point.provenance, qualityFlags: [...flags] }
+}
+
 function quantile(values: number[], q: number): number {
   const sorted = [...values].sort((a, b) => a - b)
   const pos = (sorted.length - 1) * q

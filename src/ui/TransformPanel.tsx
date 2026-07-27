@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Dataset, TrackPoint } from '../core/model'
 import {
-  decimate, dedupe, dropInvalid, offsetElevation, removeElevationOutliers,
+  decimate, dedupe, dropInvalid, hampelFilterElevation, medianFilterElevation, offsetElevation, removeElevationOutliers,
   shiftTime, simplify, smooth, sortByTime, swapLatLon, type TransformResult,
 } from '../core/transforms'
 import { runDerivation } from '../core/analytics/registry'
@@ -35,6 +35,9 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
   const [timeShift, setTimeShift] = useState(0)
   const [eleOffset, setEleOffset] = useState(0)
   const [outlierSigma, setOutlierSigma] = useState(4)
+  const [medianWindow, setMedianWindow] = useState(5)
+  const [hampelWindow, setHampelWindow] = useState(11)
+  const [hampelSigma, setHampelSigma] = useState(3)
   const [resampleRateHz, setResampleRateHz] = useState(1)
   const [resampleMode, setResampleMode] = useState<InterpolationMode>('linear')
   const [resampleMaxGapSeconds, setResampleMaxGapSeconds] = useState(10)
@@ -132,6 +135,8 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
         <Op title="Shift time" desc="Add a fixed offset to timestamps. Supports selected-range scope."><NumField label="seconds" value={timeShift} onChange={setTimeShift} step={1} /><button type="button" onClick={() => runScoped((selected) => shiftTime(selected, timeShift))}>Apply{scoped ? ' to range' : ''}</button></Op>
         <Op title="Offset elevation" desc="Datum correction. Supports selected-range scope."><NumField label="meters" value={eleOffset} onChange={setEleOffset} step={1} /><button type="button" onClick={() => runScoped((selected) => offsetElevation(selected, eleOffset))}>Apply{scoped ? ' to range' : ''}</button></Op>
         <Op title="Remove elevation outliers" desc="MAD-based spike rejection on elevation. Supports selected-range scope."><NumField label="σ threshold" value={outlierSigma} onChange={setOutlierSigma} min={1} step={0.5} /><button type="button" onClick={() => runScoped((selected) => removeElevationOutliers(selected, outlierSigma))}>Apply{scoped ? ' to range' : ''}</button></Op>
+        <Op title="Median filter (elevation)" desc="Rolling median; robust to spikes without dropping points. Supports selected-range scope."><NumField label="window" value={medianWindow} onChange={setMedianWindow} min={3} step={2} /><button type="button" onClick={() => runScoped((selected) => medianFilterElevation(selected, medianWindow))}>Apply{scoped ? ' to range' : ''}</button></Op>
+        <Op title="Hampel filter (elevation)" desc="Replaces local outliers with the rolling median instead of removing points. Supports selected-range scope."><NumField label="window" value={hampelWindow} onChange={setHampelWindow} min={5} step={2} /><NumField label="σ threshold" value={hampelSigma} onChange={setHampelSigma} min={1} step={0.5} /><button type="button" onClick={() => runScoped((selected) => hampelFilterElevation(selected, hampelSigma, hampelWindow))}>Apply{scoped ? ' to range' : ''}</button></Op>
       </div>
     </div>
   )
