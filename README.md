@@ -1,5 +1,11 @@
 # Joint Domain Data Compiler
 
+[![Quality Gates](https://github.com/A13Xg/Joint-Domain-Data-Compiler/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/actions/workflows/ci.yml)
+[![Windows package](https://img.shields.io/github/actions/workflow/status/A13Xg/Joint-Domain-Data-Compiler/release.yml?branch=main&label=Windows)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/actions/workflows/release.yml)
+[![macOS package](https://img.shields.io/github/actions/workflow/status/A13Xg/Joint-Domain-Data-Compiler/release.yml?branch=main&label=macOS)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/actions/workflows/release.yml)
+[![Linux package](https://img.shields.io/github/actions/workflow/status/A13Xg/Joint-Domain-Data-Compiler/release.yml?branch=main&label=Linux)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/actions/workflows/release.yml)
+[![Runtime audit](https://img.shields.io/badge/runtime_audit-0_high%2Fcritical-15803d)](docs/dependency-policy.md)
+
 A **single-user trajectory and TSPI engineering workbench** for importing, normalizing, inspecting, transforming, comparing, visualizing, saving and exporting time-space-position-information data.
 
 JDDC runs as a browser application and an Electron desktop application. Data parsing and processing are local and do not require a cloud service. The default OpenStreetMap basemap does require network access; the local dataset workflows continue to work without it.
@@ -10,6 +16,7 @@ JDDC is a functional engineering workbench with a strong deterministic core. It 
 
 - `docs/IMPLEMENTATION_ROADMAP.md` — product/stage status and definition of done.
 - `.hermes/plans/2026-07-26_223300-full-roadmap-execution.md` — the tranche-by-tranche implementation plan currently being executed.
+- `CHANGELOG.md` — user-visible changes grouped by release.
 
 ## Import
 
@@ -27,8 +34,10 @@ All supported inputs normalize into a shared dataset model with source metadata,
 ## Analysis and linked inspection
 
 - Overview statistics and basic data-quality checks.
-- A basic UI derivation operation for cumulative distance, speed and heading.
-- A tested versioned standard-kinematics engine for additional channels; full UI integration remains roadmap work.
+- A versioned standard-kinematics derivation for distance, speed, vertical speed, heading,
+  turn rate, acceleration and sample timing, wired into the normal transform workflow.
+- Quality-event detection and linked overlays for timestamp gaps/duplicates, coordinate jumps,
+  invalid coordinates, elevation spikes and elevation flatlines.
 - Default flight/data-state segmentation with linked segment selection.
 - Dataset-scoped persistent point selection.
 - Synchronized transient data cursor across chart, map, table and 3D.
@@ -44,14 +53,16 @@ All supported inputs normalize into a shared dataset model with source metadata,
 - Time, source-index and cumulative-distance axes.
 - Built-in presets and extrema-preserving source-index-aware downsampling.
 - Linked cursor, point selection, range brushing and selected-range statistics.
+- Zoom, pan and range reset, plus accessible patterned quality-event overlays.
 
-Multi-pane layouts, explicit per-series scales, zoom/pan, statistical plots and image export remain roadmap work.
+Multi-pane layouts, explicit per-series scales, statistical plots and image export remain roadmap work.
 
 ### Map
 
 - Leaflet path and bounded point rendering.
 - Channel-based coloring, linked cursor/selection/range emphasis and fit-to-range.
-- Default OpenStreetMap tiles are online; an offline/no-basemap mode remains roadmap work.
+- Simultaneous, individually styled multi-source tracks.
+- Default OpenStreetMap tiles are online; an offline/no-basemap mode is available for local work.
 
 ### 3D
 
@@ -59,15 +70,16 @@ Multi-pane layouts, explicit per-series scales, zoom/pan, statistical plots and 
 - Orbit, pan, zoom, reset, fit, point picking, channel coloring, altitude exaggeration, ground grid, vertical curtain and linked cursor/selection/ranges.
 - Fraction-based playback and speed controls.
 
-Timestamp-accurate playback, follow/chase behavior, multi-track rendering, persisted camera state and performance validation remain roadmap work.
+Timestamp-accurate playback, follow/chase behavior, multi-track rendering and performance validation remain roadmap work.
 
 ### Comparison
 
 - Two-dataset reference/target comparison.
-- Nearest-time alignment with tolerance and manual target time offset.
+- Nearest-time or interpolated alignment with tolerance/gap controls and manual target time offset.
 - Local-ENU relative position, horizontal/slant range, bearing, vertical separation, closure rate and closest approach.
 
-Interpolation, time-reference reconciliation, drift estimation, multi-track visualization and reports remain roadmap work.
+Time/altitude-reference compatibility guards are applied before sensitive analysis. Drift
+estimation, multi-track comparison visualization and richer reports remain roadmap work.
 
 ## Transforms
 
@@ -81,20 +93,31 @@ Interpolation, time-reference reconciliation, drift estimation, multi-track visu
 - Fixed-rate linear or step resampling with gap protection in a Worker.
 - Selection-scoped safe transforms.
 - Undo and redo using dataset snapshots.
+- Before/after previews for destructive operations and in-session versioned operation history.
+- Median and Hampel elevation filters.
 
-Transform previews, durable operation records, recipe UI, advanced filters and memory-efficient history remain roadmap work.
+Recipe UI, additional advanced filters and memory-efficient history remain roadmap work.
 
 ## Projects
 
-JDDC can save and reopen a self-contained gzip `.jddc-project` v1 archive containing:
+JDDC can save and reopen a bounded, self-contained gzip `.jddc-project` archive containing:
 
 - embedded datasets;
 - dataset fingerprints;
 - undo/redo dataset snapshots;
 - active dataset;
-- basic tab and point/index-range selection fields.
+- durable chart, map, 3D, comparison and multi-source display settings;
+- linked point/range selection state;
+- bookmarks.
+- validated transform/operation history.
 
-The current archive is not yet complete workspace persistence. Chart layouts, map controls, 3D camera state, comparison settings, operation recipes, schema migrations, compact history and reports remain roadmap work.
+The Project tab can also export a self-contained, print-ready HTML analysis report with dataset
+statistics, source/reference metadata, quality-event evidence, warnings, bookmarks and recorded
+transform history. Its light VectorPunk/HUD visual system is designed for economical printing
+and browser-based PDF export.
+
+Archive schema migration infrastructure is in place. Operation recipes, annotations, compact
+history and richer reports remain roadmap work.
 
 ## Export
 
@@ -141,21 +164,35 @@ Configured targets:
 - Linux: AppImage and DEB.
 - macOS: DMG and ZIP.
 
-The release workflow also produces SBOMs and SHA-256 checksums. Code signing, macOS notarization, provenance attestations and automated packaged-application smoke tests are not yet complete.
+The release workflow also produces SBOMs, SHA-256 checksums, and GitHub/Sigstore build-provenance
+attestations; enforces a reviewed Electron fuse set; signs Windows artifacts when repository
+certificate secrets are available (otherwise producing and verifying an unsigned fallback); and
+runs a native packaged-renderer smoke gate on Linux, Windows and macOS. Follow
+[`docs/release-checklist.md`](docs/release-checklist.md) for a release and
+[`docs/rollback.md`](docs/rollback.md) for recovery. Linux is locally proven; native Windows and
+macOS execution awaits an available GitHub-hosted runner. macOS signing/notarization still
+requires owner-provided credentials.
 
 ## Testing
 
-The default suite currently includes 20 deterministic TypeScript regression harnesses covering core analytics, selection, transforms, resampling, compute protocol/runtime, project archives, recipes/plugins, geodesy, 3D geometry and exports.
+The default suite currently includes 42 deterministic TypeScript regression harnesses covering
+analytics, linked visualization helpers, selection, transforms, fusion, resampling, compute
+protocol/runtime, project archives/migrations, diagnostics, recipes/plugins, geodesy, 3D
+geometry, parsers, bounded property/fuzz cases and exports.
 
-The repository does not yet have a rendered-component suite, browser end-to-end suite, packaged Electron launch tests, performance regression suite or parser fuzzing. These are explicit roadmap priorities.
+The repository includes a Chromium end-to-end smoke test for the primary local workflow:
+GPX import, linked table/chart/map/3D selection, transform, project save/open, report and
+diagnostic export, and GPX export. Bounded property/fuzz coverage exercises transforms, parsers,
+structured GeoJSON and archive corruption. It does not yet have a broader rendered-component or
+visual-snapshot suite. A reproducible benchmark harness and recorded baseline exist, but broader
+performance coverage remains a roadmap priority.
 
 ## Test data
 
-`file-test/` contains a documented USGS-derived sample corpus in CSV, GeoJSON and GPX forms, comparison inputs and a malformed negative CSV fixture.
+`file-test/` contains a documented USGS-derived sample corpus with valid and malformed fixtures
+for every supported import format, plus comparison inputs.
 
 ## Branch workflow
 
 - `main` is the validated integration and release history.
-- `agent/roadmap-integration` is the active roadmap-development branch.
-- PR #25 is the current integration pull request.
 - Branch protection and GitHub rulesets are optional administration choices, not implementation or release requirements.

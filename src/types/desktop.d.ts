@@ -21,6 +21,9 @@ export interface JointDomainCompilerDesktopApi {
     remove: (name: string) => Promise<boolean>
     reveal: () => Promise<string>
   }
+  diagnostics?: {
+    save: (text: string) => Promise<string | null>
+  }
 }
 
 declare global {

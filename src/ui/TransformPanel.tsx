@@ -15,7 +15,7 @@ import { logger } from '../core/logger'
 
 interface Props {
   dataset: Dataset
-  onApply: (points: TrackPoint[], summary: string) => void
+  onApply: (points: TrackPoint[], summary: string, preserveSelection: boolean) => void
   onUndo: () => void
   onRedo: () => void
   canUndo: boolean
@@ -50,7 +50,7 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
 
   useEffect(() => () => computeClientRef.current?.dispose(), [])
 
-  const run = (fn: () => TransformResult & { warnings?: string[] }) => {
+  const run = (fn: () => TransformResult & { warnings?: string[] }, preserveSelection = true) => {
     try {
       const result = fn()
       const preview = computeOperationPreview(dataset, { ...dataset, points: result.points }, { indexRange })
@@ -63,7 +63,7 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
       }
       logger.info('transform', result.summary)
       for (const warning of result.warnings ?? []) logger.warn('transform', warning)
-      onApply(result.points, result.summary)
+      onApply(result.points, result.summary, preserveSelection)
     } catch (error) {
       logger.error('transform', `Transform failed: ${(error as Error).message}`)
     }
@@ -94,7 +94,7 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
       const result = await handle.promise
       logger.info('transform', result.summary)
       for (const warning of result.warnings ?? []) logger.warn('transform', warning)
-      onApply(result.dataset.points, result.summary)
+      onApply(result.dataset.points, result.summary, false)
     } catch (error) {
       if ((error as Error).name === 'AbortError') logger.warn('transform', 'Resampling cancelled')
       else logger.error('transform', `Resampling failed: ${(error as Error).message}`)
@@ -117,11 +117,11 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
       </div>
       {operationHistory.length > 0 && <details className="operation-history"><summary>Operation history ({operationHistory.length})</summary><ul>{[...operationHistory].reverse().slice(0, 20).map((record) => <li key={record.id} className="mono small"><span className="muted">{new Date(record.createdAt).toLocaleTimeString()}</span> {record.summary}</li>)}</ul></details>}
       <div className="transform-grid">
-        <Op title="Sort by time" desc="Order points chronologically. Required by most track players."><button type="button" onClick={() => run(() => sortByTime(points))}>Apply</button></Op>
+        <Op title="Sort by time" desc="Order points chronologically. Required by most track players."><button type="button" onClick={() => run(() => sortByTime(points), false)}>Apply</button></Op>
         <Op title="Swap lat / lon" desc="Fix transposed coordinate columns. Supports selected-range scope."><button type="button" onClick={() => runScoped((selected) => swapLatLon(selected))}>Apply{scoped ? ' to range' : ''}</button></Op>
-        <Op title="Drop invalid" desc="Remove points outside valid lat/lon ranges. Full dataset only."><button type="button" onClick={() => run(() => dropInvalid(points))}>Apply</button></Op>
-        <Op title="Dedupe" desc="Collapse consecutive points within a distance tolerance. Full dataset only."><NumField label="tolerance (m)" value={dedupeTol} onChange={setDedupeTol} min={0} step={1} /><button type="button" onClick={() => run(() => dedupe(points, dedupeTol))}>Apply</button></Op>
-        <Op title="Decimate" desc="Keep every Nth point for fast thinning. Full dataset only."><NumField label="factor" value={decimateFactor} onChange={setDecimateFactor} min={2} step={1} /><button type="button" onClick={() => run(() => decimate(points, decimateFactor))}>Apply</button></Op>
+        <Op title="Drop invalid" desc="Remove points outside valid lat/lon ranges. Full dataset only."><button type="button" onClick={() => run(() => dropInvalid(points), false)}>Apply</button></Op>
+        <Op title="Dedupe" desc="Collapse consecutive points within a distance tolerance. Full dataset only."><NumField label="tolerance (m)" value={dedupeTol} onChange={setDedupeTol} min={0} step={1} /><button type="button" onClick={() => run(() => dedupe(points, dedupeTol), false)}>Apply</button></Op>
+        <Op title="Decimate" desc="Keep every Nth point for fast thinning. Full dataset only."><NumField label="factor" value={decimateFactor} onChange={setDecimateFactor} min={2} step={1} /><button type="button" onClick={() => run(() => decimate(points, decimateFactor), false)}>Apply</button></Op>
         <Op title="Resample to fixed rate" desc="Generate evenly timed samples off the renderer thread with progress and cancellation.">
           <NumField label="rate (Hz)" value={resampleRateHz} onChange={setResampleRateHz} min={0.001} step={0.5} />
           <label className="num-field"><span>interpolation</span><select value={resampleMode} onChange={(event) => setResampleMode(event.target.value as InterpolationMode)}><option value="linear">linear</option><option value="step">step / hold</option></select></label>
@@ -129,7 +129,7 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
           {limitResampleGaps && <NumField label="max gap (s)" value={resampleMaxGapSeconds} onChange={setResampleMaxGapSeconds} min={0.001} step={1} />}
           {resampleProgress ? <><span className="muted small">{resampleProgress}</span><button type="button" onClick={() => activeResampleRef.current?.cancel()}>Cancel</button></> : <button type="button" onClick={() => void runResample()}>Apply</button>}
         </Op>
-        <Op title="Simplify (Douglas–Peucker)" desc="Shape-preserving reduction within an epsilon. Full dataset only."><NumField label="ε (m)" value={simplifyEps} onChange={setSimplifyEps} min={0.1} step={0.5} /><button type="button" onClick={() => run(() => simplify(points, simplifyEps))}>Apply</button></Op>
+        <Op title="Simplify (Douglas–Peucker)" desc="Shape-preserving reduction within an epsilon. Full dataset only."><NumField label="ε (m)" value={simplifyEps} onChange={setSimplifyEps} min={0.1} step={0.5} /><button type="button" onClick={() => run(() => simplify(points, simplifyEps), false)}>Apply</button></Op>
         <Op title="Smooth" desc="Moving-average filter to reduce GPS jitter. Supports selected-range scope."><NumField label="window" value={smoothWindow} onChange={setSmoothWindow} min={2} step={1} /><label className="chk"><input type="checkbox" checked={smoothCoords} onChange={(event) => setSmoothCoords(event.target.checked)} /> position</label><label className="chk"><input type="checkbox" checked={smoothEle} onChange={(event) => setSmoothEle(event.target.checked)} /> elevation</label><button type="button" onClick={() => runScoped((selected) => smooth(selected, smoothWindow, { coords: smoothCoords, elevation: smoothEle }))}>Apply{scoped ? ' to range' : ''}</button></Op>
         <Op title="Derive kinematics" desc="Compute distance, ground/vertical speed, heading, turn rate, acceleration, and sample timing. Full dataset only."><button type="button" onClick={() => run(() => runDerivation('standard-kinematics', dataset))}>Apply</button></Op>
         <Op title="Shift time" desc="Add a fixed offset to timestamps. Supports selected-range scope."><NumField label="seconds" value={timeShift} onChange={setTimeShift} step={1} /><button type="button" onClick={() => runScoped((selected) => shiftTime(selected, timeShift))}>Apply{scoped ? ' to range' : ''}</button></Op>

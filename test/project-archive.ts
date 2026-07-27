@@ -11,6 +11,7 @@ import {
   readStreamWithLimit,
   serializeProjectArchive,
 } from '../src/persistence/project/archive'
+import { operationRecordsFromManifest } from '../src/persistence/project/manifest'
 
 const dataset: Dataset = {
   id: 'track-1',
@@ -36,6 +37,22 @@ const manifest = buildProjectManifest({
     indexRange: { start: 0, end: 1 },
   },
   bookmarks: [{ id: 'bm-1', label: 'Turn point', datasetId: dataset.id, pointIndex: 1, timeMs: 2_000 }],
+  datasetDisplay: {
+    [dataset.id]: { id: dataset.id, visible: false, color: '#157c88', opacity: 0.65, label: 'Primary track' },
+  },
+  operationRecords: {
+    [dataset.id]: [{
+      id: 'operation-1',
+      operationId: 'derive-standard-kinematics',
+      operationVersion: 1,
+      params: { engine: 'standard' },
+      inputDatasetHash: 'fnv1a32:input',
+      outputDatasetHash: 'fnv1a32:output',
+      createdAt: 9_000,
+      summary: 'Derived standard kinematics',
+      warnings: [],
+    }],
+  },
   projectId: 'project-test',
   projectName: 'Archive Test',
   createdAt: 10_000,
@@ -44,6 +61,9 @@ const manifest = buildProjectManifest({
 
 assert.equal(manifest.bookmarks.length, 1, 'buildProjectManifest threads through caller-provided bookmarks')
 assert.equal(manifest.bookmarks[0]?.label, 'Turn point')
+assert.equal(manifest.view.datasetDisplay?.[dataset.id]?.opacity, 0.65, 'dataset display settings are persisted')
+assert.equal(manifest.recipes.length, 1, 'operation records produce a durable recipe')
+assert.equal(manifest.datasets[0]?.recipeIds[0], manifest.recipes[0]?.id, 'dataset references its operation-history recipe')
 
 const archive = createProjectArchive({
   manifest,
@@ -62,6 +82,12 @@ assert.equal(archiveSummary(parsed).currentPoints, 2)
 assert.equal(archiveSummary(parsed).historySnapshots, 1)
 assert.equal(parsed.manifest.view.selection.pointIndex, 1)
 assert.equal(parsed.manifest.bookmarks[0]?.id, 'bm-1', 'bookmarks survive the full archive round-trip')
+assert.equal(parsed.manifest.view.datasetDisplay?.[dataset.id]?.visible, false, 'dataset display settings survive the full archive round-trip')
+assert.equal(
+  operationRecordsFromManifest(parsed.manifest)[dataset.id]?.[0]?.summary,
+  'Derived standard kinematics',
+  'operation history survives the full archive round-trip',
+)
 
 const blob = await encodeProjectArchive(archive)
 const decoded = await decodeProjectArchive(blob)

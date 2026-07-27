@@ -265,11 +265,11 @@ behind a confirmation dialog; `App.tsx` now builds and retains an `OperationReco
 transform (dataset fingerprints, timestamp, summary), shown as a collapsible history list in the
 Transform tab.
 
-**Deferred to Tranche 7** (the plan's designated home for project-persistence schema work):
-persisting operation records/recipes into the project archive/manifest, and a full recipe
-save/load/replay UI (`src/ui/ProjectPanel.tsx`, `src/persistence/project/*`, `test/recipes.ts`,
-`test/project-archive.ts` were not touched). The underlying recipe executor/replay/fingerprint
-primitives already existed pre-Tranche-3 and are unaffected.
+Completed in Tranche 7: operation records are now persisted through the manifest's existing
+versioned `Recipe` model, structurally validated, associated with their dataset, and reconstructed
+on restore. Focused archive tests and the browser save/open/report workflow prove the history
+survives a real round trip. A dedicated recipe authoring/replay UI remains open; the underlying
+executor/replay/fingerprint primitives remain available.
 
 ### Task 3.3: Expand transforms only behind explicit sampling/metadata rules — done (first tier)
 
@@ -457,11 +457,12 @@ consistent with Task 5.2's map-only multi-track scope this session.
 
 # Tranche 7 — Projects, reports, and diagnostics
 
-> **Status 2026-07-27:** Tasks 7.1 and 7.3 have their core (non-UI) layer done. Task 7.2's
-> bookmarks (step 1) are done; HTML report generation (steps 2-3) and the recipe/operation-record
-> persistence deferred from Task 3.2 are not started.
+> **Status 2026-07-27:** Project migration, bookmarks, HTML reports, diagnostic export,
+> operation-history persistence, display-setting persistence, and dirty-state protection are
+> delivered. Compact history policy, free-form annotations, and captured visualization imagery
+> remain open.
 
-### Task 7.1: Introduce project migration and recovery framework — step 1 done
+### Task 7.1: Introduce project migration and recovery framework — steps 1 and 3 (dirty-state slice) done
 
 **Files:** `src/persistence/project/migrations.ts` (new), `src/persistence/project/manifest.ts`, `test/project-migrations.ts`.
 
@@ -472,11 +473,16 @@ Wired into `parseProjectManifest` ahead of validation. Only schema v1 exists tod
 production migrator list is empty; tested generically with synthetic migrators (13 cases) so the
 mechanism is proven before a real v2 ever needs it.
 
-**Not done:** step 2 (v1 fixture archives specifically for migration testing — moot until a v2
-exists) and step 3 (dirty-state/recovery messaging, compact/excluded history policy — UI/
-persistence-flow decisions in `ProjectPanel.tsx` not attempted here).
+Step 3 dirty-state slice was delivered on 2026-07-27: workspace-changing actions mark the project
+dirty, the Project panel shows that state, successful save/restore clears it, opening another
+project requires confirmation, and browser unload is guarded. The browser smoke covers dirty →
+saved transitions. Dataset visibility/color/opacity/label settings and operation history are now
+also validated and restored instead of silently reverting.
 
-### Task 7.2: Add bookmarks, annotations, and HTML reports — step 1 done
+**Not done:** step 2 (v1 fixture archives specifically for migration testing — moot until a v2
+exists) and the compact/excluded history policy portion of step 3.
+
+### Task 7.2: Add bookmarks, annotations, and HTML reports — bookmarks and HTML report done
 
 **Files:** `src/persistence/project/archive.ts`, `src/App.tsx`, `src/ui/{ProjectPanel,StatsPanel}.tsx`, `test/project-archive.ts`.
 
@@ -488,12 +494,18 @@ from a loaded archive, and prunes a removed dataset's bookmarks (same cleanup al
 selected point and jumps back to it later. Covered by a full build→serialize→parse→archive
 round-trip test.
 
-**Not done:** steps 2-3 — HTML analysis report generation and print/PDF styling. This is a
-standalone, fairly large feature (an HTML template/generation module, wiring in metadata/quality/
-transform/comparison/fusion summaries, image exports from chart/map/3D) not attempted this
-session.
+Delivered the report portion on 2026-07-27: `buildHtmlAnalysisReport` emits a self-contained,
+HTML-escaped report with exact dataset statistics, source checksum/parser/reference metadata,
+default-threshold quality-event counts, import warnings, bookmarks, and in-session transform
+history. The Project panel downloads it with a responsive light VectorPunk/HUD visual system:
+technical-paper grid, vector trajectory motif, clipped index tags, instrument-style metrics and
+sparse signal accents, with a dedicated low-ink print/PDF mode. A focused hostile-string/style
+contract and the browser smoke cover generation. The browser gate also exposed and fixed project
+name loss across panel remounts, so restored report identity and filenames remain stable.
+Captured chart/map/3D images and free-form project annotations remain open; the report states its
+snapshot/evidence limits instead of implying those views were captured.
 
-### Task 7.3: Add local diagnostic bundle export — steps 1-2 done
+### Task 7.3: Add local diagnostic bundle export — done
 
 **Files:** `src/core/diagnostics/bundle.ts` (new), `src/core/logger.ts`, `test/diagnostics.ts`.
 
@@ -504,9 +516,11 @@ construction there is no code path here that reaches into a dataset's points or 
 library — callers can only pass pre-summarized inputs. 14 tests, including an explicit check
 that no lat/lon-shaped data ever appears in the serialized output.
 
-**Not done:** step 3 — the Electron IPC bridge to actually save a bundle to disk
-(`electron/{main,preload}.cjs`) and the `ProjectPanel.tsx` trigger button; the bridge allow-list
-tests depend on that integration existing first.
+Delivered step 3 on 2026-07-27: the Project panel now creates and exports the sanitized bundle
+with an optional user note. Browsers use an ordinary download; Electron uses a save dialog over a
+dedicated preload bridge. The shared IPC contract validates JSON, schema version, and a 5 MiB
+limit before writing, and the allow-list tests cover valid, malformed, unsupported, non-text, and
+oversized payloads.
 
 ---
 
@@ -553,13 +567,13 @@ one concrete lead so far is the GPX exporter, not the `TrackPoint[]` representat
 
 # Tranche 9 — Test automation, dependency maintenance, and release hardening
 
-> **Status 2026-07-27:** Task 9.2 step 1 done. Everything else in this tranche not started.
-> Task 9.1 (Playwright) needs browser-binary installation whose feasibility in a given CI/sandbox
-> environment wasn't verified this session — flagged rather than attempted partially. Task 9.3's
-> Windows/macOS code signing and notarization are structurally blocked without secrets/
-> certificates only the repository owner holds — no amount of agent effort substitutes for that.
+> **Status 2026-07-27:** The browser workflow, bounded fuzz coverage, Linux packaged launch,
+> cross-platform packaged-smoke definitions, dependency controls, release integrity, Electron
+> fuse policy, and opportunistic Windows signing are implemented. Linux is locally verified.
+> Native Windows/macOS proof awaits an available GitHub-hosted runner because Actions is currently
+> blocked by repository billing; macOS signing/notarization also requires owner-provided secrets.
 
-### Task 9.1: Establish browser and Electron smoke gates — not started
+### Task 9.1: Establish browser and Electron smoke gates — steps 1, 3, and 4 implemented
 
 **Files:** `package.json`, `playwright.config.ts`, `test/e2e/*`, `scripts/*`, `.github/workflows/{ci,release}.yml`.
 
@@ -569,7 +583,30 @@ one concrete lead so far is the GPX exporter, not the `TrackPoint[]` representat
 3. Add packaged launch/smoke tests per platform; distinguish skipped signing/notarization from a passing package launch.
 4. Add property/fuzz tests for parsers, archive validation, and transforms with bounded input/time budgets.
 
-### Task 9.2: Refactor dependency and Electron-builder maintenance into controlled upgrade lanes — steps 1-2 done
+Delivered the browser portion of step 1 on 2026-07-27: Playwright/Chromium now exercises a
+deterministic local fixture through GPX import, linked table/chart/map/3D point selection,
+kinematics derivation, source visibility, project name and operation-history persistence,
+complete project download/reopen (including selection restoration), HTML report and diagnostic
+bundle downloads, and GPX export. It fails on uncaught page errors and retains trace/screenshot/video evidence on
+failure. `check:e2e` runs locally and in both quality and release workflows. Building this gate
+found and fixed a real selection-state defect: index-stable transforms now preserve linked
+selection while reordering/reducing transforms explicitly clear it. CSV mapping, comparison and
+fusion are not yet in the browser smoke path; visual snapshots remain open.
+
+Delivered step 4 on 2026-07-27: a deterministic bounded property/fuzz harness exercises 160
+generated transform tracks, 160 structured GeoJSON documents, 240 arbitrary GPX/KML/NMEA text
+inputs, and six archive-corruption classes. It found and fixed a real GPX malformed-XML null-root
+crash; GPX/KML now reject that boundary with intentional domain errors.
+
+Delivered step 3 on 2026-07-27: after building the actual packaged application,
+`scripts/smoke-packaged.mjs` launches it and queries Electron's loopback debugging endpoint to
+prove the renderer opened the packaged `app.asar/dist/index.html` with the expected title. Linux
+uses Xvfb; Windows launches the packaged executable directly; macOS discovers and launches the
+application-bundle executable. The release matrix runs the native gate after each platform build.
+Linux passed locally. Windows/macOS execution remains unproven only because repository Actions
+cannot currently start jobs due to its payment/spending-limit state.
+
+### Task 9.2: Refactor dependency and Electron-builder maintenance into controlled upgrade lanes — steps 1-3 done
 
 **Files:** `package.json`, `.github/workflows/{ci,release}.yml`, `docs/dependency-policy.md` (new).
 
@@ -584,14 +621,19 @@ lockfile discipline (informed directly by this session's own lockfile-drift CI f
 vs-dev-only audit thresholds, the current electron-builder/audit constraint, and a rollback
 procedure.
 
-**Not done (steps 2-6):**
-2. Add a dependency policy documenting Node support, patch/minor cadence, major-upgrade branch policy, lockfile discipline, runtime versus build-only audit thresholds, and rollback procedure.
-3. Create an Electron integration seam that tests IPC channel names, validation, byte limits, and packaged path behavior without enabling Node in the renderer.
-4. Update direct patch/minor dependencies one at a time with a clean install and all applicable gates. Test Electron patch upgrades using a packaged Windows smoke test.
-5. Treat electron-builder separately: investigate supported releases/lockfile graph and upgrade only to a release that resolves the known dev-only chain without downgrading from 26 to the audit-suggested incompatible 25.1.8. If no compatible fixed release exists, document the isolated build-time exposure, pin exact version/integrity, and add a review date.
-6. Pin GitHub Actions and scanner containers to immutable full commit revisions after verifying their exact behavior; retain update documentation.
+Delivered step 3 on 2026-07-27: `electron/security.cjs` is the shared main/preload contract for
+the six IPC operations, strict binary payload/50 MiB validation, diagnostic JSON/5 MiB
+validation, library path containment, and dev/packaged navigation policy. Focused tests pin the
+exposed operations, origin lookalikes, path traversal handling, typed-array bounds, invalid
+payloads, and byte ceilings.
 
-### Task 9.3: Release integrity and operational hardening — not started (code signing blocked without secrets)
+Delivered steps 5-6 on 2026-07-27: `electron-builder` is exact-pinned at `26.15.3`. The remaining
+16 high-severity audit findings are confined to its build-only dependency graph; the suggested
+forced downgrade was rejected and a dated review obligation is recorded. Runtime production
+dependencies audit clean. Every GitHub Action is pinned to a full commit and the Semgrep image is
+pinned by digest. Step 4 remains an ongoing maintenance lane rather than a one-time migration.
+
+### Task 9.3: Release integrity and operational hardening — steps 1, 2, 3 (Windows), and 4 done
 
 **Files:** `.github/workflows/release.yml`, `docs/release-checklist.md`, `docs/rollback.md`, Electron config/build field, release smoke scripts.
 
@@ -600,6 +642,35 @@ procedure.
 2. Add Electron fuse review with a documented expected fuse set and testable packaged configuration.
 3. Add optional Windows/macOS signing/notarization hooks that fail closed only when release secrets/config are explicitly enabled.
 4. Document stable/prerelease version policy, tag migration checks, rollback steps, and user-facing release verification.
+
+Delivered the Windows slice of step 3 on 2026-07-27: the native Windows release job passes
+`WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD` to electron-builder when configured. When the
+certificate secret is absent it explicitly disables identity auto-discovery and completes an
+unsigned build instead. The artifact gate requires `Valid` Authenticode signatures in configured
+mode and `NotSigned` in fallback mode. macOS signing/notarization remains open.
+
+Delivered step 1 on 2026-07-27:
+`scripts/verify-release-bundle.mjs` now requires exactly one expected package per target, all
+three platform SBOMs, and the Windows checksum manifest, then validates complete SHA-256 manifest
+coverage and every digest before publication. The pure contract is covered by
+`test/release-integrity.ts`. Tagged releases then use GitHub's official `actions/attest` action
+to create Sigstore-signed SLSA build-provenance attestations for the verified bundle; the release
+checklist includes the corresponding `gh attestation verify` consumer command.
+
+Delivered step 4 on 2026-07-27: `docs/release-checklist.md` defines version/tag policy, clean
+build and runtime-audit gates, per-platform manual launch requirements, artifact/SBOM/checksum
+verification, and truthful handling of omitted gates. `docs/rollback.md` defines stop-distribution,
+evidence preservation, immutable-tag corrective releases, project-schema compatibility checks,
+and credential rotation. The README links both documents and was synchronized with the current
+42-harness/product state.
+
+Delivered step 2 on 2026-07-27: a tested `afterPack` hook applies a strict, fully enumerated
+Electron Fuse V1 policy. It disables run-as-Node, `NODE_OPTIONS`, and inspector arguments; enables
+cookie encryption and ASAR-only app loading; and requires embedded ASAR integrity on the
+Windows/macOS platforms where electron-builder supplies it. Linux explicitly disables the
+unsupported integrity fuse. Packaged Linux inspection proved the expected fuse wire and the
+renderer launch smoke caught and corrected two initially incompatible fuse assumptions. The
+contract and rationale are documented in `docs/electron-security.md`.
 
 ---
 

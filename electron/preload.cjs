@@ -1,13 +1,17 @@
 const { contextBridge, ipcRenderer } = require('electron')
+const { IPC_CHANNELS } = require('./security.cjs')
 
 contextBridge.exposeInMainWorld('jointDomainCompiler', {
   platform: process.platform,
   isDesktop: true,
   kmlLibrary: {
-    list: () => ipcRenderer.invoke('kml-library:list'),
-    save: (name, bytes) => ipcRenderer.invoke('kml-library:save', name, bytes),
-    readText: (name) => ipcRenderer.invoke('kml-library:read-text', name),
-    remove: (name) => ipcRenderer.invoke('kml-library:remove', name),
-    reveal: () => ipcRenderer.invoke('kml-library:reveal'),
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.list),
+    save: (name, bytes) => ipcRenderer.invoke(IPC_CHANNELS.save, name, bytes),
+    readText: (name) => ipcRenderer.invoke(IPC_CHANNELS.readText, name),
+    remove: (name) => ipcRenderer.invoke(IPC_CHANNELS.remove, name),
+    reveal: () => ipcRenderer.invoke(IPC_CHANNELS.reveal),
+  },
+  diagnostics: {
+    save: (text) => ipcRenderer.invoke(IPC_CHANNELS.saveDiagnostics, text),
   },
 })
