@@ -328,30 +328,35 @@ covers core-pipeline operations, not 3D geometry/render specifically — see Tra
 
 # Tranche 5 — Multi-source workspace and comparison
 
-> **Status 2026-07-27:** Not started.
+> **Status 2026-07-27:** Task 5.1 done (data layer + map UI). Task 5.2 done for the map;
+> 3D multi-track rendering not started. Task 5.3 step 1 done.
 
-### Task 5.1: Add multi-dataset display state and Sources panel — done (data layer only)
+### Task 5.1: Add multi-dataset display state and Sources panel — done
 
-**Files:** `src/state/workspaceDisplay.ts` (new), `test/workspace-display.ts`.
+**Files:** `src/state/workspaceDisplay.ts`, `src/ui/SourcesPanel.tsx` (new), `src/App.tsx`, `test/workspace-display.ts`.
 
-Delivered steps 1-2: `syncWorkspaceDisplay`/`restoreWorkspaceDisplay`/`createDisplaySettings` — per-dataset
-visibility/color/opacity/label, deterministic fallback colors, and validated restore that strips
-stale/malformed entries rather than trusting them (18 test cases).
+Delivered all four steps for the map. `syncWorkspaceDisplay`/`restoreWorkspaceDisplay` (per-dataset
+visibility/color/opacity/label, deterministic fallback colors, validated restore) is wired into a
+new Sources tab (`SourcesPanel.tsx`) with a visibility checkbox, color swatch, and "Make active"
+button per loaded dataset. `App.tsx` reconciles the display map during render whenever the dataset
+list changes. Step 4 (persistence in the project archive) is not done — see Tranche 7.
 
-**Deferred:** step 3 (an actual Sources panel UI) and step 4 (persistence) require restructuring
-`MapView`/`Trajectory3dPanel` to receive all datasets instead of just the active one — the same
-prerequisite Task 5.2 needs. Building the UI without that wiring would ship a control that visibly
-does nothing, so it was intentionally left for whoever tackles 5.1's UI and 5.2 together.
+### Task 5.2: Render multiple tracks in map and 3D — done for the map; 3D not started
 
-### Task 5.2: Render multiple tracks in map and 3D — not started
+**Files:** `src/ui/MapView.tsx`, `src/ui/SourcesPanel.tsx`.
 
-**Files:** `src/visualization/map/trackLayers.ts`, `src/visualization/scene3d/multiTrack.ts`, `src/ui/{MapView,Trajectory3dPanel}.tsx`, `test/map-track-layers.ts`, `test/multi-track-3d.ts`.
+Delivered steps 2-3 for the map: every visible non-active dataset renders as a plain, non-
+interactive, color-coded dashed path underneath the active track, which keeps all of its existing
+point-level selection/hover/quality-marker interactivity; a "Fit visible" control fits bounds
+across every visible track; a color-keyed legend lists the other visible tracks by name.
 
-**Steps:**
-1. Use a shared reference origin only after compatibility guards approve it.
-2. Keep active-track selection while rendering color-coded visible tracks in order.
-3. Provide fit-visible/focus-active controls, legend, source emphasis, and bounded rendering per source.
-4. Add separation vectors and closest-approach graphics after multi-track geometry tests pass.
+**Not done:** step 1 (shared reference origin) and 3D rendering entirely — `Trajectory3dPanel.tsx`
+still renders only the active dataset. 3D needs a real decision about a shared ENU origin gated by
+`assessDatasetCompatibility`, which is a materially larger change to its render loop than the map
+change was. Step 4 (separation vectors/closest-approach graphics) depends on that 3D work existing
+first.
+
+### Task 5.3: Make comparison durable and interpolation-aware — step 1 done
 
 ### Task 5.3: Make comparison durable and interpolation-aware — step 1 done
 
@@ -406,14 +411,19 @@ implemented — grouping is time-only today; compatibility screening was scoped 
 3. Add manual interval selection snapped to candidate group boundaries; overrides survive recombination until reset.
 4. Default exports to fused output and provide provenance/report export.
 
-### Task 6.4: Add non-destructive notional smoothing — not started
+### Task 6.4: Add non-destructive notional smoothing — steps 1-2 done
 
-**Files:** `src/core/derivations/notionalSmoothing.ts`, `src/ui/NotionalSmoothingPanel.tsx`, `src/ui/{MapView,Trajectory3dPanel}.tsx`, `test/notional-smoothing.ts`.
+**Files:** `src/core/derivations/notionalSmoothing.ts` (new), `test/notional-smoothing.ts`.
 
-**Steps:**
-1. Default to gaps greater than 3 seconds and neighboring median observed interval.
-2. Create a new `_notionalSmoothed` track under the same entity; never edit source/fused raw points.
-3. Label/shape notional samples distinctly and require an acknowledgement before exporting them.
+Delivered steps 1-2: `deriveNotionalSmoothedTrack` fills gaps above a configurable threshold
+(default 3000ms) with linearly-interpolated points at the neighboring median observed interval,
+each flagged `notional` in provenance and ext, with antimeridian-safe longitude interpolation.
+`deriveNotionalSmoothedDataset` wraps this into a new `{name}_notionalSmoothed` Dataset without
+mutating the source (verified by a snapshot-equality test). 21 test cases.
+
+**Not done:** step 3 — the `NotionalSmoothingPanel.tsx` UI, map/3D rendering of notional points
+with distinct styling, and the export-acknowledgement gate. These depend on the Tranche 5
+multi-track UI patterns.
 
 ---
 
@@ -522,15 +532,20 @@ one concrete lead so far is the GPX exporter, not the `TrackPoint[]` representat
 3. Add packaged launch/smoke tests per platform; distinguish skipped signing/notarization from a passing package launch.
 4. Add property/fuzz tests for parsers, archive validation, and transforms with bounded input/time budgets.
 
-### Task 9.2: Refactor dependency and Electron-builder maintenance into controlled upgrade lanes — step 1 done
+### Task 9.2: Refactor dependency and Electron-builder maintenance into controlled upgrade lanes — steps 1-2 done
 
-**Files:** `package.json`, `.github/workflows/{ci,release}.yml`.
+**Files:** `package.json`, `.github/workflows/{ci,release}.yml`, `docs/dependency-policy.md` (new).
 
 Delivered step 1: `check:unit` (lint + full regression suite) and `check:web` (production build)
 npm scripts, called from both `ci.yml` and `release.yml` instead of duplicating the same shell
 block in two workflow files. Verified locally and confirmed green on real GitHub Actions runs for
 both workflows. `check:desktop`/`check:e2e` were not added as empty aliases — they'd have no
 distinct content until per-OS desktop verification or e2e tests (Task 9.1) actually exist.
+
+Delivered step 2: `docs/dependency-policy.md` — Node support, patch/minor vs. major cadence,
+lockfile discipline (informed directly by this session's own lockfile-drift CI failure), runtime-
+vs-dev-only audit thresholds, the current electron-builder/audit constraint, and a rollback
+procedure.
 
 **Not done (steps 2-6):**
 2. Add a dependency policy documenting Node support, patch/minor cadence, major-upgrade branch policy, lockfile discipline, runtime versus build-only audit thresholds, and rollback procedure.
