@@ -1,5 +1,14 @@
 # JDDC Full Roadmap Execution Plan
 
+> **⚠ CI blocked as of 2026-07-27, commit `f46eaba` onward:** GitHub Actions is refusing to start
+> any job — "recent account payments have failed or your spending limit needs to be increased" —
+> on the repository's GitHub billing. This is unrelated to the code: every commit through this one
+> was verified locally with `npm run check:all` (lint, all 37 regression harnesses, production
+> build), plus `semgrep scan --config auto --error src electron scripts` (0 findings) and `npm
+> audit --omit=dev --audit-level=high` (0 findings). Resolve billing in GitHub Settings → Billing
+> & plans, then re-run the failed workflows (`gh run rerun <id>`) to get a real CI signal on
+> everything committed while this was blocked.
+
 > **For Hermes:** Execute one tranche at a time with strict RED → GREEN → refactor cycles. Keep a single writer in this checkout, preserve unrelated user changes, and do not commit or push unless explicitly requested.
 
 **Goal:** Turn Joint Domain Data Compiler into a reliable local-first, multi-source TSPI workbench with metadata-safe analytics, durable project state, complete linked visualization, reproducible transforms/fusion, scalable processing, and verifiable Electron releases—without claiming or shipping features that have not been exercised.
@@ -379,10 +388,9 @@ first.
 
 # Tranche 6 — Auditable fusion and notional output
 
-> **Status 2026-07-27:** Tasks 6.1, 6.2, and 6.4 done (6.4 including its UI: panel, map styling,
-> export gate). Task 6.3's core decision engine (Auto-Combine + report) is done and tested; its
-> FusionPanel/FusionTimeline UI is what's left in this tranche, following the same pattern
-> NotionalSmoothingPanel just established.
+> **Status 2026-07-27:** All four tasks in this tranche are done (6.3 without a dedicated Entity
+> management UI or an interactive override-editing timeline — see its notes below). This tranche
+> is functionally complete for its MVP scope.
 
 ### Task 6.1: Define entity, source, candidate, and decision contracts — done
 
@@ -405,23 +413,25 @@ tolerance and cross-dataset metadata-compatibility screening (the rest of step 1
 implemented — grouping is time-only today; compatibility screening was scoped to the caller
 (one level up, where per-dataset metadata actually lives) and that caller doesn't exist yet.
 
-### Task 6.3: Build Auto-Combine, audit report, and timeline overrides — core logic done
+### Task 6.3: Build Auto-Combine, audit report, and timeline overrides — done (MVP scope)
 
-**Files:** `src/core/fusion/{autoCombine,report}.ts` (new), `test/fusion-auto-combine.ts`.
+**Files:** `src/core/fusion/{autoCombine,report}.ts`, `src/ui/FusionPanel.tsx` (new), `src/App.tsx`, `test/fusion-auto-combine.ts`.
 
-Delivered the decision engine behind steps 1-3: `autoCombine` produces one fused `TrackPoint` per
-`CandidateGroup` by copying a real candidate's coordinates exactly (never averaging/synthesizing),
-recording every choice as a `FusedPointDecision` (chosen/skipped source IDs, human-readable reason,
-confidence). Manual point overrides (exact group match) beat manual interval overrides (time-window
-match) beat normal scoring; an override for a source absent from a given group falls back to
-scoring rather than erroring. `buildFusionReport` + JSON/Markdown/CSV export cover step 4's
-provenance/report export. 23 tests.
+Core (steps 1-4 logic): `autoCombine` produces one fused `TrackPoint` per `CandidateGroup` by
+copying a real candidate's coordinates exactly (never averaging/synthesizing), recording every
+choice as a `FusedPointDecision`. Manual point overrides beat interval overrides beat normal
+scoring; an override for a source absent from a given group falls back to scoring rather than
+erroring. `buildFusionReport` + JSON/Markdown/CSV export. 23 tests.
 
-**Not done:** "retaining all raw sources visibly color-coded" and "manual interval selection
-snapped to candidate group boundaries" are UI concerns (`FusionPanel.tsx`/`FusionTimeline.tsx`,
-not built) — the override *data structures* work and are tested, but there's no interactive
-timeline to create them from yet. Wiring fused-track export/default behavior into `App.tsx` and
-the project archive is also not done.
+UI: a new Fusion tab (`FusionPanel.tsx`) lets a user pick ≥2 loaded datasets as sources with a
+per-source priority and time-alignment tolerance, run Auto-Combine, and get a new fused dataset
+plus a Markdown report — the full pipeline works end to end through the UI for the first time.
+
+**Not done, deliberately out of MVP scope:** there is no dedicated Entity management UI — every
+run treats the selected sources as one ad hoc entity rather than a persisted, named one. There is
+no interactive timeline for creating manual point/interval overrides (the override *data
+structures* work and are tested; a user would have to call the core API directly to use them
+today). Fused-track persistence in the project archive is not done (Tranche 7).
 
 ### Task 6.4: Add non-destructive notional smoothing — done
 
