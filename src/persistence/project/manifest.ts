@@ -1,6 +1,9 @@
 import type { Recipe } from '../../core/recipes/model'
 import type { WorkspaceSelection } from '../../core/selection'
 import { normalizeWorkspaceState, type WorkspaceState } from '../../state/workspace'
+import { migrateToVersion, PROJECT_MANIFEST_MIGRATORS } from './migrations'
+
+const CURRENT_MANIFEST_SCHEMA_VERSION = 1
 
 export interface ProjectDatasetEntry {
   id: string
@@ -64,8 +67,9 @@ export function parseProjectManifest(text: string): ProjectManifest {
   } catch (error) {
     throw new Error(`Project manifest is not valid JSON: ${errorMessage(error)}`, { cause: error })
   }
-  validateProjectManifest(value)
-  return value
+  const migrated = migrateToVersion(value, CURRENT_MANIFEST_SCHEMA_VERSION, PROJECT_MANIFEST_MIGRATORS)
+  validateProjectManifest(migrated)
+  return migrated
 }
 
 export function validateProjectManifest(value: unknown): asserts value is ProjectManifest {
