@@ -19,6 +19,7 @@ import { DataTable } from './ui/DataTable'
 import { StatsPanel } from './ui/StatsPanel'
 import { TransformPanel } from './ui/TransformPanel'
 import { NotionalSmoothingPanel } from './ui/NotionalSmoothingPanel'
+import { FusionPanel } from './ui/FusionPanel'
 import { ExportPanel } from './ui/ExportPanel'
 import { MappingPanel } from './ui/MappingPanel'
 import { ImportView } from './ui/ImportView'
@@ -38,7 +39,7 @@ import type { OperationRecord } from './core/recipes/model'
 
 ensureBuiltinDerivationsRegistered()
 
-export type Tab = 'import' | 'mapping' | 'overview' | 'map' | 'charts' | 'table' | 'compare' | 'scene3d' | 'transform' | 'project' | 'kmlLibrary' | 'export' | 'sources'
+export type Tab = 'import' | 'mapping' | 'overview' | 'map' | 'charts' | 'table' | 'compare' | 'scene3d' | 'transform' | 'project' | 'kmlLibrary' | 'export' | 'sources' | 'fusion'
 
 type History = ProjectDatasetHistory
 interface PendingCsv { file: File; analysis: CsvAnalysisResult; mapping: CsvMapping; additionalHeaders: boolean }
@@ -315,6 +316,7 @@ export default function App() {
     { id: 'kmlLibrary', label: 'KML/KMZ', enabled: true },
     { id: 'export', label: 'Export', enabled: !!active },
     { id: 'sources', label: 'Sources', enabled: datasets.length > 0 },
+    { id: 'fusion', label: 'Fusion', enabled: datasets.length >= 2 },
   ]
 
   const otherTracks: OtherTrack[] = active
@@ -350,6 +352,7 @@ export default function App() {
             {tab === 'kmlLibrary' && <KmlLibraryPanel onImportKmlText={importKmlText} />}
             {tab === 'export' && active && <ExportPanel dataset={active} />}
             {tab === 'sources' && <SourcesPanel datasets={datasets} activeId={activeId} display={syncedDisplay} onDisplayChange={setDatasetDisplay} onSelectActive={setActiveId} />}
+            {tab === 'fusion' && <FusionPanel datasets={datasets} onCreateDataset={addDataset} />}
           </section>
         </main>
       </div>
@@ -363,6 +366,6 @@ function isTab(value: unknown): value is Tab {
   return typeof value === 'string' && ['import', 'mapping', 'overview', 'map', 'charts', 'table', 'compare', 'scene3d', 'transform', 'project', 'kmlLibrary', 'export'].includes(value)
 }
 
-function isWorkspaceTab(tab: Tab): tab is Exclude<Tab, 'import' | 'mapping' | 'project' | 'kmlLibrary' | 'export' | 'sources'> {
+function isWorkspaceTab(tab: Tab): tab is Exclude<Tab, 'import' | 'mapping' | 'project' | 'kmlLibrary' | 'export' | 'sources' | 'fusion'> {
   return ['overview', 'map', 'charts', 'table', 'compare', 'scene3d', 'transform'].includes(tab)
 }
