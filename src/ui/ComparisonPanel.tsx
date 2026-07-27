@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import type { Dataset } from '../core/model'
 import { alignTracksByNearestTime, deriveRelativePosition, type RelativePointSample } from '../core/analytics/relative'
+import { assessDatasetCompatibility } from '../core/metadataCompatibility'
+import type { WorkspaceState } from '../state/workspace'
 
 interface ComparisonResult {
   samples: RelativePointSample[]
@@ -13,17 +15,17 @@ interface ComparisonResult {
   closest?: RelativePointSample
 }
 
-export function ComparisonPanel({ datasets, activeId }: { datasets: Dataset[]; activeId: string | null }) {
-  const defaultReference = activeId ?? datasets[0]?.id ?? ''
-  const [referenceId, setReferenceId] = useState(defaultReference)
-  const [targetId, setTargetId] = useState(datasets.find((dataset) => dataset.id !== defaultReference)?.id ?? '')
-  const [toleranceMs, setToleranceMs] = useState(1000)
-  const [targetOffsetMs, setTargetOffsetMs] = useState(0)
+export function ComparisonPanel({ datasets, activeId, workspace, onWorkspaceChange }: { datasets: Dataset[]; activeId: string | null; workspace: WorkspaceState['comparison']; onWorkspaceChange: (next: WorkspaceState['comparison']) => void }) {
+  const referenceId = workspace.referenceDatasetId ?? activeId ?? datasets[0]?.id ?? ''
+  const targetId = workspace.targetDatasetId ?? datasets.find((dataset) => dataset.id !== referenceId)?.id ?? ''
+  const { toleranceMs, targetOffsetMs } = workspace
 
   const result = useMemo<ComparisonResult | null>(() => {
     const reference = datasets.find((dataset) => dataset.id === referenceId)
     const target = datasets.find((dataset) => dataset.id === targetId)
     if (!reference || !target || reference.id === target.id) return null
+    const compatibility = assessDatasetCompatibility(reference, target)
+    if (compatibility.level === 'blocked') return { samples: [], error: compatibility.reasons.join(' ') }
     try {
       const pairs = alignTracksByNearestTime(reference.points, target.points, { toleranceMs, targetTimeOffsetMs: targetOffsetMs })
       const samples = deriveRelativePosition(reference.points, target.points, pairs)
@@ -52,10 +54,10 @@ export function ComparisonPanel({ datasets, activeId }: { datasets: Dataset[]; a
   return (
     <div className="analysis-panel">
       <div className="analysis-toolbar">
-        <Select label="reference dataset" value={referenceId} onChange={setReferenceId} datasets={datasets} />
-        <Select label="target dataset" value={targetId} onChange={setTargetId} datasets={datasets} />
-        <NumberField label="tolerance (ms)" value={toleranceMs} min={0} onChange={setToleranceMs} />
-        <NumberField label="target offset (ms)" value={targetOffsetMs} onChange={setTargetOffsetMs} />
+        <Select label="reference dataset" value={referenceId} onChange={(referenceDatasetId) => onWorkspaceChange({ ...workspace, referenceDatasetId })} datasets={datasets} />
+        <Select label="target dataset" value={targetId} onChange={(targetDatasetId) => onWorkspaceChange({ ...workspace, targetDatasetId })} datasets={datasets} />
+        <NumberField label="tolerance (ms)" value={toleranceMs} min={0} onChange={(toleranceMs) => onWorkspaceChange({ ...workspace, toleranceMs })} />
+        <NumberField label="target offset (ms)" value={targetOffsetMs} onChange={(targetOffsetMs) => onWorkspaceChange({ ...workspace, targetOffsetMs })} />
       </div>
       {referenceId === targetId && <div className="warn-line">Choose two different datasets.</div>}
       {result?.error && <div className="error-line">{result.error}</div>}

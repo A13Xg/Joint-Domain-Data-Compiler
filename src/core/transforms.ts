@@ -1,6 +1,6 @@
 // Data manipulation primitives — the "correct & massage" half of the app.
 // Every transform is pure so the UI can preview, stack, and undo operations deterministically.
-import { collectChannels, haversineMeters, isValidLat, isValidLon, type Dataset, type TrackPoint } from './model'
+import { collectChannels, haversineMeters, inferChannelDefinitions, isValidLat, isValidLon, type Dataset, type TrackPoint } from './model'
 
 export interface TransformResult {
   points: TrackPoint[]
@@ -236,7 +236,9 @@ function quantile(values: number[], q: number): number {
 
 export function withPoints(dataset: Dataset, points: TrackPoint[]): Dataset {
   const channels = collectChannels(points)
-  const definitions = dataset.metadata?.channels.filter((definition) => channels.includes(definition.id)) ?? []
+  const retained = dataset.metadata?.channels.filter((definition) => channels.includes(definition.id)) ?? []
+  const retainedIds = new Set(retained.map((definition) => definition.id))
+  const definitions = [...retained, ...inferChannelDefinitions(points, channels.filter((channel) => !retainedIds.has(channel)))]
   return {
     ...dataset,
     points,

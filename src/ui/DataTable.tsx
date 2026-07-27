@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { TrackPoint } from '../core/model'
 import { epochMsToIso } from '../core/format'
+import { detectQualityEvents, eventSourceIndices } from '../core/quality/events'
 import { usePointSelection } from '../state/pointSelection'
 
 const ROW_HEIGHT = 26
@@ -20,10 +21,13 @@ export function DataTable({ points, channels }: { points: TrackPoint[]; channels
   const [sortDir, setSortDir] = useState<SortDir>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [rangeOnly, setRangeOnly] = useState(false)
+  const [flaggedOnly, setFlaggedOnly] = useState(false)
   const viewportRef = useRef<HTMLDivElement>(null)
   const viewportHeight = 460
-  const { pointIndex, hoverIndex, indexRange, selectPoint, setHoverIndex, clearSelection, clearRange, clearHover } = usePointSelection(points)
+  const { pointIndex, hoverIndex, indexRange, selectPoint, setHoverIndex, clearPointSelection, clearRangeSelection, clearHover } = usePointSelection(points)
   const activeRangeOnly = rangeOnly && indexRange !== null
+  const qualityEvents = useMemo(() => detectQualityEvents(points), [points])
+  const flaggedIndices = useMemo(() => eventSourceIndices(qualityEvents), [qualityEvents])
 
   const columns = useMemo<Column[]>(() => {
     const base: Column[] = [
@@ -40,12 +44,13 @@ export function DataTable({ points, channels }: { points: TrackPoint[]; channels
     const normalizedQuery = query.trim().toLowerCase()
     let indexed = points.map((point, index) => ({ point, index }))
     if (activeRangeOnly && indexRange) indexed = indexed.filter(({ index }) => index >= indexRange.start && index <= indexRange.end)
+    if (flaggedOnly) indexed = indexed.filter(({ index }) => flaggedIndices.has(index))
     if (!normalizedQuery) return indexed
     return indexed.filter(({ point }) => columns.some((column) => {
       const value = column.get(point)
       return value !== undefined && String(value).toLowerCase().includes(normalizedQuery)
     }))
-  }, [points, query, columns, activeRangeOnly, indexRange])
+  }, [points, query, columns, activeRangeOnly, indexRange, flaggedOnly, flaggedIndices])
 
   const sorted = useMemo(() => {
     if (!sortKey || !sortDir) return filtered
@@ -87,9 +92,11 @@ export function DataTable({ points, channels }: { points: TrackPoint[]; channels
         <input className="data-search" placeholder="filter rows…" value={query} onChange={(event) => setQuery(event.target.value)} />
         <span className="data-meta">{total.toLocaleString()} / {points.length.toLocaleString()} rows</span>
         <button type="button" disabled={sorted.length === 0} onClick={() => downloadRows(sorted, columns)}>Export visible CSV</button>
+        {qualityEvents.length > 0 && <label className="chk"><input type="checkbox" checked={flaggedOnly} onChange={(event) => setFlaggedOnly(event.target.checked)} />quality events only</label>}
+        {qualityEvents.length > 0 && <button type="button" onClick={() => { const next = qualityEvents.find((event) => event.startIndex > (pointIndex ?? -1)) ?? qualityEvents[0]; if (next) selectPoint(next.startIndex) }}>Next quality event</button>}
         {indexRange && <label className="chk"><input type="checkbox" checked={rangeOnly} onChange={(event) => setRangeOnly(event.target.checked)} />selected range only</label>}
-        {pointIndex !== null && <button type="button" className="chip chip-on" onClick={clearSelection}>selected #{pointIndex} ×</button>}
-        {indexRange && <button type="button" className="chip chip-range" onClick={() => { setRangeOnly(false); clearRange() }}>range {indexRange.start}–{indexRange.end} ×</button>}
+        {pointIndex !== null && <button type="button" className="chip chip-on" onClick={clearPointSelection}>selected #{pointIndex} ×</button>}
+        {indexRange && <button type="button" className="chip chip-range" onClick={() => { setRangeOnly(false); clearRangeSelection() }}>range {indexRange.start}–{indexRange.end} ×</button>}
       </div>
       <div className="grid-header" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(110px, 1fr))` }}>
         <div className="grid-cell grid-idx">#</div>
@@ -101,9 +108,11 @@ export function DataTable({ points, channels }: { points: TrackPoint[]; channels
             const selected = pointIndex === index
             const hovered = hoverIndex === index
             const inRange = indexRange !== null && index >= indexRange.start && index <= indexRange.end
+            const flagged = flaggedIndices.has(index)
+            const eventKinds = qualityEvents.filter((event) => event.startIndex <= index && event.endIndex >= index).map((event) => event.kind).join(', ')
             return (
-              <div key={index} className={`grid-row${selected ? ' selected' : ''}${hovered ? ' hovered' : ''}${inRange ? ' in-range' : ''}`} onMouseEnter={() => setHoverIndex(index)} onMouseLeave={clearHover} onClick={() => selectPoint(selected ? null : index)} style={{ position: 'absolute', top: (startIndex + offset) * ROW_HEIGHT, height: ROW_HEIGHT, gridTemplateColumns: `60px repeat(${columns.length}, minmax(110px, 1fr))`, cursor: 'pointer' }}>
-                <div className="grid-cell grid-idx">{index}</div>
+              <div key={index} className={`grid-row${selected ? ' selected' : ''}${hovered ? ' hovered' : ''}${inRange ? ' in-range' : ''}${flagged ? ' quality-flagged' : ''}`} title={eventKinds ? `Quality events: ${eventKinds}` : undefined} onMouseEnter={() => setHoverIndex(index)} onMouseLeave={clearHover} onClick={() => selectPoint(selected ? null : index)} style={{ position: 'absolute', top: (startIndex + offset) * ROW_HEIGHT, height: ROW_HEIGHT, gridTemplateColumns: `60px repeat(${columns.length}, minmax(110px, 1fr))`, cursor: 'pointer' }}>
+                <div className="grid-cell grid-idx">{flagged ? '⚠ ' : ''}{index}</div>
                 {columns.map((column) => <div key={column.key} className="grid-cell" title={fmtCell(column.get(point))}>{fmtCell(column.get(point))}</div>)}
               </div>
             )

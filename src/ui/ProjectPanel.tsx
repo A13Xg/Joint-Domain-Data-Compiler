@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import type { Dataset } from '../core/model'
 import { EMPTY_WORKSPACE_SELECTION } from '../core/selection'
 import { usePointSelection } from '../state/pointSelection'
+import type { WorkspaceState } from '../state/workspace'
 import {
   archiveSummary,
   buildProjectManifest,
@@ -18,10 +19,11 @@ interface Props {
   histories: Record<string, ProjectDatasetHistory>
   activeId: string | null
   activeTab: string
+  workspace: WorkspaceState
   onRestoreProject: (archive: ProjectArchive) => void
 }
 
-export function ProjectPanel({ datasets, histories, activeId, activeTab, onRestoreProject }: Props) {
+export function ProjectPanel({ datasets, histories, activeId, activeTab, workspace, onRestoreProject }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [projectName, setProjectName] = useState('')
   const [status, setStatus] = useState<string | null>(null)
@@ -40,9 +42,10 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, onResto
       pointIndex: activeSelection.pointIndex,
       indexRange: activeSelection.indexRange,
     } : EMPTY_WORKSPACE_SELECTION,
+    workspace,
     projectName: projectName.trim() || undefined,
     applicationVersion: '0.1.0',
-  }), [datasets, activeId, activeTab, activeSelection.pointIndex, activeSelection.indexRange, projectName])
+  }), [datasets, activeId, activeTab, activeSelection.pointIndex, activeSelection.indexRange, projectName, workspace])
 
   const archive = useMemo(() => createProjectArchive({ manifest, datasets, histories }), [manifest, datasets, histories])
   const summary = useMemo(() => archiveSummary(archive), [archive])

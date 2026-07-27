@@ -1,5 +1,6 @@
 import type { Recipe } from '../../core/recipes/model'
 import type { WorkspaceSelection } from '../../core/selection'
+import { normalizeWorkspaceState, type WorkspaceState } from '../../state/workspace'
 
 export interface ProjectDatasetEntry {
   id: string
@@ -31,6 +32,7 @@ export interface ProjectViewState {
   chartLayoutIds: string[]
   mapState?: Record<string, unknown>
   scene3dState?: Record<string, unknown>
+  workspace?: WorkspaceState
 }
 
 export interface ProjectManifestV1 {
@@ -135,6 +137,10 @@ function validateView(value: Record<string, unknown>, datasetIds: Set<string>): 
   if (!isRecord(value.selection)) throw new Error('view.selection must be an object')
   if (!Array.isArray(value.chartLayoutIds) || !value.chartLayoutIds.every((id) => typeof id === 'string')) {
     throw new Error('view.chartLayoutIds must be a string array')
+  }
+  if (value.workspace !== undefined) {
+    const normalized = normalizeWorkspaceState(value.workspace, datasetIds)
+    if (JSON.stringify(normalized) !== JSON.stringify(value.workspace)) throw new Error('view.workspace contains invalid or stale state')
   }
 }
 

@@ -35,7 +35,7 @@ export function TimeSeriesChart({ points, channels }: { points: TrackPoint[]; ch
   const [hover, setHover] = useState<number | null>(null)
   const [dragStart, setDragStart] = useState<number | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
-  const { pointIndex, hoverIndex, indexRange, selectPoint, selectRange, setHoverIndex, clearSelection, clearRange, clearHover } = usePointSelection(points)
+  const { pointIndex, hoverIndex, indexRange, selectPoint, selectRange, setHoverIndex, clearPointSelection, clearRangeSelection, clearHover } = usePointSelection(points)
 
   const hasTime = useMemo(() => points.some((point) => point.time !== undefined), [points])
   const hasDistance = useMemo(() => points.some((point) => typeof point.ext?.distance_m === 'number'), [points])
@@ -140,8 +140,8 @@ export function TimeSeriesChart({ points, channels }: { points: TrackPoint[]; ch
         <label className="chart-xaxis">preset<select value={presetId} onChange={(event) => applyPreset(event.target.value)}>{BUILT_IN_CHART_PRESETS.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}</select></label>
         <div className="chart-channels">{available.map((key) => <button key={key} type="button" className={`chip${selected.includes(key) ? ' chip-on' : ''}`} style={selected.includes(key) ? { borderColor: PALETTE[selected.indexOf(key) % PALETTE.length] } : undefined} onClick={() => toggle(key)}><span className="chip-dot" style={{ background: selected.includes(key) ? PALETTE[selected.indexOf(key) % PALETTE.length] : '#475569' }} />{key}</button>)}</div>
         <label className="chart-xaxis">x-axis<select value={effectiveX} onChange={(event) => { setPresetId('custom'); setXAxis(event.target.value as ChartXAxis) }}>{hasTime && <option value="time">time</option>}<option value="index">index</option>{hasDistance && <option value="distance">distance</option>}</select></label>
-        {pointIndex !== null && <button type="button" className="chip chip-on" onClick={clearSelection}>point #{pointIndex} ×</button>}
-        {indexRange && <button type="button" className="chip chip-on" onClick={clearRange}>range {indexRange.start}–{indexRange.end} ×</button>}
+        {pointIndex !== null && <button type="button" className="chip chip-on" onClick={clearPointSelection}>point #{pointIndex} ×</button>}
+        {indexRange && <button type="button" className="chip chip-range" onClick={clearRangeSelection}>range {indexRange.start}–{indexRange.end} ×</button>}
       </div>
 
       <svg ref={svgRef} className="chart-svg" viewBox={`0 0 ${width} ${height}`} onMouseMove={(event) => { const x = eventX(event); setHover(x); const nearest = x === null ? null : nearestValue(series[0]?.values ?? [], x); setHoverIndex(nearest?.sourceIndex ?? null) }} onMouseLeave={() => { setHover(null); setDragStart(null); clearHover() }} onMouseDown={onMouseDown} onMouseUp={onMouseUp} style={{ cursor: 'crosshair' }}>

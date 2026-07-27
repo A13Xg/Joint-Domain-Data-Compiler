@@ -24,7 +24,9 @@ export function usePointSelection(points: readonly TrackPoint[]) {
     selectRange: (range: SelectedIndexRange | null) => selectRange(points, range),
     selectTimeRange: (range: TimeRange | null) => selectTimeRange(points, range),
     selectSegment: (segmentId: string, range: SelectedIndexRange) => selectSegment(points, segmentId, range),
-    clearSelection: () => clearSelection(points),
+    clearPointSelection: () => clearPointSelection(points),
+    clearRangeSelection: () => clearRangeSelection(points),
+    clearAllSelection: () => clearAllSelection(points),
     clearHover: () => setHoveredPointIndex(points, null),
     clearRange: () => selectRange(points, null),
   }
@@ -41,7 +43,7 @@ export function useSelectionKeyboard(points: readonly TrackPoint[]): void {
 export function handleSelectionKeyboard(points: readonly TrackPoint[], key: string, extendRange = false): boolean {
   if (points.length === 0) return false
   ensureDataset(points)
-  if (key === 'Escape') { snapshot = { ...snapshot, ...EMPTY_STATE }; emit(); return true }
+  if (key === 'Escape') { clearAllSelection(points); return true }
   if (key === 'Enter' && snapshot.hoverIndex !== null) { selectPoint(points, snapshot.hoverIndex); return true }
   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(key)) return false
   const direction = key === 'ArrowLeft' ? -1 : 1
@@ -72,7 +74,9 @@ export function setHoveredPointIndex(points: readonly TrackPoint[], pointIndex: 
 function selectRange(points: readonly TrackPoint[], range: SelectedIndexRange | null): void { ensureDataset(points); const normalized = normalizeRange(points, range); if (sameRange(snapshot.indexRange, normalized) && snapshot.segmentIds.length === 0) return; snapshot = { ...snapshot, ...rangeFields(points, normalized), segmentIds: [] }; emit() }
 function selectTimeRange(points: readonly TrackPoint[], range: TimeRange | null): void { ensureDataset(points); if (!range) { snapshot = { ...snapshot, indexRange: null, timeRange: null, segmentIds: [] }; emit(); return } const normalizedTime = normalizeTimeRange(range); snapshot = { ...snapshot, indexRange: timeRangeToIndexRange([...points], normalizedTime), timeRange: normalizedTime, segmentIds: [] }; emit() }
 function selectSegment(points: readonly TrackPoint[], segmentId: string, range: SelectedIndexRange): void { ensureDataset(points); const normalized = normalizeRange(points, range); snapshot = { ...snapshot, ...rangeFields(points, normalized), segmentIds: normalized ? [segmentId] : [] }; emit() }
-function clearSelection(points: readonly TrackPoint[]): void { ensureDataset(points); snapshot = { ...snapshot, pointIndex: null, indexRange: null, timeRange: null, segmentIds: [] }; emit() }
+export function clearPointSelection(points: readonly TrackPoint[]): void { ensureDataset(points); snapshot = { ...snapshot, pointIndex: null }; emit() }
+export function clearRangeSelection(points: readonly TrackPoint[]): void { ensureDataset(points); snapshot = { ...snapshot, indexRange: null, timeRange: null, segmentIds: [] }; emit() }
+export function clearAllSelection(points: readonly TrackPoint[]): void { ensureDataset(points); snapshot = { ...snapshot, ...EMPTY_STATE }; emit() }
 function ensureDataset(points: readonly TrackPoint[]): void { if (snapshot.points !== points) snapshot = { points, ...EMPTY_STATE } }
 function rangeFields(points: readonly TrackPoint[], range: SelectedIndexRange | null) { return { indexRange: range, timeRange: range ? indexRangeToTimeRange([...points], range) : null } }
 function normalizeIndex(points: readonly TrackPoint[], pointIndex: number | null): number | null { return pointIndex !== null && Number.isInteger(pointIndex) && pointIndex >= 0 && pointIndex < points.length ? pointIndex : null }

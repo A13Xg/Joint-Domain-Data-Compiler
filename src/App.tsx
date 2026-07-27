@@ -24,6 +24,8 @@ import { restorePointSelection } from './state/pointSelection'
 import type { ProjectArchive, ProjectDatasetHistory } from './persistence/project/archive'
 import { parseKml } from './core/parsers/kml'
 import { isDesktopKmlLibraryAvailable, saveKmlLibraryFile } from './desktop/kmlLibrary'
+import { insertDataset } from './core/ids'
+import { DEFAULT_WORKSPACE_STATE, normalizeWorkspaceState, type WorkspaceState } from './state/workspace'
 
 export type Tab = 'import' | 'mapping' | 'overview' | 'map' | 'charts' | 'table' | 'compare' | 'scene3d' | 'transform' | 'project' | 'kmlLibrary' | 'export'
 
@@ -58,6 +60,7 @@ export default function App() {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [histories, setHistories] = useState<Record<string, History>>({})
   const [tab, setTab] = useState<Tab>('import')
+  const [workspace, setWorkspace] = useState<WorkspaceState>(DEFAULT_WORKSPACE_STATE)
   const [busy, setBusy] = useState<string | null>(null)
   const [progress, setProgress] = useState<number | null>(null)
   const [pendingCsv, setPendingCsv] = useState<PendingCsv | null>(null)
@@ -68,6 +71,10 @@ export default function App() {
 
   const active = useMemo(() => datasets.find((dataset) => dataset.id === activeId) ?? null, [datasets, activeId])
   const history = activeId ? histories[activeId] : undefined
+  const selectTab = useCallback((next: Tab) => {
+    setTab(next)
+    if (isWorkspaceTab(next)) setWorkspace((current) => ({ ...current, lastWorkspaceTab: next }))
+  }, [])
 
   const flashToast = useCallback((message: string) => {
     setToast(message)
@@ -75,12 +82,16 @@ export default function App() {
   }, [])
 
   const addDataset = useCallback((dataset: Dataset) => {
-    setDatasets((current) => [...current, dataset])
+    if (datasets.some((current) => current.id === dataset.id)) {
+      flashToast(`Could not load ${dataset.name}: duplicate dataset identity.`)
+      return
+    }
+    setDatasets((current) => insertDataset(current, dataset))
     setActiveId(dataset.id)
     setHistories((current) => ({ ...current, [dataset.id]: { past: [], future: [] } }))
     setTab('overview')
     flashToast(`Loaded ${dataset.points.length.toLocaleString()} points from ${dataset.name}`)
-  }, [flashToast])
+  }, [datasets, flashToast])
 
   const analyzeCsv = useCallback((file: File) => {
     setBusy(`Analyzing ${file.name}`)
@@ -201,6 +212,7 @@ export default function App() {
     const restoredTab: Tab = isTab(requestedTab) ? requestedTab : restoredActiveId ? 'overview' : 'import'
     setDatasets(restoredDatasets)
     setHistories(archive.histories)
+    setWorkspace(normalizeWorkspaceState(archive.manifest.view.workspace, new Set(restoredDatasets.map((dataset) => dataset.id))))
     setActiveId(restoredActiveId)
     setPendingCsv(null)
     setTab(restoredTab)
@@ -234,19 +246,19 @@ export default function App() {
           <div className="sidebar-foot"><span className="muted small">Supported in:</span><div className="format-badges">{INPUT_FORMATS.map((format) => <span key={format.id} className="badge" title={format.description}>{format.label}</span>)}</div></div>
         </aside>
         <main className="workspace">
-          <nav className="tab-bar">{tabs.map((item) => <button key={item.id} type="button" disabled={!item.enabled} className={`tab${tab === item.id ? ' active' : ''}`} onClick={() => setTab(item.id)}>{item.label}</button>)}{active && <span className="tab-active-name mono">{active.name}</span>}</nav>
+          <nav className="tab-bar">{tabs.map((item) => <button key={item.id} type="button" disabled={!item.enabled} className={`tab${tab === item.id ? ' active' : ''}`} onClick={() => selectTab(item.id)}>{item.label}</button>)}{active && <span className="tab-active-name mono">{active.name}</span>}</nav>
           <section className="tab-content">
             {progress !== null && <div className="global-progress"><ProgressBar value={progress} label={busy ?? 'Working'} /></div>}
             {tab === 'import' && <ImportView dragActive={dragActive} setDragActive={setDragActive} onFiles={onFiles} openPicker={() => fileInputRef.current?.click()} />}
             {tab === 'mapping' && pendingCsv && <MappingPanel analysis={pendingCsv.analysis} mapping={pendingCsv.mapping} onChange={(mapping) => setPendingCsv((current) => current ? { ...current, mapping } : current)} additionalHeaders={pendingCsv.additionalHeaders} onToggleAdditionalHeaders={(additionalHeaders) => setPendingCsv((current) => current ? { ...current, additionalHeaders } : current)} onBuild={buildCsvDataset} building={building} />}
             {tab === 'overview' && active && <StatsPanel dataset={active} />}
-            {tab === 'map' && active && <MapView points={active.points} channels={active.channels} />}
+            {tab === 'map' && active && <MapView points={active.points} channels={active.channels} workspace={workspace.map} onWorkspaceChange={(map) => setWorkspace((current) => ({ ...current, map }))} />}
             {tab === 'charts' && active && <TimeSeriesChart points={active.points} channels={active.channels} />}
             {tab === 'table' && active && <DataTable points={active.points} channels={active.channels} />}
-            {tab === 'compare' && <ComparisonPanel datasets={datasets} activeId={activeId} />}
-            {tab === 'scene3d' && active && <Trajectory3dPanel dataset={active} />}
+            {tab === 'compare' && <ComparisonPanel datasets={datasets} activeId={activeId} workspace={workspace.comparison} onWorkspaceChange={(comparison) => setWorkspace((current) => ({ ...current, comparison }))} />}
+            {tab === 'scene3d' && active && <Trajectory3dPanel dataset={active} workspace={workspace.scene3d} onWorkspaceChange={(scene3d) => setWorkspace((current) => ({ ...current, scene3d }))} />}
             {tab === 'transform' && active && <TransformPanel dataset={active} onApply={applyTransform} onUndo={undo} onRedo={redo} canUndo={!!history && history.past.length > 0} canRedo={!!history && history.future.length > 0} />}
-            {tab === 'project' && <ProjectPanel datasets={datasets} histories={histories} activeId={activeId} activeTab={tab} onRestoreProject={restoreProject} />}
+            {tab === 'project' && <ProjectPanel datasets={datasets} histories={histories} activeId={activeId} activeTab={workspace.lastWorkspaceTab} workspace={workspace} onRestoreProject={restoreProject} />}
             {tab === 'kmlLibrary' && <KmlLibraryPanel onImportKmlText={importKmlText} />}
             {tab === 'export' && active && <ExportPanel dataset={active} />}
           </section>
@@ -260,4 +272,8 @@ export default function App() {
 
 function isTab(value: unknown): value is Tab {
   return typeof value === 'string' && ['import', 'mapping', 'overview', 'map', 'charts', 'table', 'compare', 'scene3d', 'transform', 'project', 'kmlLibrary', 'export'].includes(value)
+}
+
+function isWorkspaceTab(tab: Tab): tab is Exclude<Tab, 'import' | 'mapping' | 'project' | 'kmlLibrary' | 'export'> {
+  return ['overview', 'map', 'charts', 'table', 'compare', 'scene3d', 'transform'].includes(tab)
 }

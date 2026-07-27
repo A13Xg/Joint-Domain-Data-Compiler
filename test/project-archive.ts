@@ -8,6 +8,7 @@ import {
   decodeProjectArchive,
   encodeProjectArchive,
   parseProjectArchive,
+  readStreamWithLimit,
   serializeProjectArchive,
 } from '../src/persistence/project/archive'
 
@@ -60,6 +61,9 @@ assert.equal(parsed.manifest.view.selection.pointIndex, 1)
 const blob = await encodeProjectArchive(archive)
 const decoded = await decodeProjectArchive(blob)
 assert.deepEqual(decoded, archive)
+
+assert.deepEqual([...await readStreamWithLimit(new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array([1, 2])); controller.enqueue(new Uint8Array([3])); controller.close() } }), 3)], [1, 2, 3])
+await assert.rejects(() => readStreamWithLimit(new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array([1, 2])); controller.enqueue(new Uint8Array([3])); controller.close() } }), 2), /decompressed safety limit/)
 
 const corrupted = JSON.parse(serializeProjectArchive(archive))
 corrupted.datasets[0].points[0].lat = 99

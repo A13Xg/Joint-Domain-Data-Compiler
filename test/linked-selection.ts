@@ -1,5 +1,8 @@
 import type { TrackPoint } from '../src/core/model.ts'
 import {
+  clearAllSelection,
+  clearPointSelection,
+  clearRangeSelection,
   getHoveredPointIndex,
   getSelectedPointIndex,
   getSelectedRange,
@@ -38,6 +41,16 @@ handleSelectionKeyboard(points, 'End')
 check('End moves cursor to final point', getHoveredPointIndex(points) === 2)
 handleSelectionKeyboard(points, 'Escape')
 check('Escape clears point, cursor, and range', getHoveredPointIndex(points) === null && getSelectedPointIndex(points) === null && getSelectedRange(points) === null)
+
+restorePointSelection(points, 1, { start: 0, end: 2 })
+clearPointSelection(points)
+check('Clearing a point preserves the selected range', getSelectedPointIndex(points) === null && getSelectedRange(points)?.end === 2)
+clearRangeSelection(points)
+check('Clearing a range preserves the selected point state', getSelectedPointIndex(points) === null && getSelectedRange(points) === null && getSelectedTimeRange(points) === null)
+restorePointSelection(points, 1, { start: 0, end: 2 })
+setHoveredPointIndex(points, 2)
+clearAllSelection(points)
+check('Clearing all selection clears point, cursor, and range', getHoveredPointIndex(points) === null && getSelectedPointIndex(points) === null && getSelectedRange(points) === null)
 
 setHoveredPointIndex(other, 0)
 check('Switching datasets isolates cursor state', getHoveredPointIndex(points) === null && getHoveredPointIndex(other) === 0)

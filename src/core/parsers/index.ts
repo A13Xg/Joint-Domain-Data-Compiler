@@ -9,6 +9,7 @@ import {
   type SourceFormat,
 } from '../model'
 import { logger } from '../logger'
+import { createDatasetId } from '../ids'
 import { parseGpx } from './gpx'
 import { parseGeoJson } from './geojson'
 import { parseKml } from './kml'
@@ -41,7 +42,6 @@ export function detectFormat(fileName: string): FormatDescriptor | null {
   return null
 }
 
-let datasetSeq = 0
 const PARSER_VERSION = '1'
 
 export function makeDataset(
@@ -57,7 +57,7 @@ export function makeDataset(
     : inferChannelDefinitions(result.points, channels)
 
   return {
-    id: `ds_${datasetSeq++}_${name.replace(/[^a-z0-9]/gi, '_').slice(0, 24)}`,
+    id: createDatasetId(name),
     name,
     sourceFormat: format,
     points: result.points,

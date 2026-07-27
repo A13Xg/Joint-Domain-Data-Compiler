@@ -1,4 +1,5 @@
 import { EMPTY_WORKSPACE_SELECTION } from '../src/core/selection.ts'
+import { DEFAULT_WORKSPACE_STATE } from '../src/state/workspace.ts'
 import {
   parseProjectManifest,
   serializeProjectManifest,
@@ -48,6 +49,7 @@ const manifest: ProjectManifest = {
     activeDatasetId: 'dataset-1',
     selection: { ...EMPTY_WORKSPACE_SELECTION, datasetId: 'dataset-1' },
     chartLayoutIds: [],
+    workspace: DEFAULT_WORKSPACE_STATE,
   },
 }
 
@@ -57,6 +59,7 @@ const parsed = parseProjectManifest(serialized)
 check('Manifest serializes and parses', parsed.projectId === manifest.projectId)
 check('Dataset references are preserved', parsed.datasets[0]?.recipeIds[0] === 'recipe-1')
 check('Selection is preserved', parsed.view.selection.datasetId === 'dataset-1')
+check('Workspace state is preserved', parsed.view.workspace?.scene3d.gapThresholdSeconds === 3)
 
 let invalidJsonRejected = false
 try {

@@ -1,5 +1,6 @@
 import type { TrackPoint } from '../src/core/model.ts'
 import { applyTransformToRange } from '../src/core/rangeTransform.ts'
+import { withPoints } from '../src/core/transforms.ts'
 import { offsetElevation, decimate } from '../src/core/transforms.ts'
 
 let failures = 0
@@ -30,6 +31,11 @@ try {
   lengthChangeRejected = true
 }
 check('Rejects transforms that change point count', lengthChangeRejected)
+
+const metadataPoints = points.map((point, index) => ({ ...point, ext: index === 0 ? { known: 2 } : undefined }))
+const metadataDataset = { id: 'metadata', name: 'metadata', sourceFormat: 'csv' as const, points: metadataPoints, warnings: [], channels: ['known'], createdAt: 0, metadata: { coordinateSystem: 'EPSG:4326', altitudeReference: 'UNKNOWN' as const, timeReference: 'UTC' as const, channels: [{ id: 'known', displayName: 'Known', dataType: 'number' as const }], source: { filename: 'metadata.csv', importedAt: 0, parserId: 'csv', parserVersion: '1' } } }
+const metadataOutput = withPoints(metadataDataset, metadataPoints.map((point) => ({ ...point, ext: { ...point.ext, derived: 1 } })))
+check('Preserves retained channel definitions and infers new channels', metadataOutput.metadata?.channels.some((definition) => definition.id === 'known') === true && metadataOutput.metadata?.channels.some((definition) => definition.id === 'derived') === true)
 
 console.log(`\n${failures === 0 ? 'ALL RANGE TRANSFORM CHECKS PASSED' : `${failures} RANGE TRANSFORM CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)

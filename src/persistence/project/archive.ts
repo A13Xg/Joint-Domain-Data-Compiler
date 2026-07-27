@@ -1,6 +1,7 @@
 import type { Dataset, TrackPoint } from '../../core/model'
 import { fingerprintDataset } from '../../core/recipes/hash'
 import type { WorkspaceSelection } from '../../core/selection'
+import type { WorkspaceState } from '../../state/workspace'
 import {
   parseProjectManifest,
   serializeProjectManifest,
@@ -24,6 +25,7 @@ export interface ProjectArchiveV1 {
 export type ProjectArchive = ProjectArchiveV1
 
 const MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
+const MAX_DECOMPRESSED_ARCHIVE_BYTES = 512 * 1024 * 1024
 const MAX_DATASETS = 100
 const MAX_TOTAL_POINTS = 10_000_000
 const textEncoder = new TextEncoder()
@@ -85,11 +87,40 @@ export async function decodeProjectArchive(file: Blob): Promise<ProjectArchive> 
       throw new Error('This runtime cannot decompress .jddc-project archives')
     }
     const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))
-    decoded = new Uint8Array(await new Response(stream).arrayBuffer())
+    decoded = await readStreamWithLimit(stream, MAX_DECOMPRESSED_ARCHIVE_BYTES)
   } else {
     decoded = bytes
   }
   return parseProjectArchive(textDecoder.decode(decoded))
+}
+
+export async function readStreamWithLimit(stream: ReadableStream<Uint8Array>, limit: number): Promise<Uint8Array> {
+  if (!Number.isSafeInteger(limit) || limit < 0) throw new Error('Archive decompressed safety limit must be a non-negative safe integer')
+  const reader = stream.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (!value) continue
+      total += value.byteLength
+      if (total > limit) {
+        await reader.cancel('decompressed archive exceeds safety limit')
+        throw new Error(`Project archive exceeds the ${formatBytes(limit)} decompressed safety limit`)
+      }
+      chunks.push(value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  const output = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    output.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return output
 }
 
 export function validateProjectArchive(value: unknown): asserts value is ProjectArchive {
@@ -132,6 +163,7 @@ export function buildProjectManifest(input: {
   activeDatasetId: string | null
   activeTab: string
   selection: WorkspaceSelection
+  workspace?: WorkspaceState
   projectId?: string
   projectName?: string
   createdAt?: number
@@ -163,6 +195,7 @@ export function buildProjectManifest(input: {
       activeTab: input.activeTab,
       selection: input.selection,
       chartLayoutIds: [],
+      ...(input.workspace ? { workspace: input.workspace } : {}),
     },
   }
 }
