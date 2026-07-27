@@ -29,6 +29,7 @@ import { ProjectPanel } from './ui/ProjectPanel'
 import { KmlLibraryPanel } from './ui/KmlLibraryPanel'
 import { restorePointSelection } from './state/pointSelection'
 import type { ProjectArchive, ProjectDatasetHistory } from './persistence/project/archive'
+import type { ProjectBookmark } from './persistence/project/manifest'
 import { parseKml } from './core/parsers/kml'
 import { isDesktopKmlLibraryAvailable, saveKmlLibraryFile } from './desktop/kmlLibrary'
 import { insertDataset } from './core/ids'
@@ -77,6 +78,7 @@ export default function App() {
   const [histories, setHistories] = useState<Record<string, History>>({})
   const [operationRecords, setOperationRecords] = useState<Record<string, OperationRecord[]>>({})
   const [datasetDisplay, setDatasetDisplay] = useState<WorkspaceDisplay>({})
+  const [bookmarks, setBookmarks] = useState<ProjectBookmark[]>([])
   // Reconcile display settings (new datasets get a color; removed datasets'
   // entries are dropped) during render when the dataset list changes,
   // rather than in an effect — same "adjusting state during render"
@@ -279,6 +281,7 @@ export default function App() {
     setDatasets(remaining)
     setHistories((current) => { const next = { ...current }; delete next[id]; return next })
     setOperationRecords((current) => { const next = { ...current }; delete next[id]; return next })
+    setBookmarks((current) => current.filter((bookmark) => bookmark.datasetId !== id))
     // Reference/target dataset selectors in the comparison workspace state
     // can point at a removed dataset; reconcile them with the same
     // validation used on project restore rather than leaving a phantom ID
@@ -295,6 +298,7 @@ export default function App() {
     setDatasets(restoredDatasets)
     setHistories(archive.histories)
     setWorkspace(normalizeWorkspaceState(archive.manifest.view.workspace, new Set(restoredDatasets.map((dataset) => dataset.id))))
+    setBookmarks(archive.manifest.bookmarks)
     setActiveId(restoredActiveId)
     setPendingCsv(null)
     setTab(restoredTab)
@@ -341,14 +345,14 @@ export default function App() {
             {progress !== null && <div className="global-progress"><ProgressBar value={progress} label={busy ?? 'Working'} />{building && <button type="button" onClick={cancelCsvBuild}>Cancel</button>}</div>}
             {tab === 'import' && <ImportView dragActive={dragActive} setDragActive={setDragActive} onFiles={onFiles} openPicker={() => fileInputRef.current?.click()} />}
             {tab === 'mapping' && pendingCsv && <MappingPanel analysis={pendingCsv.analysis} mapping={pendingCsv.mapping} onChange={(mapping) => setPendingCsv((current) => current ? { ...current, mapping } : current)} additionalHeaders={pendingCsv.additionalHeaders} onToggleAdditionalHeaders={(additionalHeaders) => setPendingCsv((current) => current ? { ...current, additionalHeaders } : current)} onBuild={buildCsvDataset} building={building} />}
-            {tab === 'overview' && active && <StatsPanel dataset={active} />}
+            {tab === 'overview' && active && <StatsPanel dataset={active} bookmarks={bookmarks} onBookmarksChange={setBookmarks} />}
             {tab === 'map' && active && <MapView points={active.points} channels={active.channels} workspace={workspace.map} onWorkspaceChange={(map) => setWorkspace((current) => ({ ...current, map }))} otherTracks={otherTracks} />}
             {tab === 'charts' && active && <TimeSeriesChart points={active.points} channels={active.channels} />}
             {tab === 'table' && active && <DataTable points={active.points} channels={active.channels} />}
             {tab === 'compare' && <ComparisonPanel datasets={datasets} activeId={activeId} workspace={workspace.comparison} onWorkspaceChange={(comparison) => setWorkspace((current) => ({ ...current, comparison }))} />}
             {tab === 'scene3d' && active && <Trajectory3dPanel dataset={active} workspace={workspace.scene3d} onWorkspaceChange={(scene3d) => setWorkspace((current) => ({ ...current, scene3d }))} />}
             {tab === 'transform' && active && <><TransformPanel dataset={active} onApply={applyTransform} onUndo={undo} onRedo={redo} canUndo={!!history && history.past.length > 0} canRedo={!!history && history.future.length > 0} operationHistory={operationRecords[active.id] ?? []} /><NotionalSmoothingPanel dataset={active} onCreateDataset={addDataset} /></>}
-            {tab === 'project' && <ProjectPanel datasets={datasets} histories={histories} activeId={activeId} activeTab={workspace.lastWorkspaceTab} workspace={workspace} onRestoreProject={restoreProject} />}
+            {tab === 'project' && <ProjectPanel datasets={datasets} histories={histories} activeId={activeId} activeTab={workspace.lastWorkspaceTab} workspace={workspace} bookmarks={bookmarks} onRestoreProject={restoreProject} />}
             {tab === 'kmlLibrary' && <KmlLibraryPanel onImportKmlText={importKmlText} />}
             {tab === 'export' && active && <ExportPanel dataset={active} />}
             {tab === 'sources' && <SourcesPanel datasets={datasets} activeId={activeId} display={syncedDisplay} onDisplayChange={setDatasetDisplay} onSelectActive={setActiveId} />}

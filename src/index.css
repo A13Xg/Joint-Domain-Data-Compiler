@@ -247,6 +247,12 @@ code { font-family: var(--mono); background: var(--bg-3); padding: 1px 5px; bord
 .source-fields { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
 .source-fields li { display: flex; gap: 8px; }
 .source-fields .q-label { color: var(--text-dim); min-width: 130px; }
+.bookmark-add { display: flex; gap: 8px; margin-bottom: 10px; }
+.bookmark-add input { flex: 1; }
+.bookmark-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.bookmark-list li { display: flex; align-items: center; gap: 8px; }
+.bookmark-jump { flex: 1; text-align: left; }
+.bookmark-remove { color: var(--red); }
 .q-icon { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-size: 11px; font-weight: 700; }
 .q-ok .q-icon { background: rgba(22, 163, 74, 0.18); color: var(--green); }
 .q-warn .q-icon { background: rgba(234, 179, 8, 0.18); color: var(--amber); }

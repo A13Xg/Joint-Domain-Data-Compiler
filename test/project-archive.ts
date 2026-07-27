@@ -35,11 +35,15 @@ const manifest = buildProjectManifest({
     pointIndex: 1,
     indexRange: { start: 0, end: 1 },
   },
+  bookmarks: [{ id: 'bm-1', label: 'Turn point', datasetId: dataset.id, pointIndex: 1, timeMs: 2_000 }],
   projectId: 'project-test',
   projectName: 'Archive Test',
   createdAt: 10_000,
   applicationVersion: '0.1.0',
 })
+
+assert.equal(manifest.bookmarks.length, 1, 'buildProjectManifest threads through caller-provided bookmarks')
+assert.equal(manifest.bookmarks[0]?.label, 'Turn point')
 
 const archive = createProjectArchive({
   manifest,
@@ -57,6 +61,7 @@ assert.deepEqual(parsed, archive)
 assert.equal(archiveSummary(parsed).currentPoints, 2)
 assert.equal(archiveSummary(parsed).historySnapshots, 1)
 assert.equal(parsed.manifest.view.selection.pointIndex, 1)
+assert.equal(parsed.manifest.bookmarks[0]?.id, 'bm-1', 'bookmarks survive the full archive round-trip')
 
 const blob = await encodeProjectArchive(archive)
 const decoded = await decodeProjectArchive(blob)

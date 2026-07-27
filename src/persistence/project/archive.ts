@@ -6,6 +6,7 @@ import {
   parseProjectManifest,
   serializeProjectManifest,
   validateProjectManifest,
+  type ProjectBookmark,
   type ProjectManifest,
 } from './manifest'
 
@@ -164,6 +165,7 @@ export function buildProjectManifest(input: {
   activeTab: string
   selection: WorkspaceSelection
   workspace?: WorkspaceState
+  bookmarks?: ProjectBookmark[]
   projectId?: string
   projectName?: string
   createdAt?: number
@@ -189,7 +191,7 @@ export function buildProjectManifest(input: {
       visible: true,
     })),
     recipes: [],
-    bookmarks: [],
+    bookmarks: input.bookmarks ?? [],
     view: {
       activeDatasetId: input.activeDatasetId,
       activeTab: input.activeTab,
