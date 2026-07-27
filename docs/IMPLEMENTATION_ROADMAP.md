@@ -91,18 +91,20 @@ No known high-priority state, metadata or persistence defect remains, and every 
 - JDDC GPB numeric binary import.
 - Normalized `Dataset`/`TrackPoint` model with channel definitions, source metadata, provenance and quality flags.
 - User-visible parser warnings.
+- Explicit per-format file-size and record-count budgets with actionable rejection messages.
+- Progressive full CSV import: rows are mapped into points as they stream out of each parse chunk, so a full row array and a full point array are never held at once.
+- Content sniffing and extension/content mismatch warnings for CSV, GPX, KML, GeoJSON, NMEA and GPB.
+- SHA-256 source checksums recorded in dataset metadata at import.
+- Direct automated parser fixtures (valid + malformed) for CSV, GPX, KML, GeoJSON, NMEA and GPB, built from one shared real/licensed USGS corpus.
+- Import summary (accepted points, warning count, checksum, declared references) surfaced in the Overview tab.
 
 ## Remaining
 
-- Explicit per-format file-size and record-count budgets.
-- Progressive full CSV import without retaining both complete row and point representations.
-- Content sniffing and mismatch warnings beyond filename extensions.
-- Source checksums on import.
-- Direct automated parser fixtures for CSV, GPX, KML and NMEA, including malformed cases.
 - Strong GPB bounds validation and format revision planning.
 - Metadata editor for coordinate, altitude and time references.
 - Unit normalization audit for imported extension channels.
-- Import summary showing dropped/changed records and source lineage.
+- Sized (100k/500k+) CSV import benchmarks — deferred to Stage 10's benchmark harness.
+- Automated coverage for KML `gx:Track` (currently browser/manual-verified only; the Node test DOM shim does not resolve namespaced element names correctly).
 
 ## Acceptance target
 

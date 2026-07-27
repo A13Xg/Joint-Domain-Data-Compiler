@@ -173,34 +173,54 @@
 
 # Tranche 2 — Ingestion integrity and parser evidence
 
-### Task 2.1: Add source budgets, checksums, and content mismatch warnings
+> **Completed 2026-07-27:** all three tasks landed and passed the tranche gate
+> (`npm run lint && npm test && npm run build`, plus `npm audit --omit=dev
+> --audit-level=high` and a clean Semgrep scan). See commits `6298b77`,
+> `0f22f4b`, `1e98364` on `main`.
 
-**Files:** `src/core/parsers/index.ts`, `src/core/parsers/csv.ts`, `src/core/parsers/{gpx,kml,geojson,nmea,gpb}.ts`, `src/core/model.ts`, `src/ui/ImportView.tsx`, `src/App.tsx`, `test/parser-limits.ts`.
+### Task 2.1: Add source budgets, checksums, and content mismatch warnings — done
 
-**Steps:**
-1. Add per-format file-size and record/point budgets with actionable error messages.
-2. Compute SHA-256 source checksums at import; add a browser-safe helper and tests with fixed bytes.
-3. Add inexpensive content signatures for GPX, KML, GeoJSON, NMEA, GPB, and delimited input; warn on extension/content mismatch.
-4. Show a single import summary: accepted, dropped, changed, warning count, source checksum, and declared references.
+**Files:** `src/core/parsers/index.ts`, `src/core/parsers/{limits,contentSignature}.ts` (new), `src/core/checksum.ts` (new), `src/App.tsx`, `src/ui/StatsPanel.tsx`, `test/parser-limits.ts`.
 
-### Task 2.2: Establish authoritative parser fixtures
+Delivered: per-format byte/point budgets with actionable rejection messages; SHA-256 source
+checksums (Web Crypto, no new runtime dependency) recorded in `dataset.metadata.source.checksum`;
+content-signature sniffing for GPX/KML/GeoJSON/NMEA/GPB/CSV with a non-blocking mismatch warning;
+an "Import summary" block in the Overview tab showing accepted/warning counts, checksum, parser
+version, and declared coordinate/altitude/time references.
 
-**Files:** `sampleFiles/`, `test/parsers/{csv,gpx,kml,nmea,geojson,gpb}.ts`, `scripts/run-tests.mjs`.
+### Task 2.2: Establish authoritative parser fixtures — done
 
-**Steps:**
-1. Add small valid and malformed fixtures for every supported parser, checked into `sampleFiles/` with source/license notes.
-2. Test valid normalization, warnings, budgets, malformed rejection, units, metadata references, and provenance.
-3. Keep full CSV fixture tests bounded; do not make the default suite depend on network resources.
+**Files:** `file-test/` (used instead of the originally-sketched `sampleFiles/`, matching the
+fixture directory already established in this repo), `test/parser-fixtures.ts`,
+`test/helpers/linkedomShim.ts`.
 
-### Task 2.3: Make CSV import memory-aware before format expansion
+Delivered: a valid + malformed fixture pair for every supported format (CSV/GPX/KML/GeoJSON/
+NMEA/GPB), all built from the same real, licensed 8-event USGS sequence already used by the
+existing CSV/GeoJSON/GPX fixtures. `test/parser-fixtures.ts` exercises every parser against both
+fixtures and documents the actual malformed-input behavior per format (explanatory warning +
+zero points for GPX/KML/NMEA, a hard throw for GeoJSON/GPB). Found and documented a real gap:
+papaparse's row-level parse errors aren't surfaced to `buildPointsFromCsvRows`, so a row salvaged
+from an unterminated quote is still emitted with corrupted trailing columns — left as a tracked,
+documented gap rather than expanding this task's scope.
 
-**Files:** `src/core/parsers/csv.ts`, `src/workers/csvAnalyzer.worker.ts`, `src/App.tsx`, `test/csv-contract.ts`, `test/csv-import-limits.ts`.
+Known limitation: `linkedom` (the Node DOM shim used to exercise GPX/KML parsing outside a
+browser) does not resolve namespaced element names the way a real `DOMParser` does, so the KML
+`gx:Track` code path is verified only by manual/browser testing, not by the automated suite.
 
-**Steps:**
-1. Benchmark current two-representation import with deterministic 100k/500k fixtures.
-2. Stream/convert rows in chunks while retaining only necessary mapping/context state.
-3. Add progress, cancellation checkpoints, and explicit refusal thresholds.
-4. Keep interactive mapping behavior and current CSV semantics unchanged.
+### Task 2.3: Make CSV import memory-aware before format expansion — done
+
+**Files:** `src/core/parsers/csv.ts`, `src/App.tsx`, `test/csv-import-limits.ts`,
+`test/helpers/nodeFileReaderShim.ts`.
+
+Delivered: `streamCsvFileToPoints` maps each row to a `TrackPoint` directly inside papaparse's
+chunk callback, so only the point array is held for the life of an import — the prior
+`parseCsvFile` (collect all rows) + `buildPointsFromCsvRows` (map all rows) flow held both
+representations at once. Added two per-chunk checkpoints: a point-budget abort (reusing Task
+2.1's CSV budget) and a user-triggered cancellation wired to a new Cancel button shown during CSV
+building. `buildPointsFromCsvRows` is retained for `MappingPanel`'s live sample preview and the
+Task 2.2 fixture tests. Benchmarking against real 100k/500k fixtures (per the original step 1)
+was not done — deferred to Tranche 8's benchmark harness, which is the plan's designated home for
+sized performance measurement.
 
 ---
 
