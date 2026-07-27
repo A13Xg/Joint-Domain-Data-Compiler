@@ -31,6 +31,9 @@ export interface CandidatePoint {
   lon: number
   ele?: number
   time: number
+  /** Optional quality hints carried through from the source point's extension channels, used by scoring (Task 6.2). */
+  hdop?: number
+  satelliteCount?: number
 }
 
 export interface CandidateGroup {
@@ -130,7 +133,9 @@ export function validateSourceRegistration(input: {
  */
 export function candidateFromSourcePoint(sourceId: string, sourceIndex: number, point: TrackPoint): CandidatePoint {
   if (point.time === undefined) throw new FusionValidationError('Candidate points must have a timestamp')
-  return { sourceId, sourceIndex, lat: point.lat, lon: point.lon, ele: point.ele, time: point.time }
+  const hdop = typeof point.ext?.hdop === 'number' ? point.ext.hdop : undefined
+  const satelliteCount = typeof point.ext?.sat === 'number' ? point.ext.sat : undefined
+  return { sourceId, sourceIndex, lat: point.lat, lon: point.lon, ele: point.ele, time: point.time, hdop, satelliteCount }
 }
 
 export function validateCandidateGroup(input: { id: unknown; entityId: unknown; groupTimeMs: unknown; candidates: unknown }): CandidateGroup {
@@ -146,7 +151,7 @@ export function validateCandidateGroup(input: { id: unknown; entityId: unknown; 
     if (typeof c.sourceIndex !== 'number' || !Number.isInteger(c.sourceIndex) || c.sourceIndex < 0) throw new FusionValidationError(`CandidateGroup.candidates[${index}].sourceIndex must be a non-negative integer`)
     if (typeof c.lat !== 'number' || typeof c.lon !== 'number') throw new FusionValidationError(`CandidateGroup.candidates[${index}] must have numeric lat/lon`)
     if (typeof c.time !== 'number' || !Number.isFinite(c.time)) throw new FusionValidationError(`CandidateGroup.candidates[${index}].time must be a finite number`)
-    return { sourceId: c.sourceId, sourceIndex: c.sourceIndex, lat: c.lat, lon: c.lon, ele: c.ele, time: c.time }
+    return { sourceId: c.sourceId, sourceIndex: c.sourceIndex, lat: c.lat, lon: c.lon, ele: c.ele, time: c.time, hdop: c.hdop, satelliteCount: c.satelliteCount }
   })
   return {
     id: requireString(input.id, 'CandidateGroup.id'),
