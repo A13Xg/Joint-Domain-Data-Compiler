@@ -40,10 +40,22 @@ function downsample<T>(values: T[], maxPoints: number): T[] {
   return sampled
 }
 
+type BasemapStatus = 'unknown' | 'loaded' | 'error'
+
 export function MapView({ points, channels, workspace, onWorkspaceChange }: { points: TrackPoint[]; channels: string[]; workspace: WorkspaceState['map']; onWorkspaceChange: (next: WorkspaceState['map']) => void }) {
   const { displayMode: mode, colorBy, basemap, maxGapMinutes } = workspace
   const [fitRequest, setFitRequest] = useState(0)
   const [fitSelection, setFitSelection] = useState(false)
+  const [basemapStatus, setBasemapStatus] = useState<BasemapStatus>('unknown')
+  // Reset the status during render when the basemap choice changes, rather
+  // than in an effect — the officially-recommended pattern for resetting
+  // state in response to a prop/derived-value change (react.dev: "Resetting
+  // state when a prop changes").
+  const [trackedBasemap, setTrackedBasemap] = useState(basemap)
+  if (basemap !== trackedBasemap) {
+    setTrackedBasemap(basemap)
+    setBasemapStatus('unknown')
+  }
   const { pointIndex, hoverIndex, indexRange, selectPoint, setHoverIndex, clearPointSelection, clearRangeSelection, clearHover } = usePointSelection(points)
 
   const valid = useMemo(
@@ -87,10 +99,12 @@ export function MapView({ points, channels, workspace, onWorkspaceChange }: { po
         {pointIndex !== null && <button type="button" className="chip chip-on" onClick={clearPointSelection}>selected #{pointIndex} ×</button>}
         {indexRange && <button type="button" className="chip chip-range" onClick={clearRangeSelection}>range {indexRange.start}–{indexRange.end} ×</button>}
         {colorRange && <span className="map-legend"><span style={{ background: gradientColor(0) }} /> {fmt(colorRange.min)}<span style={{ background: gradientColor(0.5) }} /><span style={{ background: gradientColor(1) }} /> {fmt(colorRange.max)}</span>}
+        {basemap === 'osm' && basemapStatus === 'error' && <span className="map-basemap-status map-basemap-error">⚠ Basemap tiles failed to load (offline?) — track data is still fully usable. <button type="button" onClick={() => onWorkspaceChange({ ...workspace, basemap: 'none' })}>Switch to offline grid</button></span>}
+        {basemap === 'osm' && basemapStatus === 'unknown' && <span className="map-basemap-status muted small">Basemap requires network access; local track data does not.</span>}
       </div>
       <div className="map-canvas-wrap">
         <MapContainer center={positions[0]} zoom={10} className="map-canvas" scrollWheelZoom>
-          {basemap === 'osm' && <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />}
+          {basemap === 'osm' && <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" eventHandlers={{ tileerror: () => setBasemapStatus('error'), tileload: () => setBasemapStatus('loaded') }} />}
           {mode !== 'points' && pathSegments.map((segment, index) => <Polyline key={index} positions={segment} pathOptions={{ color: indexRange ? '#64748b' : '#ea4f2f', weight: 2.5, opacity: indexRange ? 0.45 : 0.85 }} />)}
           {mode !== 'points' && selectionPositions.length > 1 && <Polyline positions={selectionPositions} pathOptions={{ color: '#facc15', weight: 5, opacity: 0.95 }} />}
           {qualityMarkers.map((event) => { const point = points[event.endIndex]!; const jump = event.kind === 'coordinate-jump'; return <CircleMarker key={event.id} center={[point.lat, point.lon]} radius={jump ? 7 : 5} pathOptions={{ color: jump ? '#ef4444' : '#f59e0b', fillColor: jump ? '#ef4444' : '#f59e0b', fillOpacity: 0.25, weight: 2, dashArray: jump ? '3 2' : undefined }}><Tooltip><strong>{event.kind === 'gap' ? 'Data gap' : 'Coordinate jump'}</strong><div>{event.explanation}</div></Tooltip></CircleMarker> })}
