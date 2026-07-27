@@ -267,6 +267,8 @@ code { font-family: var(--mono); background: var(--bg-3); padding: 1px 5px; bord
 .map-meta { color: var(--text-faint); font-size: 12px; font-family: var(--mono); }
 .map-legend { display: flex; align-items: center; gap: 4px; font-size: 11px; font-family: var(--mono); color: var(--text-dim); margin-left: auto; }
 .map-basemap-status { display: flex; align-items: center; gap: 8px; font-size: 12px; width: 100%; }
+.map-other-tracks { gap: 8px; }
+.map-other-track-chip { display: inline-flex; align-items: center; gap: 4px; margin-left: 4px; }
 .map-basemap-error { color: #eab308; }
 .map-basemap-error button { font-size: 11px; padding: 2px 8px; }
 .map-legend span { width: 16px; height: 10px; border-radius: 2px; display: inline-block; }

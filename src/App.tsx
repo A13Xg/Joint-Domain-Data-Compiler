@@ -11,7 +11,9 @@ import { logger } from './core/logger'
 import { formatBytes } from './core/format'
 import { Spinner, ProgressBar } from './ui/Spinner'
 import { LogConsole } from './ui/LogConsole'
-import { MapView } from './ui/MapView'
+import { MapView, type OtherTrack } from './ui/MapView'
+import { SourcesPanel } from './ui/SourcesPanel'
+import { syncWorkspaceDisplay, type WorkspaceDisplay } from './state/workspaceDisplay'
 import { TimeSeriesChart } from './ui/TimeSeriesChart'
 import { DataTable } from './ui/DataTable'
 import { StatsPanel } from './ui/StatsPanel'
@@ -35,7 +37,7 @@ import type { OperationRecord } from './core/recipes/model'
 
 ensureBuiltinDerivationsRegistered()
 
-export type Tab = 'import' | 'mapping' | 'overview' | 'map' | 'charts' | 'table' | 'compare' | 'scene3d' | 'transform' | 'project' | 'kmlLibrary' | 'export'
+export type Tab = 'import' | 'mapping' | 'overview' | 'map' | 'charts' | 'table' | 'compare' | 'scene3d' | 'transform' | 'project' | 'kmlLibrary' | 'export' | 'sources'
 
 type History = ProjectDatasetHistory
 interface PendingCsv { file: File; analysis: CsvAnalysisResult; mapping: CsvMapping; additionalHeaders: boolean }
@@ -72,6 +74,13 @@ export default function App() {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [histories, setHistories] = useState<Record<string, History>>({})
   const [operationRecords, setOperationRecords] = useState<Record<string, OperationRecord[]>>({})
+  const [datasetDisplay, setDatasetDisplay] = useState<WorkspaceDisplay>({})
+  // Reconcile display settings (new datasets get a color; removed datasets'
+  // entries are dropped) during render when the dataset list changes,
+  // rather than in an effect — same "adjusting state during render"
+  // pattern used for MapView's basemap-status reset.
+  const syncedDisplay = syncWorkspaceDisplay(datasetDisplay, datasets)
+  if (syncedDisplay !== datasetDisplay) setDatasetDisplay(syncedDisplay)
   const [tab, setTab] = useState<Tab>('import')
   const [workspace, setWorkspace] = useState<WorkspaceState>(DEFAULT_WORKSPACE_STATE)
   const [busy, setBusy] = useState<string | null>(null)
@@ -304,7 +313,14 @@ export default function App() {
     { id: 'transform', label: 'Transform', enabled: !!active }, { id: 'project', label: 'Project', enabled: datasets.length > 0 },
     { id: 'kmlLibrary', label: 'KML/KMZ', enabled: true },
     { id: 'export', label: 'Export', enabled: !!active },
+    { id: 'sources', label: 'Sources', enabled: datasets.length > 0 },
   ]
+
+  const otherTracks: OtherTrack[] = active
+    ? datasets
+      .filter((dataset) => dataset.id !== active.id && (syncedDisplay[dataset.id]?.visible ?? true))
+      .map((dataset) => ({ id: dataset.id, name: dataset.name, color: syncedDisplay[dataset.id]?.color ?? '#475569', points: dataset.points }))
+    : []
 
   return (
     <div className="app">
@@ -323,7 +339,7 @@ export default function App() {
             {tab === 'import' && <ImportView dragActive={dragActive} setDragActive={setDragActive} onFiles={onFiles} openPicker={() => fileInputRef.current?.click()} />}
             {tab === 'mapping' && pendingCsv && <MappingPanel analysis={pendingCsv.analysis} mapping={pendingCsv.mapping} onChange={(mapping) => setPendingCsv((current) => current ? { ...current, mapping } : current)} additionalHeaders={pendingCsv.additionalHeaders} onToggleAdditionalHeaders={(additionalHeaders) => setPendingCsv((current) => current ? { ...current, additionalHeaders } : current)} onBuild={buildCsvDataset} building={building} />}
             {tab === 'overview' && active && <StatsPanel dataset={active} />}
-            {tab === 'map' && active && <MapView points={active.points} channels={active.channels} workspace={workspace.map} onWorkspaceChange={(map) => setWorkspace((current) => ({ ...current, map }))} />}
+            {tab === 'map' && active && <MapView points={active.points} channels={active.channels} workspace={workspace.map} onWorkspaceChange={(map) => setWorkspace((current) => ({ ...current, map }))} otherTracks={otherTracks} />}
             {tab === 'charts' && active && <TimeSeriesChart points={active.points} channels={active.channels} />}
             {tab === 'table' && active && <DataTable points={active.points} channels={active.channels} />}
             {tab === 'compare' && <ComparisonPanel datasets={datasets} activeId={activeId} workspace={workspace.comparison} onWorkspaceChange={(comparison) => setWorkspace((current) => ({ ...current, comparison }))} />}
@@ -332,6 +348,7 @@ export default function App() {
             {tab === 'project' && <ProjectPanel datasets={datasets} histories={histories} activeId={activeId} activeTab={workspace.lastWorkspaceTab} workspace={workspace} onRestoreProject={restoreProject} />}
             {tab === 'kmlLibrary' && <KmlLibraryPanel onImportKmlText={importKmlText} />}
             {tab === 'export' && active && <ExportPanel dataset={active} />}
+            {tab === 'sources' && <SourcesPanel datasets={datasets} activeId={activeId} display={syncedDisplay} onDisplayChange={setDatasetDisplay} onSelectActive={setActiveId} />}
           </section>
         </main>
       </div>
@@ -345,6 +362,6 @@ function isTab(value: unknown): value is Tab {
   return typeof value === 'string' && ['import', 'mapping', 'overview', 'map', 'charts', 'table', 'compare', 'scene3d', 'transform', 'project', 'kmlLibrary', 'export'].includes(value)
 }
 
-function isWorkspaceTab(tab: Tab): tab is Exclude<Tab, 'import' | 'mapping' | 'project' | 'kmlLibrary' | 'export'> {
+function isWorkspaceTab(tab: Tab): tab is Exclude<Tab, 'import' | 'mapping' | 'project' | 'kmlLibrary' | 'export' | 'sources'> {
   return ['overview', 'map', 'charts', 'table', 'compare', 'scene3d', 'transform'].includes(tab)
 }

@@ -12,6 +12,14 @@ type DisplayMode = 'both' | 'path' | 'points'
 type BasemapMode = 'osm' | 'none'
 const MAX_RENDER_POINTS = 4000
 
+/** A non-active, visible dataset rendered as a plain color-coded path (Task 5.2: multi-track map rendering). Path-only and non-interactive — active-track selection/hover/quality markers are unaffected. */
+export interface OtherTrack {
+  id: string
+  name: string
+  color: string
+  points: TrackPoint[]
+}
+
 function FitBounds({ positions, request }: { positions: LatLngTuple[]; request: number }) {
   const map = useMap()
   useEffect(() => {
@@ -42,7 +50,7 @@ function downsample<T>(values: T[], maxPoints: number): T[] {
 
 type BasemapStatus = 'unknown' | 'loaded' | 'error'
 
-export function MapView({ points, channels, workspace, onWorkspaceChange }: { points: TrackPoint[]; channels: string[]; workspace: WorkspaceState['map']; onWorkspaceChange: (next: WorkspaceState['map']) => void }) {
+export function MapView({ points, channels, workspace, onWorkspaceChange, otherTracks = [] }: { points: TrackPoint[]; channels: string[]; workspace: WorkspaceState['map']; onWorkspaceChange: (next: WorkspaceState['map']) => void; otherTracks?: OtherTrack[] }) {
   const { displayMode: mode, colorBy, basemap, maxGapMinutes } = workspace
   const [fitRequest, setFitRequest] = useState(0)
   const [fitSelection, setFitSelection] = useState(false)
@@ -76,7 +84,21 @@ export function MapView({ points, channels, workspace, onWorkspaceChange }: { po
   const selectionPositions = useMemo<LatLngTuple[]>(() => renderedSelection.map(({ point }) => [point.lat, point.lon]), [renderedSelection])
   const hoveredPoint = hoverIndex === null ? null : points[hoverIndex]
   const hoveredPosition: LatLngTuple | null = hoveredPoint && isValidLat(hoveredPoint.lat) && isValidLon(hoveredPoint.lon) ? [hoveredPoint.lat, hoveredPoint.lon] : null
-  const fitPositions = fitSelection && selectionPositions.length > 0 ? selectionPositions : positions
+  const [fitVisible, setFitVisible] = useState(false)
+
+  // Other visible datasets rendered as plain, non-interactive color-coded
+  // paths (Task 5.2). Downsampled the same way as the active track.
+  const otherTrackLayers = useMemo(() => otherTracks.map((track) => {
+    const validPoints = track.points.filter((point) => isValidLat(point.lat) && isValidLon(point.lon))
+    const sampled = downsample(validPoints, MAX_RENDER_POINTS)
+    return { id: track.id, name: track.name, color: track.color, positions: sampled.map((point): LatLngTuple => [point.lat, point.lon]) }
+  }), [otherTracks])
+
+  const fitPositions = fitSelection && selectionPositions.length > 0
+    ? selectionPositions
+    : fitVisible
+      ? [...positions, ...otherTrackLayers.flatMap((track) => track.positions)]
+      : positions
   const colorChannels = useMemo(() => ['none', 'elevation', ...channels.filter((channel) => channel !== 'elevation')], [channels])
   const colorRange = useMemo(() => {
     if (colorBy === 'none') return null
@@ -93,18 +115,21 @@ export function MapView({ points, channels, workspace, onWorkspaceChange }: { po
         <label>basemap<select value={basemap} onChange={(event) => onWorkspaceChange({ ...workspace, basemap: event.target.value as BasemapMode })}><option value="osm">OpenStreetMap</option><option value="none">offline grid</option></select></label>
         <label>color by<select value={colorBy} onChange={(event) => onWorkspaceChange({ ...workspace, colorBy: event.target.value })}>{colorChannels.map((channel) => <option key={channel} value={channel}>{channel}</option>)}</select></label>
         <label>split gaps<input type="number" min={0} step={1} value={maxGapMinutes} onChange={(event) => onWorkspaceChange({ ...workspace, maxGapMinutes: Math.max(0, Number(event.target.value) || 0) })} /> min</label>
-        <button type="button" onClick={() => { setFitSelection(false); setFitRequest((value) => value + 1) }}>Fit all</button>
-        <button type="button" disabled={!indexRange || selectionPositions.length === 0} onClick={() => { setFitSelection(true); setFitRequest((value) => value + 1) }}>Fit range</button>
+        <button type="button" onClick={() => { setFitSelection(false); setFitVisible(false); setFitRequest((value) => value + 1) }}>Fit active</button>
+        {otherTrackLayers.length > 0 && <button type="button" onClick={() => { setFitSelection(false); setFitVisible(true); setFitRequest((value) => value + 1) }}>Fit visible ({otherTrackLayers.length + 1})</button>}
+        <button type="button" disabled={!indexRange || selectionPositions.length === 0} onClick={() => { setFitSelection(true); setFitVisible(false); setFitRequest((value) => value + 1) }}>Fit range</button>
         <span className="map-meta">{valid.length.toLocaleString()} valid pts{rendered.length < valid.length && ` · ${rendered.length.toLocaleString()} drawn`}</span>
         {pointIndex !== null && <button type="button" className="chip chip-on" onClick={clearPointSelection}>selected #{pointIndex} ×</button>}
         {indexRange && <button type="button" className="chip chip-range" onClick={clearRangeSelection}>range {indexRange.start}–{indexRange.end} ×</button>}
         {colorRange && <span className="map-legend"><span style={{ background: gradientColor(0) }} /> {fmt(colorRange.min)}<span style={{ background: gradientColor(0.5) }} /><span style={{ background: gradientColor(1) }} /> {fmt(colorRange.max)}</span>}
         {basemap === 'osm' && basemapStatus === 'error' && <span className="map-basemap-status map-basemap-error">⚠ Basemap tiles failed to load (offline?) — track data is still fully usable. <button type="button" onClick={() => onWorkspaceChange({ ...workspace, basemap: 'none' })}>Switch to offline grid</button></span>}
         {basemap === 'osm' && basemapStatus === 'unknown' && <span className="map-basemap-status muted small">Basemap requires network access; local track data does not.</span>}
+        {otherTrackLayers.length > 0 && <span className="map-legend map-other-tracks">other visible:{otherTrackLayers.map((track) => <span key={track.id} className="map-other-track-chip"><span className="chip-dot" style={{ background: track.color }} />{track.name}</span>)}</span>}
       </div>
       <div className="map-canvas-wrap">
         <MapContainer center={positions[0]} zoom={10} className="map-canvas" scrollWheelZoom>
           {basemap === 'osm' && <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" eventHandlers={{ tileerror: () => setBasemapStatus('error'), tileload: () => setBasemapStatus('loaded') }} />}
+          {otherTrackLayers.map((track) => track.positions.length > 1 && <Polyline key={track.id} positions={track.positions} pathOptions={{ color: track.color, weight: 2, opacity: 0.6, dashArray: '1 4' }}><Tooltip>{track.name}</Tooltip></Polyline>)}
           {mode !== 'points' && pathSegments.map((segment, index) => <Polyline key={index} positions={segment} pathOptions={{ color: indexRange ? '#64748b' : '#ea4f2f', weight: 2.5, opacity: indexRange ? 0.45 : 0.85 }} />)}
           {mode !== 'points' && selectionPositions.length > 1 && <Polyline positions={selectionPositions} pathOptions={{ color: '#facc15', weight: 5, opacity: 0.95 }} />}
           {qualityMarkers.map((event) => { const point = points[event.endIndex]!; const jump = event.kind === 'coordinate-jump'; return <CircleMarker key={event.id} center={[point.lat, point.lon]} radius={jump ? 7 : 5} pathOptions={{ color: jump ? '#ef4444' : '#f59e0b', fillColor: jump ? '#ef4444' : '#f59e0b', fillOpacity: 0.25, weight: 2, dashArray: jump ? '3 2' : undefined }}><Tooltip><strong>{event.kind === 'gap' ? 'Data gap' : 'Coordinate jump'}</strong><div>{event.explanation}</div></Tooltip></CircleMarker> })}

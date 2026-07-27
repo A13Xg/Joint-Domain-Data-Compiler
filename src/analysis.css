@@ -9,6 +9,9 @@
 .compact-table th, .compact-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
 .compact-table .left-cell { text-align: left; }
 .kml-library-table td:last-child { min-width: 170px; }
+.sources-panel { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.sources-table td, .sources-table th { text-align: left; }
+.sources-table .active-row { background: var(--bg-2); }
 .compact-table th { position: sticky; top: 0; background: var(--bg-2); z-index: 1; }
 .trajectory-three-canvas { width: 100%; min-height: 560px; height: min(68vh, 760px); display: block; border: 1px solid var(--border); border-radius: var(--radius); background: #070b12; cursor: grab; touch-action: none; }
 .trajectory-three-canvas:active { cursor: grabbing; }
