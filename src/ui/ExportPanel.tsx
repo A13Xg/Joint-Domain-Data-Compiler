@@ -17,6 +17,17 @@ export function ExportPanel({ dataset }: { dataset: Dataset }) {
   const [includeExtensions, setIncludeExtensions] = useState(true)
   const [precision, setPrecision] = useState(7)
   const [trackName, setTrackName] = useState(dataset.name.replace(/\.[^.]+$/, ''))
+  const [acknowledgedNotional, setAcknowledgedNotional] = useState(false)
+  // Reset the acknowledgment during render when the dataset changes, rather
+  // than in an effect — same pattern used elsewhere (MapView's basemap
+  // status, App.tsx's display-settings sync).
+  const [trackedDatasetId, setTrackedDatasetId] = useState(dataset.id)
+  if (dataset.id !== trackedDatasetId) {
+    setTrackedDatasetId(dataset.id)
+    setAcknowledgedNotional(false)
+  }
+  const notionalCount = useMemo(() => dataset.points.filter((p) => p.ext?.notional === true).length, [dataset.points])
+  const exportBlocked = notionalCount > 0 && !acknowledgedNotional
 
   const preview = useMemo(() => {
     if (target === 'gpb') {
@@ -36,6 +47,7 @@ export function ExportPanel({ dataset }: { dataset: Dataset }) {
   const descriptor = EXPORTERS.find((e) => e.id === target)
 
   const download = () => {
+    if (exportBlocked) return
     try {
       let blob: Blob
       let ext: string
@@ -110,7 +122,14 @@ export function ExportPanel({ dataset }: { dataset: Dataset }) {
             </div>
           )}
 
-          <button type="button" className="export-btn" onClick={download} disabled={dataset.points.length === 0}>
+          {notionalCount > 0 && (
+            <div className="export-warnings notional-export-gate">
+              <p className="warn-line small">⚠ This dataset contains {notionalCount.toLocaleString()} notional (interpolated, not observed) point{notionalCount === 1 ? '' : 's'} from gap-fill smoothing.</p>
+              <label className="chk"><input type="checkbox" checked={acknowledgedNotional} onChange={(e) => setAcknowledgedNotional(e.target.checked)} /> I understand this export includes notional, non-observed samples</label>
+            </div>
+          )}
+
+          <button type="button" className="export-btn" onClick={download} disabled={dataset.points.length === 0 || exportBlocked} title={exportBlocked ? 'Acknowledge the notional-sample notice above to export' : undefined}>
             Export {preview.pointCount.toLocaleString()} points
           </button>
         </div>

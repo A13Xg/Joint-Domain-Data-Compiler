@@ -137,8 +137,9 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
             const selected = pointIndex === index
             const hovered = hoverIndex === index
             const inRange = indexRange !== null && index >= indexRange.start && index <= indexRange.end
-            let color = selected ? '#ea4f2f' : hovered ? '#38bdf8' : inRange ? '#facc15' : '#0f8c6f'
-            if (!selected && !hovered && !inRange && colorRange && colorBy !== 'none') {
+            const notional = point.ext?.notional === true
+            let color = selected ? '#ea4f2f' : hovered ? '#38bdf8' : inRange ? '#facc15' : notional ? '#94a3b8' : '#0f8c6f'
+            if (!selected && !hovered && !inRange && !notional && colorRange && colorBy !== 'none') {
               const value = channelValue(point, colorBy)
               if (value !== null) color = gradientColor((value - colorRange.min) / (colorRange.max - colorRange.min || 1))
             }
@@ -146,12 +147,12 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
               <CircleMarker
                 key={`${index}-${point.lat}-${point.lon}`}
                 center={[point.lat, point.lon]}
-                radius={selected ? 7 : hovered ? 6 : inRange ? 4.2 : 2.8}
-                pathOptions={{ color, fillColor: color, fillOpacity: selected || hovered || inRange ? 1 : 0.75, weight: selected ? 2 : hovered ? 2 : inRange ? 1 : 0 }}
+                radius={selected ? 7 : hovered ? 6 : inRange ? 4.2 : notional ? 3.2 : 2.8}
+                pathOptions={{ color, fillColor: color, fillOpacity: selected || hovered || inRange ? 1 : notional ? 0.5 : 0.75, weight: selected ? 2 : hovered ? 2 : inRange ? 1 : notional ? 1.5 : 0, dashArray: notional ? '2 2' : undefined }}
                 eventHandlers={{ click: () => selectPoint(selected ? null : index), mouseover: () => setHoverIndex(index), mouseout: clearHover }}
               >
                 <Tooltip>
-                  <div className="map-tip mono"><div>#{index} · {point.lat.toFixed(6)}, {point.lon.toFixed(6)}</div>{inRange && <div>selected range</div>}{point.ele !== undefined && <div>ele {point.ele.toFixed(1)} m</div>}{point.time !== undefined && <div>{epochMsToIso(point.time)}</div>}{point.name && <div>{point.name}</div>}{colorBy !== 'none' && channelValue(point, colorBy) !== null && <div>{colorBy}: {fmt(channelValue(point, colorBy)!)}</div>}</div>
+                  <div className="map-tip mono"><div>#{index} · {point.lat.toFixed(6)}, {point.lon.toFixed(6)}</div>{notional && <div>⚠ notional (interpolated, not observed)</div>}{inRange && <div>selected range</div>}{point.ele !== undefined && <div>ele {point.ele.toFixed(1)} m</div>}{point.time !== undefined && <div>{epochMsToIso(point.time)}</div>}{point.name && <div>{point.name}</div>}{colorBy !== 'none' && channelValue(point, colorBy) !== null && <div>{colorBy}: {fmt(channelValue(point, colorBy)!)}</div>}</div>
                 </Tooltip>
               </CircleMarker>
             )

@@ -18,6 +18,7 @@ import { TimeSeriesChart } from './ui/TimeSeriesChart'
 import { DataTable } from './ui/DataTable'
 import { StatsPanel } from './ui/StatsPanel'
 import { TransformPanel } from './ui/TransformPanel'
+import { NotionalSmoothingPanel } from './ui/NotionalSmoothingPanel'
 import { ExportPanel } from './ui/ExportPanel'
 import { MappingPanel } from './ui/MappingPanel'
 import { ImportView } from './ui/ImportView'
@@ -344,7 +345,7 @@ export default function App() {
             {tab === 'table' && active && <DataTable points={active.points} channels={active.channels} />}
             {tab === 'compare' && <ComparisonPanel datasets={datasets} activeId={activeId} workspace={workspace.comparison} onWorkspaceChange={(comparison) => setWorkspace((current) => ({ ...current, comparison }))} />}
             {tab === 'scene3d' && active && <Trajectory3dPanel dataset={active} workspace={workspace.scene3d} onWorkspaceChange={(scene3d) => setWorkspace((current) => ({ ...current, scene3d }))} />}
-            {tab === 'transform' && active && <TransformPanel dataset={active} onApply={applyTransform} onUndo={undo} onRedo={redo} canUndo={!!history && history.past.length > 0} canRedo={!!history && history.future.length > 0} operationHistory={operationRecords[active.id] ?? []} />}
+            {tab === 'transform' && active && <><TransformPanel dataset={active} onApply={applyTransform} onUndo={undo} onRedo={redo} canUndo={!!history && history.past.length > 0} canRedo={!!history && history.future.length > 0} operationHistory={operationRecords[active.id] ?? []} /><NotionalSmoothingPanel dataset={active} onCreateDataset={addDataset} /></>}
             {tab === 'project' && <ProjectPanel datasets={datasets} histories={histories} activeId={activeId} activeTab={workspace.lastWorkspaceTab} workspace={workspace} onRestoreProject={restoreProject} />}
             {tab === 'kmlLibrary' && <KmlLibraryPanel onImportKmlText={importKmlText} />}
             {tab === 'export' && active && <ExportPanel dataset={active} />}

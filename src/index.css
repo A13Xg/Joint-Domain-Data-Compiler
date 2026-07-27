@@ -389,6 +389,7 @@ code { font-family: var(--mono); background: var(--bg-3); padding: 1px 5px; bord
 
 .warn-line { color: var(--amber); }
 .error-line { color: var(--red); }
+.notional-export-gate { display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--amber); border-radius: var(--radius); margin: 8px 0; }
 
 /* ---------- Log dock ---------- */
 .log-dock { height: 220px; flex-shrink: 0; border-top: 1px solid var(--border); background: var(--bg); }
