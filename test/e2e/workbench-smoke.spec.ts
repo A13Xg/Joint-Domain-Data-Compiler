@@ -35,9 +35,13 @@ test('primary local-first workflow: import, inspect, transform, save/open, and e
   await expect(page.getByRole('button', { name: 'selected #2 ×' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Transform', exact: true }).click()
+  const elevationOffsetCard = page.locator('.op-card').filter({ hasText: 'Offset elevation' })
+  await elevationOffsetCard.getByRole('spinbutton', { name: 'meters' }).fill('10')
+  await elevationOffsetCard.getByRole('button', { name: 'Apply' }).click()
   const deriveCard = page.locator('.op-card').filter({ hasText: 'Derive kinematics' })
   await deriveCard.getByRole('button', { name: 'Apply' }).click()
-  await page.getByText('Operation history (1)').click()
+  await page.getByText('Operation history (2)').click()
+  await expect(page.locator('.operation-history').getByText(/Offset elevation by 10/)).toBeVisible()
   await expect(page.locator('.operation-history').getByText(/Derived standard kinematics/)).toBeVisible()
 
   await page.getByRole('button', { name: 'Sources', exact: true }).click()
