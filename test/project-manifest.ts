@@ -63,6 +63,15 @@ check('Selection is preserved', parsed.view.selection.datasetId === 'dataset-1')
 check('Workspace state is preserved', parsed.view.workspace?.scene3d.gapThresholdSeconds === 3)
 check('Project notes are preserved', parsed.notes === 'Analyst handoff note')
 
+const malformedNotes = JSON.stringify({ ...manifest, notes: 42 })
+let malformedNotesRejected = false
+try {
+  parseProjectManifest(malformedNotes)
+} catch (error) {
+  malformedNotesRejected = /notes/.test((error as Error).message)
+}
+check('Non-text project notes are rejected', malformedNotesRejected)
+
 let invalidJsonRejected = false
 try {
   parseProjectManifest('{bad json')

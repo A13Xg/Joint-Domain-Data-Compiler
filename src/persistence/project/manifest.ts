@@ -83,6 +83,7 @@ export function validateProjectManifest(value: unknown): asserts value is Projec
   requireFiniteNumber(value.createdAt, 'createdAt')
   requireFiniteNumber(value.updatedAt, 'updatedAt')
   requireNonEmptyString(value.applicationVersion, 'applicationVersion')
+  if (value.notes !== undefined && typeof value.notes !== 'string') throw new Error('notes must be a string')
   if (!Array.isArray(value.datasets)) throw new Error('datasets must be an array')
   if (!Array.isArray(value.recipes)) throw new Error('recipes must be an array')
   if (!Array.isArray(value.bookmarks)) throw new Error('bookmarks must be an array')
