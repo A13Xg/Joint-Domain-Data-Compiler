@@ -65,14 +65,20 @@ test('primary local-first workflow: import, inspect, transform, save/open, and e
   await expect(page.getByText(/Restored 1 dataset/)).toBeVisible()
 
   await page.getByRole('button', { name: 'Project', exact: true }).click()
+  await page.getByText('HTML report options').click()
+  await page.getByLabel('Visible report title').fill('Browser evidence report')
+  await page.getByLabel('Download filename').fill('browser-evidence')
+  await page.getByLabel('Include Warnings').uncheck()
   const reportDownload = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Export HTML report' }).click()
   const report = await reportDownload
-  expect(report.suggestedFilename()).toBe('browser-smoke-report.html')
+  expect(report.suggestedFilename()).toBe('browser-evidence.html')
   const reportPath = await report.path()
   expect(reportPath).not.toBeNull()
   const reportHtml = await readFile(reportPath!, 'utf8')
   expect(reportHtml).toContain('real-usgs.gpx')
+  expect(reportHtml).toContain('Browser evidence report')
+  expect(reportHtml).toContain('Omitted categories: import warnings.')
   expect(reportHtml).toContain('Derived standard kinematics')
   expect(reportHtml).toContain('@media print')
 
