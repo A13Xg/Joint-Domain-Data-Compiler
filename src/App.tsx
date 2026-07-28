@@ -314,12 +314,12 @@ export default function App() {
 
   const onFiles = useCallback((files: FileList | null) => { if (files) for (const file of Array.from(files)) void ingestFile(file) }, [ingestFile])
 
-  const applyTransform = useCallback((points: TrackPoint[], summary: string, preserveSelection: boolean) => {
+  const applyTransform = useCallback((points: TrackPoint[], summary: string, preserveSelection: boolean, suppliedRecord?: OperationRecord) => {
     if (!active) return
     const next = withPoints(active, points)
     const selectedPointIndex = getSelectedPointIndex(active.points)
     const selectedRange = getSelectedRange(active.points)
-    const record: OperationRecord = {
+    const record: OperationRecord = suppliedRecord ?? {
       id: `op_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       operationId: slugify(summary),
       operationVersion: 1,
