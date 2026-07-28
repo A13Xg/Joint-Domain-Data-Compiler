@@ -69,6 +69,14 @@ try {
 }
 check('Changed source is rejected', mismatchRejected)
 
+let versionMismatchRejected = false
+try {
+  replayRecipe(source, { ...recipe, operations: [{ ...recipe.operations[0]!, operationVersion: 2 }] })
+} catch (error) {
+  versionMismatchRejected = /version/i.test((error as Error).message)
+}
+check('Operation version mismatch is rejected with a clear warning', versionMismatchRejected)
+
 let invalidParamsRejected = false
 try {
   executeOperation(source, 'elevation-offset', { meters: 'five' })
