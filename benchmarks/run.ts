@@ -4,6 +4,9 @@ import { dedupe, sortByTime } from '../src/core/transforms.ts'
 import { standardKinematicsDerivation } from '../src/core/analytics/kinematics.ts'
 import { detectQualityEvents } from '../src/core/quality/events.ts'
 import { exportDataset } from '../src/core/exporters/index.ts'
+import { extractChartSeries } from '../src/visualization/charts/series.ts'
+import { buildTrajectory3dGeometry } from '../src/visualization/scene3d/trajectory.ts'
+import { alignTracksByNearestTime, deriveRelativePosition } from '../src/core/analytics/relative.ts'
 
 // Default to sizes safe in a memory-constrained CI/sandbox runner. Pass
 // explicit sizes to exercise the full 100k/500k/1M range on a machine with
@@ -30,10 +33,10 @@ function makeDataset(points: ReturnType<typeof generateSyntheticTrack>): Dataset
 export async function run(): Promise<void> {
   console.log('JDDC scale benchmark — Tranche 8 Task 8.1')
   console.log('Node', process.version, '| gc exposed:', typeof global.gc === 'function')
-  console.log('Covers: dataset construction, sortByTime, dedupe, standard-kinematics derivation, quality-event detection, GPX export.')
-  console.log('Does NOT cover (deferred): chart preparation, map/3D geometry, comparison, project archive save/open.\n')
+  console.log('Covers: dataset construction, sortByTime, dedupe, standard-kinematics derivation, quality-event detection, chart/3D preparation, nearest-time comparison, GPX export.')
+  console.log('Does NOT cover (deferred): map rendering and project archive save/open.\n')
 
-  const header = ['points', 'generate ms', 'sortByTime ms', 'dedupe ms', 'kinematics ms', 'quality-events ms', 'gpx export ms', 'heap MB (post-GC)']
+  const header = ['points', 'generate ms', 'sortByTime ms', 'dedupe ms', 'kinematics ms', 'quality-events ms', 'chart ms', '3D geometry ms', 'comparison ms', 'gpx export ms', 'heap MB (post-GC)']
   console.log(header.join('  |  '))
 
   for (const size of sizesToRun) {
@@ -46,6 +49,12 @@ export async function run(): Promise<void> {
     const dedupeTime = timeMs(() => { dedupe(dataset!.points, 0) })
     const kinematicsTime = timeMs(() => { standardKinematicsDerivation.derive({ dataset: dataset!, points: dataset!.points }) })
     const qualityTime = timeMs(() => { detectQualityEvents(dataset!.points) })
+    const chartTime = timeMs(() => { extractChartSeries(dataset!.points, 'elevation', 'time') })
+    const geometryTime = timeMs(() => { buildTrajectory3dGeometry(dataset!.points) })
+    const comparisonTime = timeMs(() => {
+      const pairs = alignTracksByNearestTime(dataset!.points, dataset!.points, { toleranceMs: 0 })
+      deriveRelativePosition(dataset!.points, dataset!.points, pairs)
+    })
     const exportTime = timeMs(() => { exportDataset(dataset!, 'gpx') })
     const heapAfter = heapMb()
 
@@ -56,6 +65,9 @@ export async function run(): Promise<void> {
       dedupeTime.toFixed(0),
       kinematicsTime.toFixed(0),
       qualityTime.toFixed(0),
+      chartTime.toFixed(0),
+      geometryTime.toFixed(0),
+      comparisonTime.toFixed(0),
       exportTime.toFixed(0),
       `${heapBefore.toFixed(0)} → ${heapAfter.toFixed(0)}`,
     ].join('  |  '))

@@ -14,22 +14,24 @@ synthetic spiral-climb track:
 - `dedupe` (0 m tolerance),
 - the versioned `standard-kinematics` derivation,
 - `detectQualityEvents`,
+- chart-series preparation,
+- 3D trajectory geometry construction,
+- nearest-time alignment plus relative-position comparison,
 - GPX export.
 
-**Not covered yet** (deferred — these need their own harnesses): CSV/GPX/KML/NMEA/GPB *parsing*
-specifically, chart-series preparation, map/3D geometry construction, dataset comparison, and
-project archive save/open. Task 8.1 explicitly calls for measuring all of these; this pass
-established the mechanism and a first slice, not the complete matrix.
+**Not covered yet** (deferred — these need their own harnesses): CSV/GPX/KML/NMEA/GPB *parsing*,
+browser map rendering, and project archive save/open. Task 6.1 explicitly calls for measuring all
+of these; this pass established the mechanism and a larger, but still incomplete, matrix.
 
 ## Results
 
 Measurements were captured in one explicit full-range run: `npm run bench -- 100000 500000 1000000`.
 
-| Points | Generate | sortByTime | dedupe | kinematics | quality-events | GPX export | Heap (post-GC) |
-|---|---|---|---|---|---|---|---|
-| 100,000 | 23 ms | 10 ms | 20 ms | 40 ms | 28 ms | 157 ms | 5 → 24 MB |
-| 500,000 | 66 ms | 52 ms | 87 ms | 280 ms | 36 ms | 810 ms | 5 → 98 MB |
-| 1,000,000 | 104 ms | 118 ms | 320 ms | 360 ms | 52 ms | 1,681 ms | 5 → 190 MB |
+| Points | Generate | sort | dedupe | kinematics | quality | chart | 3D geometry | comparison | GPX export | Heap (post-GC) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 100,000 | 24 ms | 10 ms | 19 ms | 40 ms | 24 ms | 3 ms | 8 ms | 39 ms | 162 ms | 5 → 24 MB |
+| 500,000 | 48 ms | 54 ms | 76 ms | 302 ms | 38 ms | 25 ms | 30 ms | 223 ms | 830 ms | 6 → 98 MB |
+| 1,000,000 | 103 ms | 117 ms | 324 ms | 344 ms | 54 ms | 77 ms | 53 ms | 797 ms | 1,590 ms | 6 → 190 MB |
 
 ## Reading these numbers
 
@@ -37,7 +39,10 @@ Measurements were captured in one explicit full-range run: `npm run bench -- 100
   total) and scales roughly linearly (~1.7 µs/point). It is the first thing to profile if export
   responsiveness at scale becomes a product concern — likely string-building overhead in the GPX
   writer, not investigated further here.
-- **Kinematics derivation is the second-largest cost** (~0.4 µs/point) and already clones the full
+- **Comparison is the second-largest measured analytical cost** (~0.8 µs/point at 1M), while
+  kinematics is ~0.3 µs/point. Both remain synchronous, so either is a candidate for a future
+  worker decision only if interaction profiling shows a real UI responsiveness problem.
+- **Kinematics derivation** already clones the full
   point array once; this is consistent with the roadmap's existing note that transform history
   via full dataset snapshots is memory-proportional to point count × history depth.
 - Heap growth (24 MB → 97 MB → 191 MB for 100k → 500k → 1M) is roughly linear, with no evidence of
@@ -48,7 +53,7 @@ Measurements were captured in one explicit full-range run: `npm run bench -- 100
   even at 1M points on this shared, resource-constrained sandbox — there is no evidence yet that
   the current `TrackPoint[]` representation is a hard blocker at this scale for the operations
   measured. This does **not** by itself justify skipping Stage 10's columnar Worker architecture
-  work — chart rendering, map/3D geometry, and UI thread blocking during synchronous transforms
+  work — map rendering, archive I/O, parsing, and UI thread blocking during synchronous transforms
   are unmeasured and are the more likely real-world pain points.
 
 ## Operational note: safe routine sizes
@@ -70,7 +75,7 @@ work fine; this is purely an artifact of this particular shared sandbox at measu
 
 1. Add parse-time benchmarks per format (CSV/GPX/KML/NMEA/GPB) using `benchmarks/generate.ts`
    output re-serialized to each format, per the plan's explicit ask.
-2. Add a chart-series preparation and map/3D geometry benchmark.
+2. Add parser, browser-map, and project archive I/O benchmarks.
 3. Add an operation-history/undo-stack memory growth benchmark (N operations × snapshot size).
 4. Only after this fuller picture exists: decide whether Stage 10's columnar Worker architecture
    is justified, and where specifically (the plan is explicit that this should be evidence-led,
