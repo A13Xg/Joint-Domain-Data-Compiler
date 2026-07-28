@@ -15,7 +15,7 @@ interface ComparisonResult {
   closest?: RelativePointSample
 }
 
-export function ComparisonPanel({ datasets, activeId, workspace, onWorkspaceChange }: { datasets: Dataset[]; activeId: string | null; workspace: WorkspaceState['comparison']; onWorkspaceChange: (next: WorkspaceState['comparison']) => void }) {
+export function ComparisonPanel({ datasets, activeId, workspace, onWorkspaceChange, onSelectReferenceSample }: { datasets: Dataset[]; activeId: string | null; workspace: WorkspaceState['comparison']; onWorkspaceChange: (next: WorkspaceState['comparison']) => void; onSelectReferenceSample: (datasetId: string, pointIndex: number) => void }) {
   const referenceId = workspace.referenceDatasetId ?? activeId ?? datasets[0]?.id ?? ''
   const targetId = workspace.targetDatasetId ?? datasets.find((dataset) => dataset.id !== referenceId)?.id ?? ''
   const { toleranceMs, targetOffsetMs } = workspace
@@ -73,7 +73,7 @@ export function ComparisonPanel({ datasets, activeId, workspace, onWorkspaceChan
             <Metric label="mean closure rate" value={result.meanClosure === undefined ? 'n/a' : `${format(result.meanClosure)} m/s`} />
           </div>
           {result.closest && <div className="analysis-summary mono">Closest approach at reference index {result.closest.referenceIndex}, target index {result.closest.targetIndex}: bearing {format(result.closest.bearingDeg)}°, Δt {format(result.closest.deltaTimeMs)} ms, vertical separation {format(result.closest.relativeUpM)} m.</div>}
-          <div className="compact-table"><table><thead><tr><th>Ref</th><th>Target</th><th>Δt ms</th><th>Slant m</th><th>Horizontal m</th><th>Bearing°</th><th>Up m</th><th>Closure m/s</th></tr></thead><tbody>{result.samples.slice(0, 250).map((sample) => <tr key={`${sample.referenceIndex}-${sample.targetIndex}`}><td>{sample.referenceIndex}</td><td>{sample.targetIndex}</td><td>{format(sample.deltaTimeMs)}</td><td>{format(sample.slantRangeM)}</td><td>{format(sample.horizontalRangeM)}</td><td>{format(sample.bearingDeg)}</td><td>{format(sample.relativeUpM)}</td><td>{sample.closureRateMps === undefined ? '' : format(sample.closureRateMps)}</td></tr>)}</tbody></table></div>
+          <div className="compact-table"><table><thead><tr><th>Ref</th><th>Target</th><th>Δt ms</th><th>Slant m</th><th>Horizontal m</th><th>Bearing°</th><th>Up m</th><th>Closure m/s</th></tr></thead><tbody>{result.samples.slice(0, 250).map((sample) => <tr key={`${sample.referenceIndex}-${sample.targetIndex}`}><td><button type="button" className="link-button" aria-label={`Select reference point ${sample.referenceIndex}`} onClick={() => onSelectReferenceSample(referenceId, sample.referenceIndex)}>{sample.referenceIndex}</button></td><td>{sample.targetIndex}</td><td>{format(sample.deltaTimeMs)}</td><td>{format(sample.slantRangeM)}</td><td>{format(sample.horizontalRangeM)}</td><td>{format(sample.bearingDeg)}</td><td>{format(sample.relativeUpM)}</td><td>{sample.closureRateMps === undefined ? '' : format(sample.closureRateMps)}</td></tr>)}</tbody></table></div>
           {result.samples.length > 250 && <div className="muted small">Showing the first 250 aligned samples.</div>}
         </>
       )}
