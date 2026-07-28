@@ -114,6 +114,13 @@ function toBuffer(bytes: Buffer): ArrayBuffer {
   checkThrows('Malformed GPB (wrong magic header) throws', () => {
     parseGpb(toBuffer(readFileSync(`${INVALID}malformed-usgs.gpb`)))
   })
+  let truncatedRejected = false
+  try {
+    parseGpb(new Uint8Array([71, 80, 66, 49, 1, 0, 0, 0, 0]).buffer)
+  } catch (error) {
+    truncatedRejected = /Truncated GPB/.test((error as Error).message)
+  }
+  check('Malformed GPB (truncated container) reports an actionable error', truncatedRejected)
 }
 
 // --- CSV -------------------------------------------------------------------
