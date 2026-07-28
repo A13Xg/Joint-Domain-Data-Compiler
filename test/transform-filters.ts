@@ -1,7 +1,7 @@
 // Task 3.3: median and Hampel elevation filters (first tier of the plan's
 // filter priority list).
 import type { TrackPoint } from '../src/core/model.ts'
-import { hampelFilterElevation, medianFilterElevation } from '../src/core/transforms.ts'
+import { exponentialMovingAverageElevation, hampelFilterElevation, medianFilterElevation } from '../src/core/transforms.ts'
 
 let failures = 0
 function check(name: string, condition: boolean, detail = ''): void {
@@ -50,6 +50,19 @@ function flatTrack(elevations: number[]): TrackPoint[] {
   const result = hampelFilterElevation(flat, 3, 7)
   check('Zero MAD (perfectly flat data) does not throw or flag anything', result.points.every((p) => p.provenance?.qualityFlags === undefined))
 }
+
+// --- Exponential moving average ---------------------------------------------
+{
+  const points = flatTrack([100, 200, 100])
+  const result = exponentialMovingAverageElevation(points, 0.5)
+  check('EMA preserves point count', result.points.length === points.length)
+  check('EMA seeds from the first elevation', result.points[0]?.ele === 100)
+  check('EMA applies the configured alpha', result.points[1]?.ele === 150 && result.points[2]?.ele === 125)
+  check('EMA leaves the input immutable', points[1]?.ele === 200)
+}
+let invalidAlphaRejected = false
+try { exponentialMovingAverageElevation(flatTrack([1, 2]), 1) } catch { invalidAlphaRejected = true }
+check('EMA rejects alpha outside the open interval', invalidAlphaRejected)
 
 console.log(`\n${failures === 0 ? 'ALL TRANSFORM FILTER CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)

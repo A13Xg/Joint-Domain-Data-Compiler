@@ -210,6 +210,25 @@ export function medianFilterElevation(points: TrackPoint[], window: number): Tra
   return { points: out, summary: `Applied median filter to elevation (window ${w}, ${changed} point(s) changed)` }
 }
 
+/** Causal EMA over elevation; missing values remain unchanged. */
+export function exponentialMovingAverageElevation(points: TrackPoint[], alpha: number): TransformResult {
+  if (!Number.isFinite(alpha) || alpha <= 0 || alpha >= 1) throw new Error('EMA alpha must be greater than 0 and less than 1')
+  const out = clone(points)
+  let previous: number | undefined
+  let changed = 0
+  for (const point of out) {
+    if (point.ele === undefined) continue
+    const smoothed = previous === undefined ? point.ele : alpha * point.ele + (1 - alpha) * previous
+    previous = smoothed
+    if (smoothed !== point.ele) {
+      point.ele = smoothed
+      addFlag(point, 'ema_smoothed')
+      changed++
+    }
+  }
+  return { points: out, summary: `Applied EMA to elevation (α=${alpha}, ${changed} point(s) changed)` }
+}
+
 /**
  * Hampel identifier over elevation: like removeElevationOutliers, but
  * replaces an outlier with the local median instead of dropping the point,
