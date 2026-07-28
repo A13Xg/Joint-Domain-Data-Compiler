@@ -4,6 +4,24 @@ import { resolve } from 'node:path'
 
 const fixture = resolve('file-test/real-usgs.gpx')
 const csvFixture = resolve('file-test/real-usgs.csv')
+const comparisonFixtureA = resolve('file-test/comparison-a.csv')
+const comparisonFixtureB = resolve('file-test/comparison-b.csv')
+
+async function importCsvDataset(page: import('@playwright/test').Page, file: string): Promise<void> {
+  await page.locator('input[type="file"]').setInputFiles(file)
+  await page.getByRole('button', { name: 'Build dataset from full CSV', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Overview', exact: true })).toBeEnabled()
+}
+
+test('comparison workflow aligns two imported CSV datasets', async ({ page }) => {
+  await page.goto('/')
+  await importCsvDataset(page, comparisonFixtureA)
+  await importCsvDataset(page, comparisonFixtureB)
+  await page.getByRole('button', { name: 'Compare', exact: true }).click()
+  await page.getByLabel('tolerance (ms)').fill('86400000')
+  await expect(page.getByText('aligned samples', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Export comparison CSV', exact: true })).toBeVisible()
+})
 
 test('CSV mapping workflow previews and builds an immutable dataset', async ({ page }) => {
   await page.goto('/')
