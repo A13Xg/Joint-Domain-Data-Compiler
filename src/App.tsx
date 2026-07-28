@@ -458,7 +458,7 @@ export default function App() {
 
             {tab === 'export' && active && <ExportPanel dataset={active} />}
             {tab === 'sources' && <SourcesPanel datasets={datasets} activeId={activeId} display={syncedDisplay} onDisplayChange={(next) => { setDatasetDisplay(next); setProjectDirty(true) }} onSelectActive={setActiveId} />}
-            {tab === 'fusion' && <FusionPanel datasets={datasets} onCreateDataset={addDataset} />}
+            {tab === 'fusion' && <FusionPanel datasets={datasets} onCreateDataset={(dataset) => { addDataset(dataset); setTab('fusion') }} />}
           </section>
         </main>
       </div>

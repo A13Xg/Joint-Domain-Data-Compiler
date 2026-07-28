@@ -32,9 +32,10 @@ test('fusion workflow creates a derived dataset without altering sources', async
   await page.getByLabel('Include comparison-b.csv as a fusion source').check()
   await page.getByLabel('time tolerance (ms)').fill('86400000')
   await page.getByRole('button', { name: 'Run Auto-Combine', exact: true }).click()
+  await expect(page.getByText(/Fusion report/i)).toBeVisible()
   await expect(page.locator('.dataset-list').getByText(/Fused_/)).toBeVisible()
-  await expect(page.getByText('comparison-a.csv', { exact: true })).toBeVisible()
-  await expect(page.getByText('comparison-b.csv', { exact: true })).toBeVisible()
+  await expect(page.locator('.dataset-list').getByText('comparison-a.csv', { exact: true })).toBeVisible()
+  await expect(page.locator('.dataset-list').getByText('comparison-b.csv', { exact: true })).toBeVisible()
   await expect(page.getByText(/Created Fused_/)).toBeVisible()
 })
 
