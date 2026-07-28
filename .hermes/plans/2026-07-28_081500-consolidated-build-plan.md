@@ -12,12 +12,12 @@
 
 ## Current verified context and constraints
 
-- Repository: `C:\Users\SnowBlind\Documents\GitHub\Joint-Domain-Data-Compiler`, branch `main`.
+- Repository: `C:\Users\SnowBlind\Documents\GitHub\Joint-Domain-Data-Compiler`; inspect the active branch before each change.
 - Raw imports must never be mutated. Derived, fused, smoothed, comparison, and overlay state must remain explicit and auditable.
 - Current clean-install verification: `npm ci` and lint pass; two harnesses fail because Electron path tests use host path semantics while simulating other platforms.
 - Runtime production audit has historically passed. The full development audit has 16 high findings in Electron Builder’s build-only dependency graph; do not run `npm audit fix --force` or downgrade Electron Builder without a verified packaging plan.
 - GitHub Actions is externally blocked by repository billing; macOS signing/notarization requires owner-provided credentials. These are release-evidence blockers, not reasons to weaken local gates.
-- Do not commit or push unless the user explicitly asks.
+- A pull request is open. Commit verified coherent slices with short conventional messages and push them to the active PR branch. Add brief PR comments only for material verification milestones, blockers, or decisions.
 
 ## Product decisions fixed by this plan
 

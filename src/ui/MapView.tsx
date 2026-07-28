@@ -18,6 +18,7 @@ export interface OtherTrack {
   name: string
   color: string
   points: TrackPoint[]
+  opacity?: number
 }
 
 function FitBounds({ positions, request }: { positions: LatLngTuple[]; request: number }) {
@@ -91,7 +92,7 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
   const otherTrackLayers = useMemo(() => otherTracks.map((track) => {
     const validPoints = track.points.filter((point) => isValidLat(point.lat) && isValidLon(point.lon))
     const sampled = downsample(validPoints, MAX_RENDER_POINTS)
-    return { id: track.id, name: track.name, color: track.color, positions: sampled.map((point): LatLngTuple => [point.lat, point.lon]) }
+    return { id: track.id, name: track.name, color: track.color, opacity: track.opacity ?? 0.6, positions: sampled.map((point): LatLngTuple => [point.lat, point.lon]) }
   }), [otherTracks])
 
   const fitPositions = fitSelection && selectionPositions.length > 0
@@ -129,7 +130,7 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
       <div className="map-canvas-wrap">
         <MapContainer center={positions[0]} zoom={10} className="map-canvas" scrollWheelZoom>
           {basemap === 'osm' && <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" eventHandlers={{ tileerror: () => setBasemapStatus('error'), tileload: () => setBasemapStatus('loaded') }} />}
-          {otherTrackLayers.map((track) => track.positions.length > 1 && <Polyline key={track.id} positions={track.positions} pathOptions={{ color: track.color, weight: 2, opacity: 0.6, dashArray: '1 4' }}><Tooltip>{track.name}</Tooltip></Polyline>)}
+          {otherTrackLayers.map((track) => track.positions.length > 1 && <Polyline key={track.id} positions={track.positions} pathOptions={{ color: track.color, weight: 2, opacity: track.opacity, dashArray: '1 4' }}><Tooltip>{track.name}</Tooltip></Polyline>)}
           {mode !== 'points' && pathSegments.map((segment, index) => <Polyline key={index} positions={segment} pathOptions={{ color: indexRange ? '#64748b' : '#ea4f2f', weight: 2.5, opacity: indexRange ? 0.45 : 0.85 }} />)}
           {mode !== 'points' && selectionPositions.length > 1 && <Polyline positions={selectionPositions} pathOptions={{ color: '#facc15', weight: 5, opacity: 0.95 }} />}
           {qualityMarkers.map((event) => { const point = points[event.endIndex]!; const jump = event.kind === 'coordinate-jump'; return <CircleMarker key={event.id} center={[point.lat, point.lon]} radius={jump ? 7 : 5} pathOptions={{ color: jump ? '#ef4444' : '#f59e0b', fillColor: jump ? '#ef4444' : '#f59e0b', fillOpacity: 0.25, weight: 2, dashArray: jump ? '3 2' : undefined }}><Tooltip><strong>{event.kind === 'gap' ? 'Data gap' : 'Coordinate jump'}</strong><div>{event.explanation}</div></Tooltip></CircleMarker> })}
