@@ -3,6 +3,7 @@ import { buildRecipe, executeOperation, replayRecipe } from '../src/core/recipes
 import { fingerprintDataset } from '../src/core/recipes/hash.ts'
 import type { OperationDefinition } from '../src/core/recipes/model.ts'
 import { clearOperationsForTests, registerOperation } from '../src/core/recipes/registry.ts'
+import { offsetElevationOperation, shiftTimeOperation } from '../src/core/operations/basic.ts'
 
 let failures = 0
 function check(name: string, condition: boolean): void {
@@ -75,6 +76,15 @@ try {
   invalidParamsRejected = true
 }
 check('Invalid operation parameters are rejected', invalidParamsRejected)
+
+clearOperationsForTests()
+registerOperation(offsetElevationOperation)
+registerOperation(shiftTimeOperation)
+const offsetExecution = executeOperation(source, 'offset-elevation', { meters: 12 })
+check('Built-in elevation offset records validated parameters', (offsetExecution.record.params as { meters: number }).meters === 12)
+const shiftExecution = executeOperation(offsetExecution.dataset, 'shift-time', { seconds: 30 })
+const builtInRecipe = buildRecipe('Built-in transforms', source, [offsetExecution.record, shiftExecution.record])
+check('Built-in transform recipe replays byte-identical dataset state', fingerprintDataset(replayRecipe(source, builtInRecipe)) === fingerprintDataset(shiftExecution.dataset))
 
 console.log(`\n${failures === 0 ? 'ALL RECIPE CHECKS PASSED' : `${failures} RECIPE CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)
