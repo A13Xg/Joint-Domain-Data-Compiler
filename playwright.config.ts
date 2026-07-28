@@ -7,6 +7,10 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   workers: 1,
   timeout: 60_000,
+  // One deterministic Chromium visual baseline is intentionally shared by
+  // the Windows development host and Ubuntu CI; platform-suffixed snapshots
+  // would leave CI without an expected image.
+  snapshotPathTemplate: '{testDir}/{testFilePath}-snapshots/{arg}{ext}',
   reporter: process.env.CI
     ? [['line'], ['html', { outputFolder: 'playwright-report', open: 'never' }]]
     : 'line',
