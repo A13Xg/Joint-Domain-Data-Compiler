@@ -1,5 +1,5 @@
 import type { TrackPoint } from '../src/core/model.ts'
-import { buildTrajectory3dGeometry } from '../src/visualization/scene3d/trajectory.ts'
+import { buildSharedTrajectory3dGeometry, buildTrajectory3dGeometry } from '../src/visualization/scene3d/trajectory.ts'
 
 let failures = 0
 function check(name: string, condition: boolean): void {
@@ -27,6 +27,11 @@ check('Preserves first and last source indices', geometry.vertices[0]!.sourceInd
 check('Produces positive east and north travel', geometry.bounds.maxEastM > 0 && geometry.bounds.maxNorthM > 0)
 check('Applies altitude exaggeration', geometry.vertices.at(-1)!.upM > 190)
 check('Computes channel color range', geometry.colorRange?.min === 0 && geometry.colorRange.max === 200)
+
+const shifted: TrackPoint[] = points.slice(0, 2).map((point) => ({ ...point, lon: point.lon + 0.01 }))
+const shared = buildSharedTrajectory3dGeometry([{ id: 'reference', points: points.slice(0, 2) }, { id: 'target', points: shifted }])
+check('Shared geometry uses one common origin', shared.tracks.length === 2 && shared.tracks[0]!.geometry.origin.lonDeg === shared.tracks[1]!.geometry.origin.lonDeg)
+check('Shared geometry preserves offset between tracks', shared.tracks[1]!.geometry.vertices[0]!.eastM > 800)
 
 const withInvalid: TrackPoint[] = [{ lat: 100, lon: 0 }, ...points.slice(0, 2)]
 const filtered = buildTrajectory3dGeometry(withInvalid)

@@ -36,6 +36,22 @@ export interface Trajectory3dGeometry {
   colorRange?: { min: number; max: number }
 }
 
+export interface SharedTrajectory3dGeometry {
+  origin: GeodeticCoordinate
+  tracks: Array<{ id: string; geometry: Trajectory3dGeometry }>
+}
+
+/** Builds all tracks in one explicitly shared ENU frame; callers must compatibility-gate metadata first. */
+export function buildSharedTrajectory3dGeometry(
+  tracks: ReadonlyArray<{ id: string; points: readonly TrackPoint[] }>,
+  options: Omit<Trajectory3dOptions, 'origin'> = {},
+): SharedTrajectory3dGeometry {
+  const firstPoint = tracks.flatMap((track) => track.points).find((point) => isValidLat(point.lat) && isValidLon(point.lon))
+  if (!firstPoint) throw new Error('Shared 3D trajectory requires at least one valid coordinate')
+  const origin = { latDeg: firstPoint.lat, lonDeg: firstPoint.lon, heightM: firstPoint.ele ?? 0 }
+  return { origin, tracks: tracks.map((track) => ({ id: track.id, geometry: buildTrajectory3dGeometry(track.points, { ...options, origin }) })) }
+}
+
 export function buildTrajectory3dGeometry(
   points: readonly TrackPoint[],
   options: Trajectory3dOptions = {},
