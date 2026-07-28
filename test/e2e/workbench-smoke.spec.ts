@@ -18,6 +18,7 @@ test('primary local-first workflow: import, inspect, transform, save/open, and e
   await expect(page.getByText('1 dataset loaded')).toBeVisible()
   await expect(page.getByText('8', { exact: true }).first()).toBeVisible()
   await expect(page.getByText(/sha256:/)).toBeVisible()
+  await expect(page.locator('.workspace')).toHaveScreenshot('imported-workspace.png', { animations: 'disabled', caret: 'hide', maxDiffPixels: 20 })
 
   await page.getByRole('button', { name: 'Table', exact: true }).click()
   await expect(page.getByText('8 / 8 rows')).toBeVisible()
