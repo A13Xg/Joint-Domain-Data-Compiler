@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { Dataset } from '../core/model'
-import { alignTracksByNearestTime, deriveRelativePosition, type RelativePointSample } from '../core/analytics/relative'
+import { alignTracksByInterpolation, alignTracksByNearestTime, deriveInterpolatedRelativePosition, deriveRelativePosition, type RelativePointSample } from '../core/analytics/relative'
 import { assessDatasetCompatibility } from '../core/metadataCompatibility'
 import type { WorkspaceState } from '../state/workspace'
 
@@ -18,7 +18,7 @@ interface ComparisonResult {
 export function ComparisonPanel({ datasets, activeId, workspace, onWorkspaceChange, onSelectReferenceSample }: { datasets: Dataset[]; activeId: string | null; workspace: WorkspaceState['comparison']; onWorkspaceChange: (next: WorkspaceState['comparison']) => void; onSelectReferenceSample: (datasetId: string, pointIndex: number) => void }) {
   const referenceId = workspace.referenceDatasetId ?? activeId ?? datasets[0]?.id ?? ''
   const targetId = workspace.targetDatasetId ?? datasets.find((dataset) => dataset.id !== referenceId)?.id ?? ''
-  const { toleranceMs, targetOffsetMs } = workspace
+  const { toleranceMs, targetOffsetMs, interpolateTarget } = workspace
 
   const result = useMemo<ComparisonResult | null>(() => {
     const reference = datasets.find((dataset) => dataset.id === referenceId)
@@ -27,8 +27,9 @@ export function ComparisonPanel({ datasets, activeId, workspace, onWorkspaceChan
     const compatibility = assessDatasetCompatibility(reference, target)
     if (compatibility.level === 'blocked') return { samples: [], error: compatibility.reasons.join(' ') }
     try {
-      const pairs = alignTracksByNearestTime(reference.points, target.points, { toleranceMs, targetTimeOffsetMs: targetOffsetMs })
-      const samples = deriveRelativePosition(reference.points, target.points, pairs)
+      const samples = interpolateTarget
+        ? deriveInterpolatedRelativePosition(reference.points, target.points, alignTracksByInterpolation(reference.points, target.points, { maxBracketGapMs: toleranceMs, targetTimeOffsetMs: targetOffsetMs }))
+        : deriveRelativePosition(reference.points, target.points, alignTracksByNearestTime(reference.points, target.points, { toleranceMs, targetTimeOffsetMs: targetOffsetMs }))
       if (samples.length === 0) return { samples, error: null }
       const ranges = samples.map((sample) => sample.slantRangeM)
       const horizontal = samples.map((sample) => sample.horizontalRangeM)
@@ -47,7 +48,7 @@ export function ComparisonPanel({ datasets, activeId, workspace, onWorkspaceChan
     } catch (error) {
       return { samples: [], error: error instanceof Error ? error.message : String(error) }
     }
-  }, [datasets, referenceId, targetId, toleranceMs, targetOffsetMs])
+  }, [datasets, referenceId, targetId, toleranceMs, targetOffsetMs, interpolateTarget])
 
   if (datasets.length < 2) return <div className="panel-empty">Load at least two datasets to compare time-aligned relative position.</div>
 
@@ -58,6 +59,7 @@ export function ComparisonPanel({ datasets, activeId, workspace, onWorkspaceChan
         <Select label="target dataset" value={targetId} onChange={(targetDatasetId) => onWorkspaceChange({ ...workspace, targetDatasetId })} datasets={datasets} />
         <NumberField label="tolerance (ms)" value={toleranceMs} min={0} onChange={(toleranceMs) => onWorkspaceChange({ ...workspace, toleranceMs })} />
         <NumberField label="target offset (ms)" value={targetOffsetMs} onChange={(targetOffsetMs) => onWorkspaceChange({ ...workspace, targetOffsetMs })} />
+        <label className="chk"><input type="checkbox" checked={interpolateTarget} onChange={(event) => onWorkspaceChange({ ...workspace, interpolateTarget: event.target.checked })} />interpolate target positions</label>
       </div>
       {referenceId === targetId && <div className="warn-line">Choose two different datasets.</div>}
       {result?.error && <div className="error-line">{result.error}</div>}
@@ -73,7 +75,7 @@ export function ComparisonPanel({ datasets, activeId, workspace, onWorkspaceChan
             <Metric label="mean closure rate" value={result.meanClosure === undefined ? 'n/a' : `${format(result.meanClosure)} m/s`} />
           </div>
           {result.closest && <div className="analysis-summary mono">Closest approach at reference index {result.closest.referenceIndex}, target index {result.closest.targetIndex}: bearing {format(result.closest.bearingDeg)}°, Δt {format(result.closest.deltaTimeMs)} ms, vertical separation {format(result.closest.relativeUpM)} m.</div>}
-          <div className="compact-table"><table><thead><tr><th>Ref</th><th>Target</th><th>Δt ms</th><th>Slant m</th><th>Horizontal m</th><th>Bearing°</th><th>Up m</th><th>Closure m/s</th></tr></thead><tbody>{result.samples.slice(0, 250).map((sample) => <tr key={`${sample.referenceIndex}-${sample.targetIndex}`}><td><button type="button" className="link-button" aria-label={`Select reference point ${sample.referenceIndex}`} onClick={() => onSelectReferenceSample(referenceId, sample.referenceIndex)}>{sample.referenceIndex}</button></td><td>{sample.targetIndex}</td><td>{format(sample.deltaTimeMs)}</td><td>{format(sample.slantRangeM)}</td><td>{format(sample.horizontalRangeM)}</td><td>{format(sample.bearingDeg)}</td><td>{format(sample.relativeUpM)}</td><td>{sample.closureRateMps === undefined ? '' : format(sample.closureRateMps)}</td></tr>)}</tbody></table></div>
+          <div className="compact-table"><table><thead><tr><th>Ref</th><th>Target</th><th>Kind</th><th>Δt ms</th><th>Slant m</th><th>Horizontal m</th><th>Bearing°</th><th>Up m</th><th>Closure m/s</th></tr></thead><tbody>{result.samples.slice(0, 250).map((sample) => <tr key={`${sample.referenceIndex}-${sample.targetIndex}`}><td><button type="button" className="link-button" aria-label={`Select reference point ${sample.referenceIndex}`} onClick={() => onSelectReferenceSample(referenceId, sample.referenceIndex)}>{sample.referenceIndex}</button></td><td>{sample.targetIndex}</td><td>{sample.derived ? 'interpolated' : 'observed'}</td><td>{format(sample.deltaTimeMs)}</td><td>{format(sample.slantRangeM)}</td><td>{format(sample.horizontalRangeM)}</td><td>{format(sample.bearingDeg)}</td><td>{format(sample.relativeUpM)}</td><td>{sample.closureRateMps === undefined ? '' : format(sample.closureRateMps)}</td></tr>)}</tbody></table></div>
           {result.samples.length > 250 && <div className="muted small">Showing the first 250 aligned samples.</div>}
         </>
       )}

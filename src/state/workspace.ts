@@ -6,7 +6,7 @@ export interface WorkspaceState {
   lastWorkspaceTab: WorkspaceTab
   map: { basemap: 'osm' | 'none'; maxGapMinutes: number; displayMode: 'both' | 'path' | 'points'; colorBy: string }
   scene3d: { projection: 'perspective' | 'orthographic'; altitudeExaggeration: number; gapThresholdSeconds: number }
-  comparison: { referenceDatasetId: string | null; targetDatasetId: string | null; toleranceMs: number; targetOffsetMs: number }
+  comparison: { referenceDatasetId: string | null; targetDatasetId: string | null; toleranceMs: number; targetOffsetMs: number; interpolateTarget: boolean }
   mapOverlays: MapOverlayState
 }
 
@@ -14,7 +14,7 @@ export const DEFAULT_WORKSPACE_STATE: WorkspaceState = {
   lastWorkspaceTab: 'overview',
   map: { basemap: 'osm', maxGapMinutes: 5, displayMode: 'both', colorBy: 'none' },
   scene3d: { projection: 'perspective', altitudeExaggeration: 1, gapThresholdSeconds: 3 },
-  comparison: { referenceDatasetId: null, targetDatasetId: null, toleranceMs: 1000, targetOffsetMs: 0 },
+  comparison: { referenceDatasetId: null, targetDatasetId: null, toleranceMs: 1000, targetOffsetMs: 0, interpolateTarget: false },
   mapOverlays: DEFAULT_MAP_OVERLAY_STATE,
 }
 
@@ -29,7 +29,7 @@ export function normalizeWorkspaceState(value: unknown, datasetIds: ReadonlySet<
     lastWorkspaceTab: isWorkspaceTab(record.lastWorkspaceTab) ? record.lastWorkspaceTab : DEFAULT_WORKSPACE_STATE.lastWorkspaceTab,
     map: { basemap: map.basemap === 'none' ? 'none' : 'osm', maxGapMinutes: bounded(map.maxGapMinutes, 0, 1440, DEFAULT_WORKSPACE_STATE.map.maxGapMinutes), displayMode: map.displayMode === 'path' || map.displayMode === 'points' ? map.displayMode : 'both', colorBy: typeof map.colorBy === 'string' ? map.colorBy : 'none' },
     scene3d: { projection: scene3d.projection === 'orthographic' ? 'orthographic' : 'perspective', altitudeExaggeration: bounded(scene3d.altitudeExaggeration, 0.1, 100, 1), gapThresholdSeconds: bounded(scene3d.gapThresholdSeconds, 0, 86400, 3) },
-    comparison: { referenceDatasetId, targetDatasetId: targetDatasetId === referenceDatasetId ? null : targetDatasetId, toleranceMs: bounded(comparison.toleranceMs, 0, 86_400_000, 1000), targetOffsetMs: bounded(comparison.targetOffsetMs, -86_400_000, 86_400_000, 0) },
+    comparison: { referenceDatasetId, targetDatasetId: targetDatasetId === referenceDatasetId ? null : targetDatasetId, toleranceMs: bounded(comparison.toleranceMs, 0, 86_400_000, 1000), targetOffsetMs: bounded(comparison.targetOffsetMs, -86_400_000, 86_400_000, 0), interpolateTarget: comparison.interpolateTarget === true },
     mapOverlays: normalizeMapOverlayState(record.mapOverlays),
   }
 }
