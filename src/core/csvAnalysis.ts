@@ -435,6 +435,13 @@ export function analyzeRawRows(
     rowCountSampled: dataRows.length,
     dataStartRow,
     sampleRows: normalizeRows(dataRows, columns),
+    rawPreviewRows: rawRows.slice(0, 20).map((row) => [...row]),
+    headerInference: {
+      confidence: rawRows.length < 3 ? 'low' : dataStartRow === 0 ? 'medium' : 'high',
+      reason: dataStartRow === 0
+        ? 'Leading rows look data-like, so no header row was inferred.'
+        : `${dataStartRow} leading row${dataStartRow === 1 ? '' : 's'} looked less numeric than the sampled data rows.`,
+    },
     columns,
   }
 }

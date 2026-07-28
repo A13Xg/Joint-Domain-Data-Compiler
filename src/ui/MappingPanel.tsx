@@ -59,10 +59,10 @@ export function MappingPanel({ analysis, mapping, onChange, additionalHeaders, o
       </div>
 
       <details className="csv-preview">
-        <summary>Preview first {Math.min(20, rows.length)} sampled rows</summary>
-        <p className="muted small">Values are shown exactly as sampled. Header interpretation only changes how columns are named and mapped; it never changes the source file.</p>
-        <div className="compact-table"><table><thead><tr>{columns.map((column) => <th key={column.index}>{column.name}</th>)}</tr></thead><tbody>
-          {rows.slice(0, 20).map((row, index) => <tr key={index}>{columns.map((column) => <td key={column.index}>{row[column.name] ?? ''}</td>)}</tr>)}
+        <summary>Preview first {analysis.rawPreviewRows.length} physical rows</summary>
+        <p className="muted small">Values are shown exactly as sampled, including row one. Header interpretation only changes how columns are named and mapped; it never changes the source file.</p>
+        <div className="compact-table"><table><thead><tr><th>row</th>{columns.map((column) => <th key={column.index}>Column {column.index + 1}</th>)}</tr></thead><tbody>
+          {analysis.rawPreviewRows.map((row, index) => <tr key={index}><th>{index + 1}</th>{columns.map((column) => <td key={column.index}>{row[column.index] ?? ''}</td>)}</tr>)}
         </tbody></table></div>
       </details>
 
@@ -74,7 +74,7 @@ export function MappingPanel({ analysis, mapping, onChange, additionalHeaders, o
         />
         <span>Header interpretation override</span>
         <span className="muted small">
-          {' '}— automatic analysis selected {analysis.dataStartRow} leading header row{analysis.dataStartRow === 1 ? '' : 's'}; enable to include additional unit/label rows in column labels.
+          {' '}— automatic analysis selected {analysis.dataStartRow} leading header row{analysis.dataStartRow === 1 ? '' : 's'} with {analysis.headerInference.confidence} confidence: {analysis.headerInference.reason}
         </span>
       </label>
       <label className="header-compat-toggle">

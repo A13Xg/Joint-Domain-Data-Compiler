@@ -48,10 +48,17 @@ export interface DetectedColumn {
 
 export type CsvSampleRow = Record<string, string>
 
+export interface CsvHeaderInference {
+  confidence: 'high' | 'medium' | 'low'
+  reason: string
+}
+
 export interface CsvAnalysisResult {
   delimiter: string
   rowCountSampled: number
   dataStartRow: number
   sampleRows: CsvSampleRow[]
+  rawPreviewRows: string[][]
+  headerInference: CsvHeaderInference
   columns: DetectedColumn[]
 }
