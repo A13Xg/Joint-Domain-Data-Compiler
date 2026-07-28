@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { normalizeCsvAnalysisResult } from '../src/core/csvContract'
+import { analyzeRawRows } from '../src/core/csvAnalysis'
 
 const normalized = normalizeCsvAnalysisResult({
   delimiter: ',',
@@ -22,6 +23,23 @@ const previewed = normalizeCsvAnalysisResult({
 })
 assert.deepEqual(previewed.rawPreviewRows, [['Latitude'], ['34.5']])
 assert.equal(previewed.headerInference.confidence, 'high')
+const analyzed = analyzeRawRows([
+  ['Latitude', 'Longitude'],
+  ['degrees_north', 'degrees_east'],
+  ['34.5', '-117.2'],
+  ['34.6', '-117.3'],
+], ',', 'auto')
+assert.equal(analyzed.dataStartRow, 2)
+assert.equal(analyzed.headerInference.confidence, 'high')
+assert.deepEqual(analyzed.rawPreviewRows, [
+  ['Latitude', 'Longitude'],
+  ['degrees_north', 'degrees_east'],
+  ['34.5', '-117.2'],
+  ['34.6', '-117.3'],
+])
+const overridden = analyzeRawRows(analyzed.rawPreviewRows, ',', 1)
+assert.equal(overridden.dataStartRow, 1)
+assert.equal(overridden.sampleRows[0]?.Latitude, 'degrees_north')
 assert.throws(() => normalizeCsvAnalysisResult({ columns: null }), /columns array/)
 assert.throws(() => normalizeCsvAnalysisResult({ columns: [] }), /no detectable columns/)
 console.log('CSV analysis contract tests passed')
