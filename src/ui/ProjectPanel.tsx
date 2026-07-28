@@ -42,6 +42,9 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [diagnosticNote, setDiagnosticNote] = useState('')
+  const [reportTitle, setReportTitle] = useState('')
+  const [reportFilename, setReportFilename] = useState('')
+  const [reportOptions, setReportOptions] = useState({ includeQualityEvents: true, includeWarnings: true, includeOperations: true, includeBookmarks: true })
   const activeDataset = datasets.find((dataset) => dataset.id === activeId) ?? null
   const activeSelection = usePointSelection(activeDataset?.points ?? EMPTY_POINTS)
 
@@ -87,15 +90,18 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
   }
 
   const exportReport = () => {
+    const title = reportTitle.trim() || `${manifest.name} — Analysis Report`
+    const filename = safeName(reportFilename.trim() || `${manifest.name}-report`)
     const html = buildHtmlAnalysisReport({
-      title: `${manifest.name} — Analysis Report`,
+      title,
       generatedAt: Date.now(),
       applicationVersion: '0.1.0',
       datasets,
       bookmarks,
       operationRecords,
+      options: reportOptions,
     })
-    downloadBlob(new Blob([html], { type: 'text/html' }), `${safeName(manifest.name)}-report.html`)
+    downloadBlob(new Blob([html], { type: 'text/html' }), `${filename}.html`)
     setStatus('Exported a self-contained HTML analysis report. Open it in a browser to print or save as PDF.')
   }
 
@@ -162,6 +168,15 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
         <input ref={inputRef} className="hidden-input" type="file" accept=".jddc-project,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void openProject(file); event.target.value = '' }} />
       </div>
       <p className="muted small">A <code>.jddc-project</code> file is a self-contained, gzip-compressed workspace archive. It embeds current datasets, semantic metadata, undo/redo snapshots, the active dataset and tab, and point/range selection. The manifest remains versioned and fingerprint-verified during restore.</p>
+      <details className="analysis-summary">
+        <summary>HTML report options</summary>
+        <div className="field-grid">
+          <label className="field"><span>Visible report title</span><input value={reportTitle} placeholder={`${manifest.name} — Analysis Report`} onChange={(event) => setReportTitle(event.target.value)} /></label>
+          <label className="field"><span>Download filename</span><input value={reportFilename} placeholder={`${safeName(manifest.name)}-report`} onChange={(event) => setReportFilename(event.target.value)} /></label>
+        </div>
+        <p className="muted small">Filename characters are sanitized independently from the visible title. Disabled evidence categories are omitted from the generated report.</p>
+        {(['includeQualityEvents', 'includeWarnings', 'includeOperations', 'includeBookmarks'] as const).map((key) => <label className="header-compat-toggle" key={key}><input type="checkbox" checked={reportOptions[key]} onChange={(event) => setReportOptions((current) => ({ ...current, [key]: event.target.checked }))} />{key.replace('include', 'Include ')}</label>)}
+      </details>
       <div className="metric-grid">
         <Metric label="loaded datasets" value={summary.datasets.toLocaleString()} />
         <Metric label="current points" value={summary.currentPoints.toLocaleString()} />

@@ -72,6 +72,7 @@ const minimalHtml = buildHtmlAnalysisReport({
   options: { includeQualityEvents: false, includeWarnings: false, includeOperations: false, includeBookmarks: false },
 })
 check('Omits disabled evidence sections', !minimalHtml.includes('Quality events</h3>') && !minimalHtml.includes('Import warnings</h3>') && !minimalHtml.includes('Transform history</h3>') && !minimalHtml.includes('Bookmarks</h3>'))
+check('Discloses omitted evidence categories', minimalHtml.includes('Omitted categories: quality events, import warnings, transform history, bookmarks.'))
 
 console.log(`\n${failures === 0 ? 'ALL HTML REPORT CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)

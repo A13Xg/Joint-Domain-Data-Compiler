@@ -23,6 +23,15 @@ export interface HtmlAnalysisReportOptions {
 
 export function buildHtmlAnalysisReport(input: HtmlAnalysisReportInput): string {
   const options: Required<HtmlAnalysisReportOptions> = { includeQualityEvents: true, includeWarnings: true, includeOperations: true, includeBookmarks: true, ...input.options }
+  const omittedCategories = [
+    !options.includeQualityEvents ? 'quality events' : null,
+    !options.includeWarnings ? 'import warnings' : null,
+    !options.includeOperations ? 'transform history' : null,
+    !options.includeBookmarks ? 'bookmarks' : null,
+  ].filter((category): category is string => category !== null)
+  const scopeDisclosure = omittedCategories.length
+    ? `Omitted categories: ${omittedCategories.join(', ')}.`
+    : 'All standard evidence categories are included.'
   const title = input.title.trim() || 'JDDC Analysis Report'
   const totalPoints = input.datasets.reduce((sum, dataset) => sum + dataset.points.length, 0)
   const totalEvents = input.datasets.reduce((sum, dataset) => sum + detectQualityEvents(dataset.points).length, 0)
@@ -94,7 +103,7 @@ td{color:#26372f;background:#fffef8;overflow-wrap:anywhere}
 <header class="report-header">
   <div class="eyebrow">Joint Domain Data Compiler / Analysis Report</div>
   <h1>${escapeHtml(title)}</h1>
-  <p class="lede">A local, evidence-based snapshot of loaded trajectory data, source references, quality signals, bookmarks, and recorded transformations. Verify conclusions against source data and metadata.</p>
+  <p class="lede">A local, evidence-based snapshot of loaded trajectory data, source references, quality signals, bookmarks, and recorded transformations. ${escapeHtml(scopeDisclosure)} Verify conclusions against source data and metadata.</p>
   <div class="status-rail">
     <div class="status-item"><span class="status-label">Generated</span><span class="status-value">${escapeHtml(formatDate(input.generatedAt))}</span></div>
     <div class="status-item"><span class="status-label">Application</span><span class="status-value">JDDC ${escapeHtml(input.applicationVersion)}</span></div>
