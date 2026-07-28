@@ -45,7 +45,7 @@ test('primary local-first workflow: import, inspect, transform, save/open, and e
 
   await page.getByRole('button', { name: 'Project', exact: true }).click()
   await expect(page.getByText('Unsaved changes')).toBeVisible()
-  await page.getByPlaceholder(/real-usgs/).fill('browser-smoke')
+  await page.getByRole('textbox', { name: 'project name' }).fill('browser-smoke')
   const projectDownload = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Save complete project' }).click()
   const project = await projectDownload
