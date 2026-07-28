@@ -29,13 +29,13 @@ function fuseConfigForPlatform(platform) {
 function packagedExecutablePath(context) {
   const productFilename = context.packager.appInfo.productFilename
   if (context.electronPlatformName === 'darwin') {
-    return path.join(context.appOutDir, `${productFilename}.app`, 'Contents', 'MacOS', productFilename)
+    return path.posix.join(context.appOutDir, `${productFilename}.app`, 'Contents', 'MacOS', productFilename)
   }
   if (context.electronPlatformName === 'win32') {
-    return path.join(context.appOutDir, `${productFilename}.exe`)
+    return path.win32.join(context.appOutDir, `${productFilename}.exe`)
   }
   const executableName = context.packager.executableName || productFilename
-  return path.join(context.appOutDir, executableName)
+  return path.posix.join(context.appOutDir, executableName)
 }
 
 async function applyElectronFuses(context) {

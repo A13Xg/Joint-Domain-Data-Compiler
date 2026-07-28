@@ -32,7 +32,7 @@ import type { ProjectArchive, ProjectDatasetHistory } from './persistence/projec
 import type { ProjectBookmark } from './persistence/project/manifest'
 import { operationRecordsFromManifest } from './persistence/project/manifest'
 import { parseKml } from './core/parsers/kml'
-import { isDesktopKmlLibraryAvailable, saveKmlLibraryFile } from './desktop/kmlLibrary'
+import { isDesktopKmlLibraryAvailable, readKmlLibraryText, saveKmlLibraryFile } from './desktop/kmlLibrary'
 import { insertDataset } from './core/ids'
 import { DEFAULT_WORKSPACE_STATE, normalizeWorkspaceState, type WorkspaceState } from './state/workspace'
 import { ensureBuiltinDerivationsRegistered } from './core/analytics/bootstrap'
@@ -41,10 +41,10 @@ import type { OperationRecord } from './core/recipes/model'
 
 ensureBuiltinDerivationsRegistered()
 
-export type Tab = 'import' | 'mapping' | 'overview' | 'map' | 'charts' | 'table' | 'compare' | 'scene3d' | 'transform' | 'project' | 'kmlLibrary' | 'export' | 'sources' | 'fusion'
+export type Tab = 'import' | 'mapping' | 'overview' | 'map' | 'charts' | 'table' | 'compare' | 'scene3d' | 'transform' | 'project' | 'export' | 'sources' | 'fusion'
 
 type History = ProjectDatasetHistory
-interface PendingCsv { file: File; analysis: CsvAnalysisResult; mapping: CsvMapping; additionalHeaders: boolean }
+interface PendingCsv { file: File; analysis: CsvAnalysisResult; mapping: CsvMapping; additionalHeaders: boolean; dataStartRow: number }
 const CSV_SAMPLE_LIMIT = 5000
 
 function slugify(text: string): string {
@@ -90,6 +90,7 @@ export default function App() {
   if (syncedDisplay !== datasetDisplay) setDatasetDisplay(syncedDisplay)
   const [tab, setTab] = useState<Tab>('import')
   const [workspace, setWorkspace] = useState<WorkspaceState>(DEFAULT_WORKSPACE_STATE)
+  const [mapOverlayTracks, setMapOverlayTracks] = useState<OtherTrack[]>([])
   const [busy, setBusy] = useState<string | null>(null)
   const [progress, setProgress] = useState<number | null>(null)
   const [pendingCsv, setPendingCsv] = useState<PendingCsv | null>(null)
@@ -118,6 +119,23 @@ export default function App() {
     window.addEventListener('beforeunload', warnBeforeUnload)
     return () => window.removeEventListener('beforeunload', warnBeforeUnload)
   }, [projectDirty])
+
+  useEffect(() => {
+    if (!isDesktopKmlLibraryAvailable()) return
+    let cancelled = false
+    const overlayRefs = workspace.mapOverlays.overlays.filter((overlay) => overlay.sourceKind === 'library' && overlay.status !== 'missing')
+    void Promise.all(overlayRefs.map(async (overlay) => {
+      try {
+        const source = await readKmlLibraryText(overlay.sourceKey)
+        return { id: overlay.id, name: overlay.name, color: '#7c3aed', points: parseKml(source.text).points } satisfies OtherTrack
+      } catch {
+        return null
+      }
+    })).then((loaded) => {
+      if (!cancelled) setMapOverlayTracks(loaded.filter((track): track is OtherTrack => track !== null))
+    })
+    return () => { cancelled = true }
+  }, [workspace.mapOverlays])
 
   const flashToast = useCallback((message: string) => {
     setToast(message)
@@ -160,7 +178,7 @@ export default function App() {
       } else if (message.type === 'complete') {
         const analysis = message.payload as CsvAnalysisResult
         logger.success('import', `Analyzed ${file.name}: ${analysis.columns.length} columns`)
-        setPendingCsv({ file, analysis, mapping: defaultMapping(analysis), additionalHeaders: false })
+        setPendingCsv({ file, analysis, mapping: defaultMapping(analysis), additionalHeaders: false, dataStartRow: analysis.dataStartRow })
         setBusy(null); setProgress(null); setTab('mapping'); worker.terminate()
       }
     }
@@ -179,7 +197,7 @@ export default function App() {
       // alongside it.
       const result = await logger.time('import', `Streaming CSV parse ${pendingCsv.file.name}`, () => streamCsvFileToPoints(
         pendingCsv.file, pendingCsv.analysis.delimiter, pendingCsv.analysis.columns.map((column) => column.name),
-        pendingCsv.analysis.dataStartRow, pendingCsv.mapping,
+        pendingCsv.dataStartRow, pendingCsv.mapping,
         {
           onProgress: (fraction) => setProgress(fraction * 100),
           isCancelled: () => cancelCsvRef.current,
@@ -213,30 +231,6 @@ export default function App() {
 
   const cancelCsvBuild = useCallback(() => { cancelCsvRef.current = true }, [])
 
-  const ingestFile = useCallback(async (file: File) => {
-    const ext = file.name.toLowerCase().split('.').pop() ?? ''
-    if ((ext === 'kml' || ext === 'kmz') && isDesktopKmlLibraryAvailable()) {
-      try {
-        await saveKmlLibraryFile(file)
-        logger.success('import', `Saved ${file.name} to persistent KML/KMZ library`)
-      } catch (error) {
-        logger.warn('import', `Could not save ${file.name} to KML/KMZ library: ${(error as Error).message}`)
-      }
-    }
-    if (ext === 'kmz') {
-      flashToast(isDesktopKmlLibraryAvailable() ? `${file.name} saved to KML/KMZ library; open it from the KML/KMZ tab.` : 'KMZ import requires the Electron desktop KML/KMZ library.')
-      setTab('kmlLibrary')
-      return
-    }
-    const format = detectFormat(file.name)
-    if (!format) { logger.error('import', `Unsupported file type: ${file.name}`); flashToast(`Unsupported file type: ${file.name}`); return }
-    if (format.needsMapping) { analyzeCsv(file); return }
-    setBusy(`Parsing ${file.name}`); setProgress(null)
-    try { addDataset(await parseFileToDataset(file, format)) }
-    catch (error) { logger.error('import', `Failed to parse ${file.name}: ${(error as Error).message}`); flashToast(`Failed to parse ${file.name}: ${(error as Error).message}`) }
-    finally { setBusy(null) }
-  }, [analyzeCsv, addDataset, flashToast])
-
   const importKmlText = useCallback(async (name: string, text: string, sourceBytes?: number) => {
     try {
       const result = parseKml(text)
@@ -251,6 +245,58 @@ export default function App() {
       flashToast(`Failed to parse ${name}: ${(error as Error).message}`)
     }
   }, [addDataset, flashToast])
+
+  const addKmlMapOverlay = useCallback((name: string, text: string) => {
+    try {
+      const result = parseKml(text)
+      const id = `kml-overlay:${name}`
+      setMapOverlayTracks((current) => [...current.filter((track) => track.id !== id), { id, name, color: '#7c3aed', points: result.points }])
+      setWorkspace((current) => ({
+        ...current,
+        mapOverlays: {
+          overlays: [...current.mapOverlays.overlays.filter((overlay) => overlay.sourceKey !== name), { id, sourceKind: 'library', sourceKey: name, name, visible: true, opacity: 0.8, zIndex: current.mapOverlays.overlays.length, status: 'ready' }],
+        },
+      }))
+      setProjectDirty(true)
+      setTab('map')
+    } catch (error) {
+      logger.error('map', `Failed to load KML/KMZ overlay ${name}: ${(error as Error).message}`)
+      flashToast(`Could not add overlay ${name}: ${(error as Error).message}`)
+    }
+  }, [flashToast])
+
+  const ingestFile = useCallback(async (file: File) => {
+    const ext = file.name.toLowerCase().split('.').pop() ?? ''
+    if ((ext === 'kml' || ext === 'kmz') && isDesktopKmlLibraryAvailable()) {
+      try {
+        await saveKmlLibraryFile(file)
+        logger.success('import', `Saved ${file.name} to persistent KML/KMZ library`)
+      } catch (error) {
+        logger.warn('import', `Could not save ${file.name} to KML/KMZ library: ${(error as Error).message}`)
+      }
+    }
+    if (ext === 'kmz') {
+      if (!isDesktopKmlLibraryAvailable()) {
+        flashToast('KMZ import requires the Electron desktop KML/KMZ library.')
+        return
+      }
+      try {
+        const result = await readKmlLibraryText(file.name)
+        await importKmlText(file.name, result.text, file.size)
+      } catch (error) {
+        logger.error('import', `Failed to read ${file.name} from the KML/KMZ library: ${(error as Error).message}`)
+        flashToast(`KMZ import failed: ${(error as Error).message}`)
+      }
+      return
+    }
+    const format = detectFormat(file.name)
+    if (!format) { logger.error('import', `Unsupported file type: ${file.name}`); flashToast(`Unsupported file type: ${file.name}`); return }
+    if (format.needsMapping) { analyzeCsv(file); return }
+    setBusy(`Parsing ${file.name}`); setProgress(null)
+    try { addDataset(await parseFileToDataset(file, format)) }
+    catch (error) { logger.error('import', `Failed to parse ${file.name}: ${(error as Error).message}`); flashToast(`Failed to parse ${file.name}: ${(error as Error).message}`) }
+    finally { setBusy(null) }
+  }, [analyzeCsv, addDataset, flashToast, importKmlText])
 
   const onFiles = useCallback((files: FileList | null) => { if (files) for (const file of Array.from(files)) void ingestFile(file) }, [ingestFile])
 
@@ -352,17 +398,16 @@ export default function App() {
     { id: 'charts', label: 'Charts', enabled: !!active }, { id: 'table', label: 'Table', enabled: !!active },
     { id: 'compare', label: 'Compare', enabled: datasets.length >= 2 }, { id: 'scene3d', label: '3D', enabled: !!active },
     { id: 'transform', label: 'Transform', enabled: !!active }, { id: 'project', label: 'Project', enabled: datasets.length > 0 },
-    { id: 'kmlLibrary', label: 'KML/KMZ', enabled: true },
     { id: 'export', label: 'Export', enabled: !!active },
     { id: 'sources', label: 'Sources', enabled: datasets.length > 0 },
     { id: 'fusion', label: 'Fusion', enabled: datasets.length >= 2 },
   ]
 
-  const otherTracks: OtherTrack[] = active
+  const otherTracks: OtherTrack[] = (active
     ? datasets
       .filter((dataset) => dataset.id !== active.id && (syncedDisplay[dataset.id]?.visible ?? true))
       .map((dataset) => ({ id: dataset.id, name: dataset.name, color: syncedDisplay[dataset.id]?.color ?? '#475569', points: dataset.points }))
-    : []
+    : []).concat(mapOverlayTracks.filter((track) => workspace.mapOverlays.overlays.find((overlay) => overlay.id === track.id)?.visible ?? true))
 
   return (
     <div className="app">
@@ -379,16 +424,16 @@ export default function App() {
           <section className="tab-content">
             {progress !== null && <div className="global-progress"><ProgressBar value={progress} label={busy ?? 'Working'} />{building && <button type="button" onClick={cancelCsvBuild}>Cancel</button>}</div>}
             {tab === 'import' && <ImportView dragActive={dragActive} setDragActive={setDragActive} onFiles={onFiles} openPicker={() => fileInputRef.current?.click()} />}
-            {tab === 'mapping' && pendingCsv && <MappingPanel analysis={pendingCsv.analysis} mapping={pendingCsv.mapping} onChange={(mapping) => setPendingCsv((current) => current ? { ...current, mapping } : current)} additionalHeaders={pendingCsv.additionalHeaders} onToggleAdditionalHeaders={(additionalHeaders) => setPendingCsv((current) => current ? { ...current, additionalHeaders } : current)} onBuild={buildCsvDataset} building={building} />}
+            {tab === 'mapping' && pendingCsv && <MappingPanel analysis={pendingCsv.analysis} mapping={pendingCsv.mapping} onChange={(mapping) => setPendingCsv((current) => current ? { ...current, mapping } : current)} additionalHeaders={pendingCsv.additionalHeaders} onToggleAdditionalHeaders={(additionalHeaders) => setPendingCsv((current) => current ? { ...current, additionalHeaders } : current)} dataStartRow={pendingCsv.dataStartRow} onDataStartRowChange={(dataStartRow) => setPendingCsv((current) => current ? { ...current, dataStartRow } : current)} onBuild={buildCsvDataset} building={building} />}
             {tab === 'overview' && active && <StatsPanel dataset={active} bookmarks={bookmarks} onBookmarksChange={(next) => { setBookmarks(next); setProjectDirty(true) }} />}
-            {tab === 'map' && active && <MapView points={active.points} channels={active.channels} workspace={workspace.map} onWorkspaceChange={(map) => { setWorkspace((current) => ({ ...current, map })); setProjectDirty(true) }} otherTracks={otherTracks} />}
+            {tab === 'map' && active && <><KmlLibraryPanel onImportKmlText={importKmlText} onAddMapOverlay={addKmlMapOverlay} /><MapView points={active.points} channels={active.channels} workspace={workspace.map} onWorkspaceChange={(map) => { setWorkspace((current) => ({ ...current, map })); setProjectDirty(true) }} otherTracks={otherTracks} /></>}
             {tab === 'charts' && active && <TimeSeriesChart points={active.points} channels={active.channels} />}
             {tab === 'table' && active && <DataTable points={active.points} channels={active.channels} />}
             {tab === 'compare' && <ComparisonPanel datasets={datasets} activeId={activeId} workspace={workspace.comparison} onWorkspaceChange={(comparison) => { setWorkspace((current) => ({ ...current, comparison })); setProjectDirty(true) }} />}
             {tab === 'scene3d' && active && <Trajectory3dPanel dataset={active} workspace={workspace.scene3d} onWorkspaceChange={(scene3d) => { setWorkspace((current) => ({ ...current, scene3d })); setProjectDirty(true) }} />}
             {tab === 'transform' && active && <><TransformPanel dataset={active} onApply={applyTransform} onUndo={undo} onRedo={redo} canUndo={!!history && history.past.length > 0} canRedo={!!history && history.future.length > 0} operationHistory={operationRecords[active.id] ?? []} /><NotionalSmoothingPanel dataset={active} onCreateDataset={addDataset} /></>}
             {tab === 'project' && <ProjectPanel datasets={datasets} histories={histories} activeId={activeId} activeTab={workspace.lastWorkspaceTab} workspace={workspace} datasetDisplay={syncedDisplay} bookmarks={bookmarks} operationRecords={operationRecords} projectName={projectName} projectDirty={projectDirty} onProjectNameChange={(name) => { setProjectName(name); setProjectDirty(true) }} onProjectSaved={() => setProjectDirty(false)} onRestoreProject={restoreProject} />}
-            {tab === 'kmlLibrary' && <KmlLibraryPanel onImportKmlText={importKmlText} />}
+
             {tab === 'export' && active && <ExportPanel dataset={active} />}
             {tab === 'sources' && <SourcesPanel datasets={datasets} activeId={activeId} display={syncedDisplay} onDisplayChange={(next) => { setDatasetDisplay(next); setProjectDirty(true) }} onSelectActive={setActiveId} />}
             {tab === 'fusion' && <FusionPanel datasets={datasets} onCreateDataset={addDataset} />}
@@ -402,9 +447,9 @@ export default function App() {
 }
 
 function isTab(value: unknown): value is Tab {
-  return typeof value === 'string' && ['import', 'mapping', 'overview', 'map', 'charts', 'table', 'compare', 'scene3d', 'transform', 'project', 'kmlLibrary', 'export'].includes(value)
+  return typeof value === 'string' && ['import', 'mapping', 'overview', 'map', 'charts', 'table', 'compare', 'scene3d', 'transform', 'project', 'export'].includes(value)
 }
 
-function isWorkspaceTab(tab: Tab): tab is Exclude<Tab, 'import' | 'mapping' | 'project' | 'kmlLibrary' | 'export' | 'sources' | 'fusion'> {
+function isWorkspaceTab(tab: Tab): tab is Exclude<Tab, 'import' | 'mapping' | 'project' | 'export' | 'sources' | 'fusion'> {
   return ['overview', 'map', 'charts', 'table', 'compare', 'scene3d', 'transform'].includes(tab)
 }

@@ -6,6 +6,10 @@ assert.deepEqual(normalizeWorkspaceState(undefined, datasetIds), DEFAULT_WORKSPA
 assert.equal(normalizeWorkspaceState({ lastWorkspaceTab: 'project' }, datasetIds).lastWorkspaceTab, 'overview')
 assert.equal(normalizeWorkspaceState({ map: { basemap: 'bad', maxGapMinutes: -1 } }, datasetIds).map.basemap, 'osm')
 assert.equal(normalizeWorkspaceState({ comparison: { referenceDatasetId: 'a', targetDatasetId: 'missing' } }, datasetIds).comparison.targetDatasetId, null)
+assert.equal(
+  normalizeWorkspaceState({ mapOverlays: { overlays: [{ id: 'bundled:special', sourceKind: 'bundled', sourceKey: 'special.kml', name: 'Special', visible: true, opacity: 0.6, zIndex: 0 }] } }, datasetIds).mapOverlays.overlays[0]?.name,
+  'Special',
+)
 
 // Tranche 5 Task 5.3 step 1: reconciling comparison selectors when a
 // referenced dataset is removed (App.tsx's removeDataset calls

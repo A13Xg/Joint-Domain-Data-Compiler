@@ -3,7 +3,7 @@
 **Plan ID:** `JDDC-ROADMAP-2026-02`  
 **Supersedes:** `JDDC-ROADMAP-2026-01`  
 **Repository:** `A13Xg/Joint-Domain-Data-Compiler`  
-**Active execution plan:** `.hermes/plans/2026-07-26_223300-full-roadmap-execution.md`  
+**Active execution plan:** `.hermes/plans/2026-07-28_081500-consolidated-build-plan.md`
 **Authority:** This document is the canonical product and implementation roadmap.
 
 ## Product definition

@@ -12,9 +12,10 @@ import type { KmlLibraryEntry } from '../types/desktop'
 
 interface Props {
   onImportKmlText: (name: string, text: string, sourceBytes?: number) => void
+  onAddMapOverlay?: (name: string, text: string, sourceBytes?: number) => void
 }
 
-export function KmlLibraryPanel({ onImportKmlText }: Props) {
+export function KmlLibraryPanel({ onImportKmlText, onAddMapOverlay }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [entries, setEntries] = useState<KmlLibraryEntry[]>([])
   const [busy, setBusy] = useState(false)
@@ -78,6 +79,20 @@ export function KmlLibraryPanel({ onImportKmlText }: Props) {
     }
   }
 
+  const addOverlay = async (entry: KmlLibraryEntry) => {
+    if (!onAddMapOverlay) return
+    setBusy(true); setError(null)
+    try {
+      const result = await readKmlLibraryText(entry.name)
+      onAddMapOverlay(entry.name, result.text, entry.bytes)
+      setStatus(`Added ${entry.name} as a visible map overlay.`)
+    } catch (cause) {
+      setError(message(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const removeEntry = async (entry: KmlLibraryEntry) => {
     setBusy(true)
     setError(null)
@@ -119,7 +134,7 @@ export function KmlLibraryPanel({ onImportKmlText }: Props) {
                 <td>{entry.kind.toUpperCase()}</td>
                 <td>{formatBytes(entry.bytes)}</td>
                 <td>{new Date(entry.modifiedAt).toLocaleString()}</td>
-                <td><button type="button" disabled={busy} onClick={() => void importEntry(entry)}>View on map</button> <button type="button" disabled={busy} onClick={() => void removeEntry(entry)}>Remove</button></td>
+                <td><button type="button" disabled={busy} onClick={() => void importEntry(entry)}>Import as data</button>{onAddMapOverlay && <> <button type="button" disabled={busy} onClick={() => void addOverlay(entry)}>Add overlay</button></>} <button type="button" disabled={busy} onClick={() => void removeEntry(entry)}>Remove</button></td>
               </tr>
             ))}
           </tbody>

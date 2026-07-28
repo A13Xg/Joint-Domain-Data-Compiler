@@ -67,5 +67,11 @@ check('Does not emit executable script markup', !html.includes('<script>'))
 check('Escapes warning content', html.includes('warning &lt;unsafe&gt;'))
 check('Contains no classification-related wording', !/\b(?:classification|classified)\b/i.test(html))
 
+const minimalHtml = buildHtmlAnalysisReport({
+  title: 'Minimal', generatedAt: 2_000, applicationVersion: '0.1.0', datasets: [dataset], bookmarks: [], operationRecords: {},
+  options: { includeQualityEvents: false, includeWarnings: false, includeOperations: false, includeBookmarks: false },
+})
+check('Omits disabled evidence sections', !minimalHtml.includes('Quality events</h3>') && !minimalHtml.includes('Import warnings</h3>') && !minimalHtml.includes('Transform history</h3>') && !minimalHtml.includes('Bookmarks</h3>'))
+
 console.log(`\n${failures === 0 ? 'ALL HTML REPORT CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)

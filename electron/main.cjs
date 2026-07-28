@@ -2,6 +2,7 @@ const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron')
 const fs = require('fs')
 const path = require('path')
 const zlib = require('zlib')
+const { seedKmlLibrary } = require('./kml-seed.cjs')
 const {
   DEV_ORIGIN,
   IPC_CHANNELS,
@@ -65,6 +66,10 @@ function kmlLibraryDir() {
 function ensureKmlLibraryDir() {
   const dir = kmlLibraryDir()
   fs.mkdirSync(dir, { recursive: true })
+  const seedDirectory = isDev
+    ? path.resolve(process.cwd(), 'KML-KMZ')
+    : path.join(process.resourcesPath, 'kml-seed')
+  seedKmlLibrary(seedDirectory, dir)
   return dir
 }
 

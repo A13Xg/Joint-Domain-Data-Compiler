@@ -21,6 +21,7 @@ child.stderr.on('data', (chunk) => output.push(String(chunk)))
 
 try {
   const page = await waitForRenderer(port, child)
+  await assertWorkbenchMounted(page.webSocketDebuggerUrl)
   console.log(`Packaged ${process.platform} renderer launched: ${page.title}`)
 } catch (error) {
   const detail = output.join('').trim()
@@ -28,6 +29,32 @@ try {
   throw error
 } finally {
   stopPackagedApp(child)
+}
+
+async function assertWorkbenchMounted(webSocketDebuggerUrl) {
+  if (typeof webSocketDebuggerUrl !== 'string') throw new Error('Packaged renderer did not expose a DevTools WebSocket endpoint.')
+  const state = await evaluateDevTools(webSocketDebuggerUrl, `(() => {
+    const root = document.querySelector('#root')
+    return { mounted: Boolean(root && root.childElementCount > 0 && /Joint Domain Data Compiler|Import/i.test(root.textContent || '')), readyState: document.readyState, rootHtml: root?.innerHTML.slice(0, 500) ?? null, location: location.href }
+  })()`)
+  if (state?.mounted !== true) throw new Error(`Packaged renderer opened, but the JDDC React workbench did not mount into #root: ${JSON.stringify(state)}`)
+}
+
+function evaluateDevTools(url, expression) {
+  return new Promise((resolveValue, reject) => {
+    const socket = new WebSocket(url)
+    const timer = setTimeout(() => { socket.close(); reject(new Error('Timed out evaluating packaged renderer DOM.')) }, 10_000)
+    socket.addEventListener('open', () => socket.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression, returnByValue: true } })))
+    socket.addEventListener('message', (event) => {
+      const response = JSON.parse(String(event.data))
+      if (response.id !== 1) return
+      clearTimeout(timer)
+      socket.close()
+      if (response.error || response.result?.exceptionDetails) reject(new Error(`Could not evaluate packaged renderer DOM: ${JSON.stringify(response.error ?? response.result.exceptionDetails)}`))
+      else resolveValue(response.result?.result?.value)
+    })
+    socket.addEventListener('error', () => { clearTimeout(timer); reject(new Error('Could not connect to packaged renderer DevTools endpoint.')) })
+  })
 }
 
 async function defaultExecutable() {

@@ -45,6 +45,15 @@
       "electron/**",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "KML-KMZ",
+        "to": "kml-seed",
+        "filter": [
+          "Special_Use_Airspace.kml"
+        ]
+      }
+    ],
     "afterPack": "scripts/electron-fuses.cjs",
     "linux": {
       "target": [

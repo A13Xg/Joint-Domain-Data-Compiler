@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 
 const {
   DEV_ORIGIN,
@@ -34,7 +34,9 @@ check('Valid KML filename is preserved', safeLibraryName('Track 1.kml') === 'Tra
 check('Traversal is reduced to a basename', safeLibraryName('../../track.kmz') === 'track.kmz')
 check('Unsupported library extension is rejected', rejects(() => safeLibraryName('track.txt')))
 check('Non-string library filename is rejected', rejects(() => safeLibraryName({})))
-check('Resolved library path remains inside its directory', resolveLibraryPath('/tmp/jddc-library', '../track.kml') === '/tmp/jddc-library/track.kml')
+const libraryDirectory = resolve(process.cwd(), '.test-build', 'jddc-library')
+check('Resolved library path remains inside its directory', resolveLibraryPath(libraryDirectory, '../track.kml') === join(libraryDirectory, 'track.kml'))
+check('Sibling path prefix traversal is reduced into the library', resolveLibraryPath(libraryDirectory, '../jddc-library-escape/track.kml') === join(libraryDirectory, 'track.kml'))
 
 check('ArrayBuffer IPC payload is accepted', ipcBytes(new Uint8Array([1, 2, 3]).buffer).equals(Buffer.from([1, 2, 3])))
 check('Typed-array view bounds are preserved', ipcBytes(new Uint8Array([9, 1, 2, 8]).subarray(1, 3)).equals(Buffer.from([1, 2])))

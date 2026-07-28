@@ -11,9 +11,18 @@ export interface HtmlAnalysisReportInput {
   datasets: readonly Dataset[]
   bookmarks: readonly ProjectBookmark[]
   operationRecords: Readonly<Record<string, readonly OperationRecord[]>>
+  options?: HtmlAnalysisReportOptions
+}
+
+export interface HtmlAnalysisReportOptions {
+  includeQualityEvents?: boolean
+  includeWarnings?: boolean
+  includeOperations?: boolean
+  includeBookmarks?: boolean
 }
 
 export function buildHtmlAnalysisReport(input: HtmlAnalysisReportInput): string {
+  const options: Required<HtmlAnalysisReportOptions> = { includeQualityEvents: true, includeWarnings: true, includeOperations: true, includeBookmarks: true, ...input.options }
   const title = input.title.trim() || 'JDDC Analysis Report'
   const totalPoints = input.datasets.reduce((sum, dataset) => sum + dataset.points.length, 0)
   const totalEvents = input.datasets.reduce((sum, dataset) => sum + detectQualityEvents(dataset.points).length, 0)
@@ -22,7 +31,7 @@ export function buildHtmlAnalysisReport(input: HtmlAnalysisReportInput): string 
     dataset,
     input.bookmarks.filter((bookmark) => bookmark.datasetId === dataset.id),
     input.operationRecords[dataset.id] ?? [],
-    index,
+    index, options,
   )).join('\n')
 
   return `<!doctype html>
@@ -113,7 +122,7 @@ ${datasetSections || '<p>No datasets were loaded when this report was generated.
 </html>`
 }
 
-function datasetSection(dataset: Dataset, bookmarks: readonly ProjectBookmark[], operations: readonly OperationRecord[], index: number): string {
+function datasetSection(dataset: Dataset, bookmarks: readonly ProjectBookmark[], operations: readonly OperationRecord[], index: number, options: Required<HtmlAnalysisReportOptions>): string {
   const stats = computeStats(dataset)
   const events = detectQualityEvents(dataset.points)
   const eventCounts = new Map<string, number>()
@@ -143,10 +152,10 @@ ${row('Altitude reference', metadata?.altitudeReference ?? 'UNKNOWN')}
 ${row('Time reference', metadata?.timeReference ?? 'UNKNOWN')}
 ${row('Bounds', bounds)}
 </tbody></table>
-${listSection('Quality events', [...eventCounts].map(([kind, count]) => `${kind}: ${count}`), 'No quality events detected with the default thresholds.')}
-${listSection('Import warnings', dataset.warnings, 'No parser warnings.')}
-${listSection('Transform history', operations.map((operation) => `${formatDate(operation.createdAt)} — ${operation.summary}`), 'No transforms recorded in this session.')}
-${listSection('Bookmarks', bookmarks.map((bookmark) => `${bookmark.label} — point ${bookmark.pointIndex ?? 'n/a'}${bookmark.note ? ` — ${bookmark.note}` : ''}`), 'No bookmarks.')}
+${options.includeQualityEvents ? listSection('Quality events', [...eventCounts].map(([kind, count]) => `${kind}: ${count}`), 'No quality events detected with the default thresholds.') : ''}
+${options.includeWarnings ? listSection('Import warnings', dataset.warnings, 'No parser warnings.') : ''}
+${options.includeOperations ? listSection('Transform history', operations.map((operation) => `${formatDate(operation.createdAt)} — ${operation.summary}`), 'No transforms recorded in this session.') : ''}
+${options.includeBookmarks ? listSection('Bookmarks', bookmarks.map((bookmark) => `${bookmark.label} — point ${bookmark.pointIndex ?? 'n/a'}${bookmark.note ? ` — ${bookmark.note}` : ''}`), 'No bookmarks.') : ''}
 </section>`
 }
 

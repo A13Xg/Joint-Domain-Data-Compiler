@@ -15,6 +15,8 @@ interface Props {
   onChange: (mapping: CsvMapping) => void
   additionalHeaders: boolean
   onToggleAdditionalHeaders: (v: boolean) => void
+  dataStartRow: number
+  onDataStartRowChange: (v: number) => void
   onBuild: () => void
   building: boolean
 }
@@ -28,7 +30,7 @@ const TIME_FORMATS: Array<{ id: TimeFormat; label: string }> = [
   { id: 'excel_serial', label: 'Excel serial date' },
 ]
 
-export function MappingPanel({ analysis, mapping, onChange, additionalHeaders, onToggleAdditionalHeaders, onBuild, building }: Props) {
+export function MappingPanel({ analysis, mapping, onChange, additionalHeaders, onToggleAdditionalHeaders, dataStartRow, onDataStartRowChange, onBuild, building }: Props) {
   const columns = analysis.columns
   const rows = analysis.sampleRows
 
@@ -56,17 +58,29 @@ export function MappingPanel({ analysis, mapping, onChange, additionalHeaders, o
         <span className={validCount > 0 ? 'ok' : 'warn'}>{validCount.toLocaleString()} valid in sample</span>
       </div>
 
+      <details className="csv-preview">
+        <summary>Preview first {Math.min(20, rows.length)} sampled rows</summary>
+        <p className="muted small">Values are shown exactly as sampled. Header interpretation only changes how columns are named and mapped; it never changes the source file.</p>
+        <div className="compact-table"><table><thead><tr>{columns.map((column) => <th key={column.index}>{column.name}</th>)}</tr></thead><tbody>
+          {rows.slice(0, 20).map((row, index) => <tr key={index}>{columns.map((column) => <td key={column.index}>{row[column.name] ?? ''}</td>)}</tr>)}
+        </tbody></table></div>
+      </details>
+
       <label className="header-compat-toggle">
         <input
           type="checkbox"
           checked={additionalHeaders}
           onChange={(e) => onToggleAdditionalHeaders(e.target.checked)}
         />
-        <span>Additional header compatibility</span>
+        <span>Header interpretation override</span>
         <span className="muted small">
-          {' '}— treat rows 1-{Math.max(1, analysis.dataStartRow)} as possible headers
-          (handles files with extra unit/label rows).
+          {' '}— automatic analysis selected {analysis.dataStartRow} leading header row{analysis.dataStartRow === 1 ? '' : 's'}; enable to include additional unit/label rows in column labels.
         </span>
+      </label>
+      <label className="header-compat-toggle">
+        <span>Data begins after row</span>
+        <input type="number" min={0} max={Math.max(0, analysis.rowCountSampled - 1)} value={dataStartRow} onChange={(event) => onDataStartRowChange(Math.max(0, Number(event.target.value) || 0))} />
+        <span className="muted small">— this override is used for the full import.</span>
       </label>
 
       {suggestSwap && (
