@@ -39,6 +39,7 @@ import { ensureBuiltinDerivationsRegistered } from './core/analytics/bootstrap'
 import { fingerprintDataset } from './core/recipes/hash'
 import type { OperationRecord } from './core/recipes/model'
 import { ensureBuiltinOperationsRegistered } from './core/operations/basic'
+import { appendHistorySnapshot } from './state/history'
 
 ensureBuiltinDerivationsRegistered()
 ensureBuiltinOperationsRegistered()
@@ -334,7 +335,7 @@ export default function App() {
     setDatasets((current) => current.map((dataset) => dataset.id === active.id ? next : dataset))
     setHistories((current) => {
       const existing = current[active.id] ?? { past: [], future: [] }
-      return { ...current, [active.id]: { past: [...existing.past, active], future: [] } }
+      return { ...current, [active.id]: { past: appendHistorySnapshot(existing.past, active), future: [] } }
     })
     setOperationRecords((current) => ({ ...current, [active.id]: [...(current[active.id] ?? []), record] }))
     setProjectDirty(true)
@@ -362,7 +363,7 @@ export default function App() {
     if (!active || !history || history.future.length === 0) return
     const nextDataset = history.future[0]!
     setDatasets((current) => current.map((dataset) => dataset.id === active.id ? nextDataset : dataset))
-    setHistories((current) => { const existing = current[active.id]!; return { ...current, [active.id]: { past: [...existing.past, active], future: existing.future.slice(1) } } })
+    setHistories((current) => { const existing = current[active.id]!; return { ...current, [active.id]: { past: appendHistorySnapshot(existing.past, active), future: existing.future.slice(1) } } })
     setProjectDirty(true)
     logger.info('transform', 'Redo')
   }, [active, history])
