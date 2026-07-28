@@ -1,8 +1,7 @@
 # JDDC Performance Baseline
 
-**Established:** 2026-07-27, Tranche 8 Task 8.1.
-**Environment:** shared sandbox container, Node v24.14.0, ~7.8 GB total RAM (~1.6 GB free at
-measurement time — other processes were concurrently using the machine). Not a dedicated
+**Refreshed:** 2026-07-28, Phase 6 Task 6.1.
+**Environment:** Windows 10 development host, Node v24.13.0, with exposed GC. Not a dedicated
 benchmark machine; treat these as directional, not a certified SLA.
 
 ## What this covers
@@ -24,22 +23,21 @@ established the mechanism and a first slice, not the complete matrix.
 
 ## Results
 
-Each size below was run as its own process (`node --expose-gc scripts/run-benchmarks.mjs <size>`)
-rather than all three in one invocation — see "Operational note" below.
+Measurements were captured in one explicit full-range run: `npm run bench -- 100000 500000 1000000`.
 
 | Points | Generate | sortByTime | dedupe | kinematics | quality-events | GPX export | Heap (post-GC) |
 |---|---|---|---|---|---|---|---|
-| 100,000 | 16 ms | 10 ms | 57 ms | 123 ms | 105 ms | 738 ms | 5 → 24 MB |
-| 500,000 | 279 ms | 717 ms | 416 ms | 1,036 ms | 77 ms | 2,505 ms | 5 → 97 MB |
-| 1,000,000 | 631 ms | 623 ms | 909 ms | 1,990 ms | 139 ms | 4,179 ms | 5 → 191 MB |
+| 100,000 | 23 ms | 10 ms | 20 ms | 40 ms | 28 ms | 157 ms | 5 → 24 MB |
+| 500,000 | 66 ms | 52 ms | 87 ms | 280 ms | 36 ms | 810 ms | 5 → 98 MB |
+| 1,000,000 | 104 ms | 118 ms | 320 ms | 360 ms | 52 ms | 1,681 ms | 5 → 190 MB |
 
 ## Reading these numbers
 
-- **GPX export dominates at every size** (~4.2 s at 1M points, ~74% of the measured per-size
-  total) and scales roughly linearly (~4.2 µs/point). It is the first thing to profile if export
+- **GPX export dominates at every size** (~1.7 s at 1M points, ~64% of the measured per-size
+  total) and scales roughly linearly (~1.7 µs/point). It is the first thing to profile if export
   responsiveness at scale becomes a product concern — likely string-building overhead in the GPX
   writer, not investigated further here.
-- **Kinematics derivation is the second-largest cost** (~2 µs/point) and already clones the full
+- **Kinematics derivation is the second-largest cost** (~0.4 µs/point) and already clones the full
   point array once; this is consistent with the roadmap's existing note that transform history
   via full dataset snapshots is memory-proportional to point count × history depth.
 - Heap growth (24 MB → 97 MB → 191 MB for 100k → 500k → 1M) is roughly linear, with no evidence of
@@ -53,15 +51,11 @@ rather than all three in one invocation — see "Operational note" below.
   work — chart rendering, map/3D geometry, and UI thread blocking during synchronous transforms
   are unmeasured and are the more likely real-world pain points.
 
-## Operational note: run each size as its own process
+## Operational note: safe routine sizes
 
-Running all three sizes (100k, 500k, 1M) sequentially in a single `node` process was killed by
-the environment (`SIGTERM`, exit 143) partway through the 1M step in this sandbox, even though
-each size completes cleanly as an isolated process — this reflects the shared sandbox's memory
-pressure from other concurrent processes, not a bug in the harness or the measured code (confirmed
-by running `1000000` alone multiple times without failure). `npm run bench` without arguments
-therefore defaults to the safe `10,000 / 50,000 / 100,000` sizes for routine local use; pass
-explicit sizes for the full range:
+`npm run bench` without arguments defaults to the safe `10,000 / 50,000 / 100,000` sizes for
+routine local use. The full 100k/500k/1M range completed successfully on the refreshed Windows
+host. Pass explicit sizes when collecting the full matrix:
 
 ```bash
 node --expose-gc scripts/run-benchmarks.mjs 100000
