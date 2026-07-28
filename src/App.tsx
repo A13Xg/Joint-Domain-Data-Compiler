@@ -38,8 +38,10 @@ import { DEFAULT_WORKSPACE_STATE, normalizeWorkspaceState, type WorkspaceState }
 import { ensureBuiltinDerivationsRegistered } from './core/analytics/bootstrap'
 import { fingerprintDataset } from './core/recipes/hash'
 import type { OperationRecord } from './core/recipes/model'
+import { ensureBuiltinOperationsRegistered } from './core/operations/basic'
 
 ensureBuiltinDerivationsRegistered()
+ensureBuiltinOperationsRegistered()
 
 export type Tab = 'import' | 'mapping' | 'overview' | 'map' | 'charts' | 'table' | 'compare' | 'scene3d' | 'transform' | 'project' | 'export' | 'sources' | 'fusion'
 

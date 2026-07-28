@@ -1,6 +1,6 @@
-import { offsetElevation, shiftTime } from '../transforms'
-import { withPoints } from '../transforms'
+import { offsetElevation, shiftTime, withPoints } from '../transforms'
 import type { OperationDefinition } from '../recipes/model'
+import { getOperation, registerOperation } from '../recipes/registry'
 
 interface OffsetElevationParams { meters: number }
 interface ShiftTimeParams { seconds: number }
@@ -27,6 +27,11 @@ export const shiftTimeOperation: OperationDefinition<ShiftTimeParams> = {
     const result = shiftTime(dataset.points, params.seconds)
     return { dataset: withPoints(dataset, result.points), summary: result.summary }
   },
+}
+
+export function ensureBuiltinOperationsRegistered(): void {
+  if (!getOperation(offsetElevationOperation.id)) registerOperation(offsetElevationOperation)
+  if (!getOperation(shiftTimeOperation.id)) registerOperation(shiftTimeOperation)
 }
 
 function validateMeters(value: unknown): OffsetElevationParams {
