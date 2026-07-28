@@ -3,6 +3,18 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 const fixture = resolve('file-test/real-usgs.gpx')
+const csvFixture = resolve('file-test/real-usgs.csv')
+
+test('CSV mapping workflow previews and builds an immutable dataset', async ({ page }) => {
+  await page.goto('/')
+  await page.locator('input[type="file"]').setInputFiles(csvFixture)
+  await expect(page.getByRole('button', { name: 'CSV Mapping', exact: true })).toBeVisible()
+  await expect(page.getByText(/Preview first \d+ physical rows/i)).toBeVisible()
+  await expect(page.getByLabel(/Data begins after row/i)).toBeVisible()
+  await page.getByRole('button', { name: 'Build dataset from full CSV', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Overview', exact: true })).toBeEnabled()
+  await expect(page.getByText(/sha256:/)).toBeVisible()
+})
 
 test('primary local-first workflow: import, inspect, transform, save/open, and export', async ({ page }) => {
   const pageErrors: string[] = []
