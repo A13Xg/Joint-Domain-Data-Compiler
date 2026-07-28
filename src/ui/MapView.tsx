@@ -94,6 +94,7 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
     const sampled = downsample(validPoints, MAX_RENDER_POINTS)
     return { id: track.id, name: track.name, color: track.color, opacity: track.opacity ?? 0.6, positions: sampled.map((point): LatLngTuple => [point.lat, point.lon]) }
   }), [otherTracks])
+  const mapPositions = positions.length > 0 ? positions : otherTrackLayers.flatMap((track) => track.positions)
 
   const fitPositions = fitSelection && selectionPositions.length > 0
     ? selectionPositions
@@ -107,7 +108,8 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
     return values.length > 0 ? { min: Math.min(...values), max: Math.max(...values) } : null
   }, [rendered, colorBy])
 
-  if (valid.length === 0) return <div className="map-empty">No valid coordinates to display.</div>
+  if (mapPositions.length === 0) return <div className="map-empty">No valid coordinates to display.</div>
+
 
   return (
     <div className="map-view">
@@ -128,7 +130,7 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
         {otherTrackLayers.length > 0 && <span className="map-legend map-other-tracks">other visible:{otherTrackLayers.map((track) => <span key={track.id} className="map-other-track-chip"><span className="chip-dot" style={{ background: track.color }} />{track.name}</span>)}</span>}
       </div>
       <div className="map-canvas-wrap">
-        <MapContainer center={positions[0]} zoom={10} className="map-canvas" scrollWheelZoom>
+        <MapContainer center={mapPositions[0]} zoom={10} className="map-canvas" scrollWheelZoom>
           {basemap === 'osm' && <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" eventHandlers={{ tileerror: () => setBasemapStatus('error'), tileload: () => setBasemapStatus('loaded') }} />}
           {otherTrackLayers.map((track) => track.positions.length > 1 && <Polyline key={track.id} positions={track.positions} pathOptions={{ color: track.color, weight: 2, opacity: track.opacity, dashArray: '1 4' }}><Tooltip>{track.name}</Tooltip></Polyline>)}
           {mode !== 'points' && pathSegments.map((segment, index) => <Polyline key={index} positions={segment} pathOptions={{ color: indexRange ? '#64748b' : '#ea4f2f', weight: 2.5, opacity: indexRange ? 0.45 : 0.85 }} />)}
