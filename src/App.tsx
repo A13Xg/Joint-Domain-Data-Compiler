@@ -132,7 +132,19 @@ export default function App() {
         return null
       }
     })).then((loaded) => {
-      if (!cancelled) setMapOverlayTracks(loaded.filter((track): track is OtherTrack => track !== null))
+      if (cancelled) return
+      setMapOverlayTracks(loaded.filter((track): track is OtherTrack => track !== null))
+      const missingIds = new Set(overlayRefs.flatMap((overlay, index) => loaded[index] === null ? [overlay.id] : []))
+      if (missingIds.size > 0) {
+        setWorkspace((current) => ({
+          ...current,
+          mapOverlays: {
+            overlays: current.mapOverlays.overlays.map((overlay) => missingIds.has(overlay.id)
+              ? { ...overlay, status: 'missing', visible: false }
+              : overlay),
+          },
+        }))
+      }
     })
     return () => { cancelled = true }
   }, [workspace.mapOverlays])
@@ -430,7 +442,7 @@ export default function App() {
             {tab === 'mapping' && pendingCsv && <MappingPanel analysis={pendingCsv.analysis} mapping={pendingCsv.mapping} onChange={(mapping) => setPendingCsv((current) => current ? { ...current, mapping } : current)} additionalHeaders={pendingCsv.additionalHeaders} onToggleAdditionalHeaders={(additionalHeaders) => setPendingCsv((current) => current ? { ...current, additionalHeaders } : current)} dataStartRow={pendingCsv.dataStartRow} onDataStartRowChange={(dataStartRow) => setPendingCsv((current) => current ? { ...current, dataStartRow } : current)} onBuild={buildCsvDataset} building={building} />}
             {tab === 'overview' && active && <StatsPanel dataset={active} bookmarks={bookmarks} onBookmarksChange={(next) => { setBookmarks(next); setProjectDirty(true) }} />}
             {tab === 'map' && active && <><KmlLibraryPanel onImportKmlText={importKmlText} onAddMapOverlay={addKmlMapOverlay} />
-              {workspace.mapOverlays.overlays.length > 0 && <div className="analysis-panel"><h3>Map overlays</h3>{workspace.mapOverlays.overlays.map((overlay) => <div className="analysis-toolbar" key={overlay.id}><label className="header-compat-toggle"><input type="checkbox" checked={overlay.visible} onChange={(event) => { setWorkspace((current) => ({ ...current, mapOverlays: { overlays: current.mapOverlays.overlays.map((item) => item.id === overlay.id ? { ...item, visible: event.target.checked } : item) } })); setProjectDirty(true) }} />{overlay.name}</label><label className="header-compat-toggle">Opacity <input type="range" min="0" max="1" step="0.05" value={overlay.opacity} onChange={(event) => { const opacity = Number(event.target.value); setWorkspace((current) => ({ ...current, mapOverlays: { overlays: current.mapOverlays.overlays.map((item) => item.id === overlay.id ? { ...item, opacity } : item) } })); setProjectDirty(true) }} /></label><button type="button" onClick={() => { setMapOverlayTracks((current) => current.filter((track) => track.id !== overlay.id)); setWorkspace((current) => ({ ...current, mapOverlays: { overlays: current.mapOverlays.overlays.filter((item) => item.id !== overlay.id) } })); setProjectDirty(true) }}>Remove overlay</button></div>)}</div>}
+              {workspace.mapOverlays.overlays.length > 0 && <div className="analysis-panel"><h3>Map overlays</h3>{workspace.mapOverlays.overlays.map((overlay) => <div className="analysis-toolbar" key={overlay.id}><label className="header-compat-toggle"><input type="checkbox" checked={overlay.visible} disabled={overlay.status === 'missing'} onChange={(event) => { setWorkspace((current) => ({ ...current, mapOverlays: { overlays: current.mapOverlays.overlays.map((item) => item.id === overlay.id ? { ...item, visible: event.target.checked } : item) } })); setProjectDirty(true) }} />{overlay.name}{overlay.status === 'missing' && <span className="warn">source missing</span>}</label><label className="header-compat-toggle">Opacity <input type="range" min="0" max="1" step="0.05" value={overlay.opacity} onChange={(event) => { const opacity = Number(event.target.value); setWorkspace((current) => ({ ...current, mapOverlays: { overlays: current.mapOverlays.overlays.map((item) => item.id === overlay.id ? { ...item, opacity } : item) } })); setProjectDirty(true) }} /></label><button type="button" onClick={() => { setMapOverlayTracks((current) => current.filter((track) => track.id !== overlay.id)); setWorkspace((current) => ({ ...current, mapOverlays: { overlays: current.mapOverlays.overlays.filter((item) => item.id !== overlay.id) } })); setProjectDirty(true) }}>Remove overlay</button></div>)}</div>}
               <MapView points={active.points} channels={active.channels} workspace={workspace.map} onWorkspaceChange={(map) => { setWorkspace((current) => ({ ...current, map })); setProjectDirty(true) }} otherTracks={otherTracks} /></>}
             {tab === 'charts' && active && <TimeSeriesChart points={active.points} channels={active.channels} />}
             {tab === 'table' && active && <DataTable points={active.points} channels={active.channels} />}
