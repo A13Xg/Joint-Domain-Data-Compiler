@@ -30,13 +30,15 @@ interface Props {
   bookmarks: ProjectBookmark[]
   operationRecords: Record<string, OperationRecord[]>
   projectName: string
+  projectNotes: string
   projectDirty: boolean
   onProjectNameChange: (name: string) => void
+  onProjectNotesChange: (notes: string) => void
   onProjectSaved: () => void
   onRestoreProject: (archive: ProjectArchive) => void
 }
 
-export function ProjectPanel({ datasets, histories, activeId, activeTab, workspace, datasetDisplay, bookmarks, operationRecords, projectName, projectDirty, onProjectNameChange, onProjectSaved, onRestoreProject }: Props) {
+export function ProjectPanel({ datasets, histories, activeId, activeTab, workspace, datasetDisplay, bookmarks, operationRecords, projectName, projectNotes, projectDirty, onProjectNameChange, onProjectNotesChange, onProjectSaved, onRestoreProject }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -63,8 +65,9 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
     bookmarks,
     operationRecords,
     projectName: projectName.trim() || undefined,
+    notes: projectNotes,
     applicationVersion: '0.1.0',
-  }), [datasets, activeId, activeTab, activeSelection.pointIndex, activeSelection.indexRange, projectName, workspace, datasetDisplay, bookmarks, operationRecords])
+  }), [datasets, activeId, activeTab, activeSelection.pointIndex, activeSelection.indexRange, projectName, projectNotes, workspace, datasetDisplay, bookmarks, operationRecords])
 
   const archive = useMemo(() => createProjectArchive({ manifest, datasets, histories }), [manifest, datasets, histories])
   const summary = useMemo(() => archiveSummary(archive), [archive])
@@ -168,6 +171,7 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
         <input ref={inputRef} className="hidden-input" type="file" accept=".jddc-project,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void openProject(file); event.target.value = '' }} />
       </div>
       <p className="muted small">A <code>.jddc-project</code> file is a self-contained, gzip-compressed workspace archive. It embeds current datasets, semantic metadata, undo/redo snapshots, the active dataset and tab, and point/range selection. The manifest remains versioned and fingerprint-verified during restore.</p>
+      <label className="field"><span>Project notes</span><textarea rows={3} value={projectNotes} placeholder="Purpose, assumptions, provenance, or handoff notes." onChange={(event) => onProjectNotesChange(event.target.value)} /></label>
       <details className="analysis-summary">
         <summary>HTML report options</summary>
         <div className="field-grid">

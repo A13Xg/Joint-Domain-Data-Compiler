@@ -83,6 +83,7 @@ export default function App() {
   const [datasetDisplay, setDatasetDisplay] = useState<WorkspaceDisplay>({})
   const [bookmarks, setBookmarks] = useState<ProjectBookmark[]>([])
   const [projectName, setProjectName] = useState('')
+  const [projectNotes, setProjectNotes] = useState('')
   const [projectDirty, setProjectDirty] = useState(false)
   // Reconcile display settings (new datasets get a color; removed datasets'
   // entries are dropped) during render when the dataset list changes,
@@ -393,6 +394,7 @@ export default function App() {
     setBookmarks(archive.manifest.bookmarks)
     setOperationRecords(operationRecordsFromManifest(archive.manifest))
     setProjectName(archive.manifest.name)
+    setProjectNotes(archive.manifest.notes ?? '')
     setActiveId(restoredActiveId)
     setPendingCsv(null)
     setTab(restoredTab)
@@ -451,7 +453,7 @@ export default function App() {
             {tab === 'compare' && <ComparisonPanel datasets={datasets} activeId={activeId} workspace={workspace.comparison} onWorkspaceChange={(comparison) => { setWorkspace((current) => ({ ...current, comparison })); setProjectDirty(true) }} onSelectReferenceSample={(datasetId, pointIndex) => { const reference = datasets.find((dataset) => dataset.id === datasetId); if (!reference) return; restorePointSelection(reference.points, pointIndex, null); setActiveId(datasetId) }} />}
             {tab === 'scene3d' && active && <Trajectory3dPanel dataset={active} datasets={datasets} workspace={workspace.scene3d} onWorkspaceChange={(scene3d) => { setWorkspace((current) => ({ ...current, scene3d })); setProjectDirty(true) }} />}
             {tab === 'transform' && active && <><TransformPanel dataset={active} onApply={applyTransform} onUndo={undo} onRedo={redo} canUndo={!!history && history.past.length > 0} canRedo={!!history && history.future.length > 0} operationHistory={operationRecords[active.id] ?? []} /><NotionalSmoothingPanel dataset={active} onCreateDataset={addDataset} /></>}
-            {tab === 'project' && <ProjectPanel datasets={datasets} histories={histories} activeId={activeId} activeTab={workspace.lastWorkspaceTab} workspace={workspace} datasetDisplay={syncedDisplay} bookmarks={bookmarks} operationRecords={operationRecords} projectName={projectName} projectDirty={projectDirty} onProjectNameChange={(name) => { setProjectName(name); setProjectDirty(true) }} onProjectSaved={() => setProjectDirty(false)} onRestoreProject={restoreProject} />}
+            {tab === 'project' && <ProjectPanel datasets={datasets} histories={histories} activeId={activeId} activeTab={workspace.lastWorkspaceTab} workspace={workspace} datasetDisplay={syncedDisplay} bookmarks={bookmarks} operationRecords={operationRecords} projectName={projectName} projectNotes={projectNotes} projectDirty={projectDirty} onProjectNameChange={(name) => { setProjectName(name); setProjectDirty(true) }} onProjectNotesChange={(notes) => { setProjectNotes(notes); setProjectDirty(true) }} onProjectSaved={() => setProjectDirty(false)} onRestoreProject={restoreProject} />}
 
             {tab === 'export' && active && <ExportPanel dataset={active} />}
             {tab === 'sources' && <SourcesPanel datasets={datasets} activeId={activeId} display={syncedDisplay} onDisplayChange={(next) => { setDatasetDisplay(next); setProjectDirty(true) }} onSelectActive={setActiveId} />}

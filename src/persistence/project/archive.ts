@@ -172,6 +172,7 @@ export function buildProjectManifest(input: {
   operationRecords?: Readonly<Record<string, readonly OperationRecord[]>>
   projectId?: string
   projectName?: string
+  notes?: string
   createdAt?: number
   applicationVersion: string
 }): ProjectManifest {
@@ -197,6 +198,7 @@ export function buildProjectManifest(input: {
     schemaVersion: 1,
     projectId: input.projectId ?? `project_${now}`,
     name: input.projectName ?? (input.datasets.length === 1 ? input.datasets[0]?.name ?? 'JDDC project' : `JDDC workspace (${input.datasets.length} datasets)`),
+    ...(input.notes?.trim() ? { notes: input.notes.trim() } : {}),
     createdAt: input.createdAt ?? now,
     updatedAt: now,
     applicationVersion: input.applicationVersion,

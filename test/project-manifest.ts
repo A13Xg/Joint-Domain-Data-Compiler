@@ -21,6 +21,7 @@ const manifest: ProjectManifest = {
   createdAt: 1000,
   updatedAt: 2000,
   applicationVersion: '0.1.0',
+  notes: 'Analyst handoff note',
   datasets: [
     {
       id: 'dataset-1',
@@ -60,6 +61,7 @@ check('Manifest serializes and parses', parsed.projectId === manifest.projectId)
 check('Dataset references are preserved', parsed.datasets[0]?.recipeIds[0] === 'recipe-1')
 check('Selection is preserved', parsed.view.selection.datasetId === 'dataset-1')
 check('Workspace state is preserved', parsed.view.workspace?.scene3d.gapThresholdSeconds === 3)
+check('Project notes are preserved', parsed.notes === 'Analyst handoff note')
 
 let invalidJsonRejected = false
 try {
