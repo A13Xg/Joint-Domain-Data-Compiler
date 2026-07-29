@@ -7,6 +7,9 @@ export interface FusionArtifact {
   id: string
   entityId: string
   fusedDatasetId: string
+  /** Deterministic bindings captured at fusion time; absent only on legacy archives. */
+  sourceDatasetHashes?: Record<string, string>
+  fusedDatasetHash?: string
   sourceRegistrations: SourceRegistration[]
   timeToleranceMs: number
   pointOverrides: SelectedPointOverride[]
@@ -30,6 +33,8 @@ export function validateFusionArtifact(value: unknown): asserts value is FusionA
   const timeToleranceMs = value.timeToleranceMs
   if (typeof timeToleranceMs !== 'number' || !Number.isFinite(timeToleranceMs) || timeToleranceMs < 1 || timeToleranceMs > 86_400_000) throw new Error('Fusion artifact time tolerance must be between 1 and 86400000 ms')
   if (!Number.isFinite(value.createdAt)) throw new Error('Fusion artifact createdAt must be finite')
+  if ((value.sourceDatasetHashes === undefined) !== (value.fusedDatasetHash === undefined)) throw new Error('Fusion artifact dataset bindings must be complete')
+  if (value.sourceDatasetHashes !== undefined && (!isRecord(value.sourceDatasetHashes) || typeof value.fusedDatasetHash !== 'string' || !value.fusedDatasetHash.trim() || !Object.values(value.sourceDatasetHashes).every((hash) => typeof hash === 'string' && hash.trim()))) throw new Error('Fusion artifact dataset bindings are invalid')
   if (!isRecord(value.report) || value.report.totalGroups !== value.decisions.length) throw new Error('Fusion artifact report totalGroups must match decisions')
   const sourceIds = new Set<string>()
   const datasetIds = new Set<string>()
@@ -38,6 +43,7 @@ export function validateFusionArtifact(value: unknown): asserts value is FusionA
     requireText(source.id, 'fusion source id'); requireText(source.datasetId, 'fusion source dataset id')
     if (sourceIds.has(source.id) || datasetIds.has(source.datasetId)) throw new Error('Fusion artifact source registrations must be unique')
     sourceIds.add(source.id); datasetIds.add(source.datasetId)
+    if (value.sourceDatasetHashes !== undefined && typeof value.sourceDatasetHashes[source.id] !== 'string') throw new Error('Fusion artifact is missing a source dataset binding')
   }
   for (const override of [...(value.pointOverrides ?? []), ...(value.intervalOverrides ?? [])]) {
     if (!isRecord(override) || typeof override.entityId !== 'string' || override.entityId !== value.entityId || typeof override.sourceId !== 'string' || !sourceIds.has(override.sourceId)) throw new Error('Fusion artifact override references an invalid source or entity')

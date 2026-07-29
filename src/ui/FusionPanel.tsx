@@ -15,6 +15,7 @@ import type { FusionArtifact } from '../core/fusion/artifact'
 import { withPoints } from '../core/transforms'
 import { logger } from '../core/logger'
 import { assessFusionCompatibility } from '../core/metadataCompatibility'
+import { fingerprintDataset } from '../core/recipes/hash'
 
 interface SourceConfig {
   included: boolean
@@ -102,6 +103,8 @@ export function FusionPanel({ datasets, fusionArtifacts = [], onCreateDataset }:
         id: `fusion_${timestamp}`,
         entityId: ENTITY_ID,
         fusedDatasetId: fusedDataset.id,
+        sourceDatasetHashes: Object.fromEntries(sources.map((source) => [source.id, fingerprintDataset(includedDatasets.find((dataset) => dataset.id === source.datasetId)!)])),
+        fusedDatasetHash: fingerprintDataset(fusedDataset),
         sourceRegistrations: sources,
         timeToleranceMs,
         pointOverrides,

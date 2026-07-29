@@ -187,6 +187,15 @@ export function validateProjectArchive(value: unknown): asserts value is Project
   if (value.datasets.length !== value.manifest.datasets.length) {
     throw new Error('Manifest and embedded dataset counts do not match')
   }
+  for (const artifact of value.manifest.fusionArtifacts) {
+    if (artifact.fusedDatasetHash === undefined) continue
+    const fused = value.datasets.find((dataset) => dataset.id === artifact.fusedDatasetId)
+    if (!fused || fingerprintDataset(fused) !== artifact.fusedDatasetHash) throw new Error(`Fusion artifact ${artifact.id} fused dataset binding does not match`)
+    for (const source of artifact.sourceRegistrations) {
+      const dataset = value.datasets.find((candidate) => candidate.id === source.datasetId)
+      if (!dataset || fingerprintDataset(dataset) !== artifact.sourceDatasetHashes?.[source.id]) throw new Error(`Fusion artifact ${artifact.id} source dataset binding does not match`)
+    }
+  }
 
   for (const [datasetId, history] of Object.entries(value.histories)) {
     if (!datasetIds.has(datasetId)) throw new Error(`History references missing dataset ${datasetId}`)
