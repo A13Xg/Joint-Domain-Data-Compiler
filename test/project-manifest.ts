@@ -1,6 +1,7 @@
 import { EMPTY_WORKSPACE_SELECTION } from '../src/core/selection.ts'
 import { DEFAULT_WORKSPACE_STATE } from '../src/state/workspace.ts'
 import { reconcileMapOverlays, type MapOverlay } from '../src/state/mapOverlays.ts'
+import { DEFAULT_REPORT_OPTIONS, type ReportOptions } from '../src/core/reports/options.ts'
 import {
   parseProjectManifest,
   serializeProjectManifest,
@@ -314,6 +315,109 @@ const overlayJson = JSON.stringify(manifestWithOverlays.view.workspace?.mapOverl
 const allowedOverlayKeys = new Set(['overlays', 'id', 'sourceKind', 'sourceKey', 'name', 'visible', 'opacity', 'zIndex', 'status'])
 const overlayKeysOnly = Object.keys(JSON.parse(overlayJson ?? '{}').overlays[0]).every((key: string) => allowedOverlayKeys.has(key))
 check('Overlay JSON does not contain point/dataset payload keys', overlayKeysOnly && !/"points"|"lat"|"lon"|"channels"/.test(overlayJson ?? ''))
+
+// --- Task 3.3: reportPreferences persistence -----------------------------
+// Absent by default (older archives / projects that never opted in), an
+// explicitly opted-in value round-trips exactly, and malformed values are
+// normalized to safe defaults rather than rejecting the whole manifest.
+
+check('Absent reportPreferences round-trips as absent (backward compat)', parsed.view.workspace?.reportPreferences === undefined)
+
+const rememberedOptions: ReportOptions = {
+  ...DEFAULT_REPORT_OPTIONS,
+  title: 'Remembered report title',
+  includeComparison: true,
+  includeFusion: true,
+  includeOverlayInventory: true,
+}
+
+const manifestWithRememberedPreferences: ProjectManifest = {
+  ...manifest,
+  view: {
+    ...manifest.view,
+    workspace: { ...DEFAULT_WORKSPACE_STATE, reportPreferences: rememberedOptions },
+  },
+}
+validateProjectManifest(manifestWithRememberedPreferences)
+const rememberedParsed = parseProjectManifest(serializeProjectManifest(manifestWithRememberedPreferences))
+check(
+  'Remembered reportPreferences round-trip correctly',
+  JSON.stringify(rememberedParsed.view.workspace?.reportPreferences) === JSON.stringify(rememberedOptions),
+)
+
+let malformedPreferencesThrew = false
+let malformedPreferencesParsed: ProjectManifest | undefined
+try {
+  malformedPreferencesParsed = parseProjectManifest(JSON.stringify({
+    ...manifest,
+    view: {
+      ...manifest.view,
+      workspace: {
+        ...DEFAULT_WORKSPACE_STATE,
+        reportPreferences: { title: 12345, includeWarnings: 'yes', includeComparison: true, bogusField: 'ignored' },
+      },
+    },
+  }))
+} catch {
+  malformedPreferencesThrew = true
+}
+check('Malformed reportPreferences normalize to safe defaults rather than throwing', !malformedPreferencesThrew)
+check(
+  'Malformed reportPreferences title/boolean fields fall back to defaults',
+  malformedPreferencesParsed?.view.workspace?.reportPreferences?.title === DEFAULT_REPORT_OPTIONS.title
+    && malformedPreferencesParsed?.view.workspace?.reportPreferences?.includeWarnings === DEFAULT_REPORT_OPTIONS.includeWarnings,
+)
+check(
+  'Malformed reportPreferences still honors well-formed fields (only bad fields fall back)',
+  malformedPreferencesParsed?.view.workspace?.reportPreferences?.includeComparison === true,
+)
+
+let nonObjectPreferencesThrew = false
+let nonObjectPreferencesParsed: ProjectManifest | undefined
+try {
+  nonObjectPreferencesParsed = parseProjectManifest(JSON.stringify({
+    ...manifest,
+    view: {
+      ...manifest.view,
+      workspace: { ...DEFAULT_WORKSPACE_STATE, reportPreferences: 'not-an-object' },
+    },
+  }))
+} catch {
+  nonObjectPreferencesThrew = true
+}
+check('Non-object reportPreferences normalizes to defaults rather than throwing', !nonObjectPreferencesThrew)
+check(
+  'Non-object reportPreferences falls back to DEFAULT_REPORT_OPTIONS entirely',
+  JSON.stringify(nonObjectPreferencesParsed?.view.workspace?.reportPreferences) === JSON.stringify(DEFAULT_REPORT_OPTIONS),
+)
+
+// reportPreferences must only ever hold the small ReportOptions shape: no
+// raw dataset/point payload should ever survive into persisted state, even
+// if a caller/attacker tries to smuggle it in under a known-looking field.
+const smuggledPreferencesParsed = parseProjectManifest(JSON.stringify({
+  ...manifest,
+  view: {
+    ...manifest.view,
+    workspace: {
+      ...DEFAULT_WORKSPACE_STATE,
+      reportPreferences: {
+        ...DEFAULT_REPORT_OPTIONS,
+        points: [{ lat: 1, lon: 2, time: 3 }],
+        datasets: [{ id: 'x', points: [{ lat: 1, lon: 2 }] }],
+      },
+    },
+  },
+}))
+const preferencesKeys = Object.keys(smuggledPreferencesParsed.view.workspace?.reportPreferences ?? {})
+const allowedPreferenceKeys = new Set<string>([
+  'title', 'includeSourceMetadata', 'includeWarnings', 'includeQualityEvents', 'includeBookmarks',
+  'includeOperationHistory', 'includeComparison', 'includeFusion', 'includeNotionalDisclosure', 'includeOverlayInventory',
+])
+check(
+  'reportPreferences only ever contains the known ReportOptions keys (no smuggled dataset/point payload)',
+  preferencesKeys.every((key) => allowedPreferenceKeys.has(key))
+    && !JSON.stringify(smuggledPreferencesParsed.view.workspace?.reportPreferences).includes('"points"'),
+)
 
 console.log(`\n${failures === 0 ? 'ALL PROJECT MANIFEST CHECKS PASSED' : `${failures} PROJECT MANIFEST CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)

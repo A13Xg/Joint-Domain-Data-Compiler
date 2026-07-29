@@ -5,6 +5,7 @@ import { isValidWorkspaceDisplay, type WorkspaceDisplay } from '../../state/work
 import { migrateToVersion, PROJECT_MANIFEST_MIGRATORS } from './migrations'
 import type { FusionArtifact } from '../../core/fusion/artifact'
 import { validateFusionArtifact } from '../../core/fusion/artifact'
+import { normalizeReportOptions } from '../../core/reports/options'
 
 const CURRENT_MANIFEST_SCHEMA_VERSION = 2
 
@@ -134,6 +135,24 @@ export function validateProjectManifest(value: unknown): asserts value is Projec
 
   validateView(value.view, datasetIds)
   validateBookmarks(value.bookmarks, datasetIds)
+  normalizeManifestReportPreferences(value)
+}
+
+/**
+ * Normalizes `view.workspace.reportPreferences` in place, after structural
+ * validation has passed. Malformed or stale persisted values (wrong types,
+ * unknown extra fields, a value left over from an older/foreign build) fall
+ * back field-by-field to safe defaults via `normalizeReportOptions` instead
+ * of throwing — this field is optional report-generation UI state, not
+ * something other parts of the project depend on, so a bad value should
+ * degrade gracefully rather than block the whole project from loading.
+ */
+function normalizeManifestReportPreferences(value: Record<string, unknown>): void {
+  const view = value.view
+  if (!isRecord(view)) return
+  const workspace = view.workspace
+  if (!isRecord(workspace) || workspace.reportPreferences === undefined) return
+  workspace.reportPreferences = normalizeReportOptions(workspace.reportPreferences).options
 }
 
 export function operationRecordsFromManifest(manifest: ProjectManifest): Record<string, OperationRecord[]> {
@@ -228,8 +247,15 @@ function validateView(value: Record<string, unknown>, datasetIds: Set<string>): 
     throw new Error('view.chartLayoutIds must be a string array')
   }
   if (value.workspace !== undefined) {
+    if (!isRecord(value.workspace)) throw new Error('view.workspace contains invalid or stale state')
     const normalized = normalizeWorkspaceState(value.workspace, datasetIds)
-    if (JSON.stringify(normalized) !== JSON.stringify(value.workspace)) throw new Error('view.workspace contains invalid or stale state')
+    // reportPreferences is intentionally excluded from this structural
+    // equality check: it is normalized (not rejected) below in
+    // normalizeManifestReportPreferences, so a malformed/stale persisted
+    // value there must not fail the whole manifest's structural check.
+    if (JSON.stringify(omitReportPreferences(normalized as unknown as Record<string, unknown>)) !== JSON.stringify(omitReportPreferences(value.workspace))) {
+      throw new Error('view.workspace contains invalid or stale state')
+    }
   }
   if (value.datasetDisplay !== undefined && !isValidWorkspaceDisplay(value.datasetDisplay, datasetIds)) {
     throw new Error('view.datasetDisplay contains invalid or stale settings')
@@ -261,6 +287,12 @@ function requireFiniteNumber(value: unknown, field: string): asserts value is nu
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function omitReportPreferences(value: Record<string, unknown>): Record<string, unknown> {
+  const copy = { ...value }
+  delete copy.reportPreferences
+  return copy
 }
 
 function errorMessage(error: unknown): string {

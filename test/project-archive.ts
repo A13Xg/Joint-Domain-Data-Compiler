@@ -238,4 +238,80 @@ assert.throws(() => validateProjectArchive(corruptedSourceKindArchive), /view\.w
 const overlaySection = JSON.stringify(overlayArchiveParsed.manifest.view.workspace?.mapOverlays)
 assert.ok(!/"points"|"lat"|"lon"|"channels"/.test(overlaySection ?? ''), 'overlay state does not duplicate dataset point payloads')
 
+// --- Task 3.3: report preferences through the full archive round trip ---
+
+// An archive built without ever opting in to "remember these settings"
+// (older archives predating Task 3.3, or a project that never checked the
+// box) must load exactly as before: no reportPreferences field at all.
+assert.equal(parsed.manifest.view.workspace?.reportPreferences, undefined, 'archives without remembered report preferences have none after restore (backward compat)')
+
+const rememberedReportOptions = {
+  title: 'Remembered archive report',
+  includeSourceMetadata: true,
+  includeWarnings: false,
+  includeQualityEvents: true,
+  includeBookmarks: false,
+  includeOperationHistory: true,
+  includeComparison: true,
+  includeFusion: false,
+  includeNotionalDisclosure: true,
+  includeOverlayInventory: true,
+}
+
+const manifestWithReportPreferences = buildProjectManifest({
+  datasets: [dataset],
+  activeDatasetId: dataset.id,
+  activeTab: 'project',
+  selection: EMPTY_WORKSPACE_SELECTION,
+  workspace: { ...DEFAULT_WORKSPACE_STATE, reportPreferences: rememberedReportOptions },
+  projectId: 'project-report-preferences-test',
+  projectName: 'Report Preferences Archive Test',
+  createdAt: 10_000,
+  applicationVersion: '0.1.0',
+})
+
+const reportPreferencesArchive = createProjectArchive({
+  manifest: manifestWithReportPreferences,
+  datasets: [dataset],
+  histories: { [dataset.id]: { past: [], future: [] } },
+})
+
+const reportPreferencesArchiveParsed = parseProjectArchive(serializeProjectArchive(reportPreferencesArchive))
+assert.deepEqual(
+  reportPreferencesArchiveParsed.manifest.view.workspace?.reportPreferences,
+  rememberedReportOptions,
+  'remembered report preferences round-trip correctly through a full archive save/load',
+)
+
+// A malformed reportPreferences value embedded directly in an archive
+// payload (e.g. hand-edited, or written by a foreign/older build) must
+// normalize to safe defaults on load rather than throwing and blocking the
+// whole archive from opening — unlike the strict-rejection pattern used
+// above for map overlay corruption, since this is optional cosmetic
+// report-generation UI state.
+const corruptedReportPreferencesArchive = JSON.parse(serializeProjectArchive(reportPreferencesArchive))
+corruptedReportPreferencesArchive.manifest.view.workspace.reportPreferences = {
+  title: 12345,
+  includeWarnings: 'not-a-boolean',
+  includeComparison: true,
+}
+const corruptedReportPreferencesParsed = parseProjectArchive(JSON.stringify(corruptedReportPreferencesArchive))
+const normalizedPreferences = corruptedReportPreferencesParsed.manifest.view.workspace?.reportPreferences
+assert.equal(normalizedPreferences?.title, 'JDDC Analysis Report', 'malformed report preference title falls back to the default rather than throwing')
+assert.equal(normalizedPreferences?.includeWarnings, true, 'malformed report preference boolean falls back to the default rather than throwing')
+assert.equal(normalizedPreferences?.includeComparison, true, 'well-formed fields alongside malformed ones are preserved, not blanket-reset')
+
+// reportPreferences must only ever hold the small ReportOptions shape: no
+// raw dataset/point payload should ever survive a save/load cycle even if
+// smuggled in under the field.
+const smuggledReportPreferencesArchive = JSON.parse(serializeProjectArchive(reportPreferencesArchive))
+smuggledReportPreferencesArchive.manifest.view.workspace.reportPreferences = {
+  ...rememberedReportOptions,
+  points: [{ lat: 1, lon: 2, time: 3 }],
+  embeddedDataset: { id: 'x', points: dataset.points },
+}
+const smuggledReportPreferencesParsed = parseProjectArchive(JSON.stringify(smuggledReportPreferencesArchive))
+const smuggledPreferencesJson = JSON.stringify(smuggledReportPreferencesParsed.manifest.view.workspace?.reportPreferences)
+assert.ok(!/"points"|"embeddedDataset"/.test(smuggledPreferencesJson ?? ''), 'reportPreferences never retains smuggled raw dataset/point data after normalization')
+
 console.log('project archive tests passed')

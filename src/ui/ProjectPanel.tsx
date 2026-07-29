@@ -3,6 +3,7 @@ import type { Dataset } from '../core/model'
 import { EMPTY_WORKSPACE_SELECTION } from '../core/selection'
 import { usePointSelection } from '../state/pointSelection'
 import type { WorkspaceState } from '../state/workspace'
+import { createReportOptions } from '../core/reports/options'
 import type { WorkspaceDisplay } from '../state/workspaceDisplay'
 import type { ProjectBookmark } from '../persistence/project/manifest'
 import { buildDiagnosticBundle, serializeDiagnosticBundle } from '../core/diagnostics/bundle'
@@ -38,13 +39,14 @@ interface Props {
   projectName: string
   projectNotes: string
   projectDirty: boolean
+  onWorkspaceChange: (workspace: WorkspaceState) => void
   onProjectNameChange: (name: string) => void
   onProjectNotesChange: (notes: string) => void
   onProjectSaved: () => void
   onRestoreProject: (archive: ProjectArchive) => void
 }
 
-export function ProjectPanel({ datasets, histories, activeId, activeTab, workspace, datasetDisplay, bookmarks, operationRecords, namedRecipes, fusionArtifacts, projectName, projectNotes, projectDirty, onProjectNameChange, onProjectNotesChange, onProjectSaved, onRestoreProject }: Props) {
+export function ProjectPanel({ datasets, histories, activeId, activeTab, workspace, datasetDisplay, bookmarks, operationRecords, namedRecipes, fusionArtifacts, projectName, projectNotes, projectDirty, onWorkspaceChange, onProjectNameChange, onProjectNotesChange, onProjectSaved, onRestoreProject }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -101,7 +103,7 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
   const defaultReportTitle = deriveDefaultReportTitle(manifest.name)
   const defaultReportFilename = safeName(`${manifest.name}-report`)
 
-  const confirmExportReport = ({ options, filename }: { options: ReportOptions; filename: string }) => {
+  const confirmExportReport = ({ options, filename, remember }: { options: ReportOptions; filename: string; remember: boolean }) => {
     const html = buildHtmlAnalysisReport({
       title: options.title,
       generatedAt: Date.now(),
@@ -112,8 +114,18 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
       options,
     })
     downloadBlob(new Blob([html], { type: 'text/html' }), `${sanitizeFilename(filename)}.html`)
+    // Task 3.3: only persist the chosen report options when the user
+    // explicitly checked "Remember these settings for this project" in the
+    // dialog. `createReportOptions` re-normalizes so only the narrow
+    // ReportOptions shape (never raw dataset/point data) is ever written
+    // into workspace/project persistence.
+    if (remember) {
+      onWorkspaceChange({ ...workspace, reportPreferences: createReportOptions(options) })
+    }
     setReportDialogOpen(false)
-    setStatus('Exported a self-contained HTML analysis report. Open it in a browser to print or save as PDF.')
+    setStatus(remember
+      ? 'Exported a self-contained HTML analysis report and remembered these settings for this project.'
+      : 'Exported a self-contained HTML analysis report. Open it in a browser to print or save as PDF.')
   }
 
   const exportDiagnostics = async () => {
@@ -184,6 +196,7 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
         <ReportExportDialog
           suggestedTitle={defaultReportTitle}
           suggestedFilename={defaultReportFilename}
+          persistedOptions={workspace.reportPreferences}
           onCancel={() => setReportDialogOpen(false)}
           onConfirm={confirmExportReport}
         />

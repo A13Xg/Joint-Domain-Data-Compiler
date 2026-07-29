@@ -210,6 +210,10 @@ test('primary local-first workflow: import, inspect, transform, save/open, and e
   await reopenedDialog.getByLabel('Report title').fill('Browser evidence report')
   await reopenedDialog.getByLabel('Download filename').fill('browser-evidence')
   await reopenedDialog.getByLabel('Import/parser warnings').uncheck()
+
+  // Task 3.3: "Remember these settings" defaults unchecked, and leaving it
+  // unchecked must not persist this session's checklist choice.
+  await expect(reopenedDialog.getByLabel('Remember these settings for this project')).not.toBeChecked()
   const reportDownload = page.waitForEvent('download')
   await reopenedDialog.getByRole('button', { name: 'Generate report' }).click()
   const report = await reportDownload
@@ -225,6 +229,32 @@ test('primary local-first workflow: import, inspect, transform, save/open, and e
   expect(reportHtml).not.toContain('<h3>Import warnings</h3>')
   expect(reportHtml).toContain('Derived standard kinematics')
   expect(reportHtml).toContain('@media print')
+
+  // Reopening after an unchecked "remember" export must prefill from
+  // DEFAULT_REPORT_OPTIONS as before (Import/parser warnings back on) —
+  // this session's unchecked-box choice was not carried over.
+  await page.getByRole('button', { name: 'Export HTML report' }).click()
+  const thirdDialog = page.getByRole('dialog', { name: 'Export HTML report' })
+  await thirdDialog.locator('.dialog-checklist summary').click()
+  await expect(thirdDialog.getByLabel('Import/parser warnings')).toBeChecked()
+
+  // Now opt in: uncheck a section and check "remember" before confirming.
+  await thirdDialog.getByLabel('Import/parser warnings').uncheck()
+  await thirdDialog.getByLabel('Remember these settings for this project').check()
+  const rememberedDownload = page.waitForEvent('download')
+  await thirdDialog.getByRole('button', { name: 'Generate report' }).click()
+  await rememberedDownload
+
+  // The next dialog open must prefill the checklist from the remembered
+  // preferences (Import/parser warnings now off by default), not
+  // DEFAULT_REPORT_OPTIONS, and the remember checkbox itself resets to
+  // unchecked rather than staying sticky.
+  await page.getByRole('button', { name: 'Export HTML report' }).click()
+  const fourthDialog = page.getByRole('dialog', { name: 'Export HTML report' })
+  await fourthDialog.locator('.dialog-checklist summary').click()
+  await expect(fourthDialog.getByLabel('Import/parser warnings')).not.toBeChecked()
+  await expect(fourthDialog.getByLabel('Remember these settings for this project')).not.toBeChecked()
+  await fourthDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
 
   await page.getByRole('button', { name: 'Sources', exact: true }).click()
   await expect(page.getByLabel('Toggle visibility of real-usgs.gpx')).not.toBeChecked()

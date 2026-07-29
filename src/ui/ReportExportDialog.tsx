@@ -12,8 +12,16 @@ interface Props {
   suggestedTitle: string
   /** Suggested filename stem (without extension); sanitized before use regardless of source. */
   suggestedFilename: string
+  /**
+   * Previously remembered report options for this project (Task 3.3), if
+   * the user has opted in before. When present, the evidence-section
+   * checklist is prefilled from it instead of `DEFAULT_REPORT_OPTIONS`;
+   * still fully overridable for this session. Title/filename always start
+   * from `suggestedTitle`/`suggestedFilename` regardless.
+   */
+  persistedOptions?: ReportOptions
   onCancel: () => void
-  onConfirm: (result: { options: ReportOptions; filename: string }) => void
+  onConfirm: (result: { options: ReportOptions; filename: string; remember: boolean }) => void
 }
 
 /**
@@ -22,12 +30,23 @@ interface Props {
  * download filename, and toggle exactly which `REPORT_SECTIONS` evidence
  * categories are included before anything is generated. Cancel never
  * triggers a download.
+ *
+ * Task 3.3: also offers an explicit, unchecked-by-default "Remember these
+ * settings for this project" control. Persistence only happens when the
+ * caller's `onConfirm` handler is invoked with `remember: true` — this
+ * component itself never persists anything, and leaving the box unchecked
+ * (the default) means this session's choices are not carried into any
+ * future dialog opening beyond ordinary in-memory state.
  */
-export function ReportExportDialog({ suggestedTitle, suggestedFilename, onCancel, onConfirm }: Props) {
+export function ReportExportDialog({ suggestedTitle, suggestedFilename, persistedOptions, onCancel, onConfirm }: Props) {
   const [title, setTitle] = useState(suggestedTitle)
   const [filename, setFilename] = useState(sanitizeFilename(suggestedFilename))
-  const [sections, setSections] = useState<Record<string, boolean>>(() => sectionStateFromOptions(DEFAULT_REPORT_OPTIONS))
+  const [sections, setSections] = useState<Record<string, boolean>>(() => sectionStateFromOptions(persistedOptions ?? DEFAULT_REPORT_OPTIONS))
   const [checklistOpen, setChecklistOpen] = useState(false)
+  // Always starts unchecked, even when persistedOptions exist: remembering
+  // is an explicit action taken each time, not a sticky mode, so a previous
+  // opt-in never silently keeps re-persisting future sessions' choices.
+  const [remember, setRemember] = useState(false)
   const headingId = useId()
   const descriptionId = useId()
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -68,7 +87,7 @@ export function ReportExportDialog({ suggestedTitle, suggestedFilename, onCancel
       title: title.trim() || suggestedTitle,
       ...(sections as unknown as Partial<ReportOptions>),
     })
-    onConfirm({ options, filename: sanitizedFilename })
+    onConfirm({ options, filename: sanitizedFilename, remember })
   }
 
   return (
@@ -115,6 +134,19 @@ export function ReportExportDialog({ suggestedTitle, suggestedFilename, onCancel
             ))}
           </ul>
         </details>
+
+        <label className="header-compat-toggle">
+          <input
+            type="checkbox"
+            checked={remember}
+            onChange={(event) => setRemember(event.target.checked)}
+          />
+          Remember these settings for this project
+        </label>
+        <p className="muted small">
+          Unchecked by default. When checked, the evidence-section selection above is saved with the project so
+          the next export starts from it; nothing is saved unless you check this box and confirm.
+        </p>
 
         <div className="dialog-actions">
           <button type="button" onClick={resetToDefaults}>Reset to defaults</button>
