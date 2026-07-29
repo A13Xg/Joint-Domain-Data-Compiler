@@ -10,6 +10,7 @@ import { applyTransformToRange } from '../core/rangeTransform'
 import { computeOperationPreview, describeOperationPreview } from '../core/recipes/preview'
 import type { OperationRecord } from '../core/recipes/model'
 import { executeOperation } from '../core/recipes/executor'
+import { getOperation } from '../core/recipes/registry'
 import { usePointSelection } from '../state/pointSelection'
 import { ComputeClient, type ComputeRunHandle } from '../compute/client'
 import { logger } from '../core/logger'
@@ -130,7 +131,11 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
         <span className="muted small">{points.length.toLocaleString()} points</span>
         <label className="chk"><input type="checkbox" checked={scopeToSelection} disabled={!indexRange} onChange={(event) => setScopeToSelection(event.target.checked)} />selected range only{indexRange ? ` (${indexRange.start}–${indexRange.end})` : ''}</label>
       </div>
-      {operationHistory.length > 0 && <details className="operation-history"><summary>Operation history ({operationHistory.length})</summary><ul>{[...operationHistory].reverse().slice(0, 20).map((record) => <li key={record.id} className="mono small"><span className="muted">{new Date(record.createdAt).toLocaleTimeString()}</span> {record.summary}</li>)}</ul></details>}
+      {operationHistory.length > 0 && <details className="operation-history"><summary>Operation history ({operationHistory.length})</summary><p className="muted small">Only registered operations with matching versions can be replayed. Legacy history remains visible but is not represented as a reproducible recipe.</p><ul>{[...operationHistory].reverse().slice(0, 20).map((record) => {
+        const registered = getOperation(record.operationId)
+        const replayable = registered?.version === record.operationVersion
+        return <li key={record.id} className="mono small"><span className="muted">{new Date(record.createdAt).toLocaleTimeString()}</span> {record.summary}{!replayable && <span className="warn"> — not replayable: {registered ? `requires v${registered.version}` : 'operation unavailable'}</span>}</li>
+      })}</ul></details>}
       <div className="transform-grid">
         <Op title="Sort by time" desc="Order points chronologically. Required by most track players."><button type="button" onClick={() => run(() => sortByTime(points), false)}>Apply</button></Op>
         <Op title="Swap lat / lon" desc="Fix transposed coordinate columns. Supports selected-range scope."><button type="button" onClick={() => runScoped((selected) => swapLatLon(selected))}>Apply{scoped ? ' to range' : ''}</button></Op>
