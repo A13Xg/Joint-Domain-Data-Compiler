@@ -184,12 +184,34 @@ test('primary local-first workflow: import, inspect, transform, save/open, and e
   await expect(page.getByText(/Restored 1 dataset/)).toBeVisible()
 
   await page.getByRole('button', { name: 'Project', exact: true }).click()
-  await page.getByText('HTML report options').click()
-  await page.getByLabel('Visible report title').fill('Browser evidence report')
-  await page.getByLabel('Download filename').fill('browser-evidence')
-  await page.getByLabel('Include Warnings').uncheck()
-  const reportDownload = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Export HTML report' }).click()
+  const reportDialog = page.getByRole('dialog', { name: 'Export HTML report' })
+  await expect(reportDialog).toBeVisible()
+  await expect(reportDialog.getByLabel('Report title')).toHaveValue(/browser-smoke.*\d{4}-\d{2}-\d{2}/)
+  await expect(reportDialog.getByLabel('Download filename')).toHaveValue(/browser-smoke-report/)
+  const checklist = reportDialog.locator('.dialog-checklist')
+  await expect(checklist).toBeVisible()
+  await checklist.locator('summary').click()
+  await expect(checklist).toHaveAttribute('open', '')
+  await expect(checklist.getByText('Import/parser warnings')).toBeVisible()
+
+  // Cancel triggers no download.
+  let cancelDownloadFired = false
+  const onCancelDownload = () => { cancelDownloadFired = true }
+  page.on('download', onCancelDownload)
+  await reportDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await expect(reportDialog).toHaveCount(0)
+  expect(cancelDownloadFired).toBe(false)
+  page.off('download', onCancelDownload)
+
+  await page.getByRole('button', { name: 'Export HTML report' }).click()
+  const reopenedDialog = page.getByRole('dialog', { name: 'Export HTML report' })
+  await reopenedDialog.locator('.dialog-checklist summary').click()
+  await reopenedDialog.getByLabel('Report title').fill('Browser evidence report')
+  await reopenedDialog.getByLabel('Download filename').fill('browser-evidence')
+  await reopenedDialog.getByLabel('Import/parser warnings').uncheck()
+  const reportDownload = page.waitForEvent('download')
+  await reopenedDialog.getByRole('button', { name: 'Generate report' }).click()
   const report = await reportDownload
   expect(report.suggestedFilename()).toBe('browser-evidence.html')
   const reportPath = await report.path()
@@ -197,7 +219,10 @@ test('primary local-first workflow: import, inspect, transform, save/open, and e
   const reportHtml = await readFile(reportPath!, 'utf8')
   expect(reportHtml).toContain('real-usgs.gpx')
   expect(reportHtml).toContain('Browser evidence report')
-  expect(reportHtml).toContain('Omitted categories: import warnings.')
+  expect(reportHtml).toContain('Import/parser warnings')
+  const notIncludedBlock = reportHtml.split('Not included')[1] ?? ''
+  expect(notIncludedBlock).toContain('Import/parser warnings')
+  expect(reportHtml).not.toContain('<h3>Import warnings</h3>')
   expect(reportHtml).toContain('Derived standard kinematics')
   expect(reportHtml).toContain('@media print')
 
