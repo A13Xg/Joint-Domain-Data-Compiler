@@ -137,8 +137,15 @@ test('primary local-first workflow: import, inspect, transform, save/open, and e
   await page.getByRole('button', { name: 'Charts', exact: true }).click()
   await expect(page.getByRole('button', { name: 'point #2 ×' })).toBeVisible()
 
+  await expect(page.getByRole('navigation').getByRole('button', { name: /kml/i })).toHaveCount(0)
+
   await page.getByRole('button', { name: 'Map', exact: true }).click()
   await expect(page.getByRole('button', { name: 'selected #2 ×' })).toBeVisible()
+  const overlaysToggle = page.getByRole('button', { name: /^Overlays/ })
+  await expect(overlaysToggle).toBeVisible()
+  await overlaysToggle.click()
+  await expect(page.getByRole('region', { name: 'Map overlay manager' })).toBeVisible()
+  await overlaysToggle.click()
 
   await page.getByRole('button', { name: '3D', exact: true }).click()
   await expect(page.getByLabel('Interactive local ENU trajectory scene')).toBeVisible()
