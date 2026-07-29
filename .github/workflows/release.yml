@@ -48,6 +48,39 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  runtime-security:
+    name: Release runtime dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit shipped runtime dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+  static-analysis:
+    name: Release Semgrep static analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: semgrep/semgrep@sha256:691e6b67d374edd3f546a123c0255fd281a63a2bf11ca9dda51fb1a735fa3264
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Scan production source
+        run: semgrep scan --config auto --error src electron scripts
+
   package:
     name: Package ${{ matrix.platform_name }}
     strategy:
@@ -197,7 +230,7 @@ jobs:
 
   publish-release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [browser-smoke, package]
+    needs: [browser-smoke, runtime-security, static-analysis, package]
     runs-on: ubuntu-latest
     permissions:
       contents: write
