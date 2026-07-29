@@ -247,6 +247,109 @@ export function hampelFilterElevation(points: TrackPoint[], sigmaThreshold = 3, 
   return { points: out, summary: `Hampel filter replaced ${replaced} elevation outlier(s) with the local median (>${sigmaThreshold}σ, window=${radius * 2 + 1})` }
 }
 
+export type DuplicateTimestampPolicy = 'nudge' | 'drop' | 'average'
+
+export interface DejitterTimestampsOptions {
+  /**
+   * How to resolve a timestamp that is not strictly greater than the
+   * previous (kept) point's timestamp — either an exact duplicate or a
+   * backward jump from clock drift/jitter. Default: `'nudge'`.
+   *
+   * - `'nudge'` (default): shift the offending timestamp forward to
+   *   `previous + epsilonMs`. Preserves point count and point identity;
+   *   the safest default because it never discards or blends samples —
+   *   it only breaks time ties deterministically.
+   * - `'drop'`: discard the offending point entirely.
+   * - `'average'`: merge the offending point into the previously kept
+   *   point (numeric fields averaged; ext channels averaged where both
+   *   sides are numeric) rather than emitting a second point at
+   *   (effectively) the same instant.
+   */
+  duplicatePolicy?: DuplicateTimestampPolicy
+  /** Minimum spacing enforced between corrected timestamps, in milliseconds. Default: 1. */
+  epsilonMs?: number
+}
+
+/**
+ * Enforce strictly-increasing timestamps across timed points, correcting
+ * jitter/duplicate/clock-drift artifacts without reordering points (use
+ * `sortByTime` first if the input isn't already time-ordered). Untimed
+ * points pass through unchanged and do not participate in the monotonic
+ * check. Default policy is `'nudge'` — see `DejitterTimestampsOptions` for
+ * the full policy contract. Corrected/merged points are flagged with
+ * `time_dejittered` provenance so the correction is traceable.
+ */
+export function dejitterTimestamps(points: TrackPoint[], options: DejitterTimestampsOptions = {}): TransformResult {
+  const duplicatePolicy = options.duplicatePolicy ?? 'nudge'
+  const epsilonMs = options.epsilonMs ?? 1
+  if (!Number.isFinite(epsilonMs) || epsilonMs <= 0) throw new Error('epsilonMs must be a finite number greater than 0')
+  if (points.length === 0) return { points: [], summary: 'No points to de-jitter' }
+
+  const cloned = clone(points)
+  const out: TrackPoint[] = []
+  let lastOutTime: number | undefined
+  let corrected = 0
+  let dropped = 0
+
+  for (const point of cloned) {
+    if (point.time === undefined) { out.push(point); continue }
+
+    if (lastOutTime === undefined || point.time > lastOutTime) {
+      out.push(point)
+      lastOutTime = point.time
+      continue
+    }
+
+    // Non-increasing timestamp: exact duplicate or backward drift/jitter.
+    corrected++
+    if (duplicatePolicy === 'drop') {
+      dropped++
+      continue
+    }
+    if (duplicatePolicy === 'average') {
+      const previous = out[out.length - 1]!
+      out[out.length - 1] = mergeAveraged(previous, point)
+      addFlag(out[out.length - 1]!, 'time_dejittered')
+      continue
+    }
+    // 'nudge'
+    const newTime = lastOutTime + epsilonMs
+    point.time = newTime
+    addFlag(point, 'time_dejittered')
+    out.push(point)
+    lastOutTime = newTime
+  }
+
+  const detail = duplicatePolicy === 'drop'
+    ? `dropped ${dropped}`
+    : duplicatePolicy === 'average'
+      ? `merged ${corrected}`
+      : `nudged ${corrected}`
+  return { points: out, summary: `De-jittered timestamps (policy=${duplicatePolicy}, ${detail}, ε=${epsilonMs}ms)` }
+}
+
+/** Merge `next` into `previous` by averaging numeric fields; `previous`'s timestamp is kept. */
+function mergeAveraged(previous: TrackPoint, next: TrackPoint): TrackPoint {
+  const extKeys = new Set([...Object.keys(previous.ext ?? {}), ...Object.keys(next.ext ?? {})])
+  const ext: Record<string, number | string | boolean> = {}
+  for (const key of extKeys) {
+    const a = previous.ext?.[key]
+    const b = next.ext?.[key]
+    if (typeof a === 'number' && typeof b === 'number') ext[key] = (a + b) / 2
+    else if (a !== undefined) ext[key] = a
+    else if (b !== undefined) ext[key] = b
+  }
+  return {
+    ...previous,
+    lat: (previous.lat + next.lat) / 2,
+    lon: (previous.lon + next.lon) / 2,
+    ele: previous.ele !== undefined && next.ele !== undefined ? (previous.ele + next.ele) / 2 : previous.ele ?? next.ele,
+    name: previous.name ?? next.name,
+    desc: previous.desc ?? next.desc,
+    ext: Object.keys(ext).length > 0 ? ext : undefined,
+  }
+}
+
 function addFlag(point: TrackPoint, flag: string): void {
   const flags = new Set(point.provenance?.qualityFlags ?? [])
   flags.add(flag)

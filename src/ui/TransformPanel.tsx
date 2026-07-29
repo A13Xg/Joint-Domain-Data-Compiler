@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Dataset, TrackPoint } from '../core/model'
 import {
-  decimate, dedupe, dropInvalid, hampelFilterElevation, medianFilterElevation, offsetElevation, removeElevationOutliers,
-  shiftTime, simplify, smooth, sortByTime, swapLatLon, type TransformResult,
+  decimate, dedupe, dejitterTimestamps, dropInvalid, hampelFilterElevation, medianFilterElevation, offsetElevation,
+  removeElevationOutliers, shiftTime, simplify, smooth, sortByTime, swapLatLon, type DuplicateTimestampPolicy, type TransformResult,
 } from '../core/transforms'
 import { runDerivation } from '../core/analytics/registry'
 import { fixedRateResampleOperation, type InterpolationMode, type ResampleParams } from '../core/operations/resample'
+import { distanceResampleMonotoneOperation } from '../core/operations/distance-resample'
 import { applyTransformToRange } from '../core/rangeTransform'
 import { computeOperationPreview, describeOperationPreview } from '../core/recipes/preview'
 import type { OperationRecord } from '../core/recipes/model'
@@ -43,6 +44,9 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
   const [resampleMaxGapSeconds, setResampleMaxGapSeconds] = useState(10)
   const [limitResampleGaps, setLimitResampleGaps] = useState(true)
   const [resampleProgress, setResampleProgress] = useState<string | null>(null)
+  const [dejitterPolicy, setDejitterPolicy] = useState<DuplicateTimestampPolicy>('nudge')
+  const [dejitterEpsilonMs, setDejitterEpsilonMs] = useState(1)
+  const [distanceIntervalMeters, setDistanceIntervalMeters] = useState(10)
   const [scopeToSelection, setScopeToSelection] = useState(false)
   const { indexRange } = usePointSelection(dataset.points)
   const computeClientRef = useRef<ComputeClient | null>(null)
@@ -104,6 +108,14 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
     }
   }
 
+  const runDistanceResample = () => {
+    run(() => {
+      const params = distanceResampleMonotoneOperation.validateParams({ intervalMeters: distanceIntervalMeters })
+      const result = distanceResampleMonotoneOperation.execute({ dataset, params })
+      return { points: result.dataset.points, summary: result.summary, warnings: result.warnings }
+    }, false)
+  }
+
   const points = dataset.points
   const scoped = scopeToSelection && indexRange !== null
 
@@ -137,6 +149,15 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
         <Op title="Remove elevation outliers" desc="MAD-based spike rejection on elevation. Supports selected-range scope."><NumField label="σ threshold" value={outlierSigma} onChange={setOutlierSigma} min={1} step={0.5} /><button type="button" onClick={() => runScoped((selected) => removeElevationOutliers(selected, outlierSigma))}>Apply{scoped ? ' to range' : ''}</button></Op>
         <Op title="Median filter (elevation)" desc="Rolling median; robust to spikes without dropping points. Supports selected-range scope."><NumField label="window" value={medianWindow} onChange={setMedianWindow} min={3} step={2} /><button type="button" onClick={() => runScoped((selected) => medianFilterElevation(selected, medianWindow))}>Apply{scoped ? ' to range' : ''}</button></Op>
         <Op title="Hampel filter (elevation)" desc="Replaces local outliers with the rolling median instead of removing points. Supports selected-range scope."><NumField label="window" value={hampelWindow} onChange={setHampelWindow} min={5} step={2} /><NumField label="σ threshold" value={hampelSigma} onChange={setHampelSigma} min={1} step={0.5} /><button type="button" onClick={() => runScoped((selected) => hampelFilterElevation(selected, hampelSigma, hampelWindow))}>Apply{scoped ? ' to range' : ''}</button></Op>
+        <Op title="De-jitter timestamps" desc="Enforce strictly-increasing timestamps; resolves duplicate/backward-drift timestamps by nudge, drop, or average. Supports selected-range scope.">
+          <label className="num-field"><span>duplicate policy</span><select value={dejitterPolicy} onChange={(event) => setDejitterPolicy(event.target.value as DuplicateTimestampPolicy)}><option value="nudge">nudge (+ε)</option><option value="drop">drop</option><option value="average">average / merge</option></select></label>
+          <NumField label="ε (ms)" value={dejitterEpsilonMs} onChange={setDejitterEpsilonMs} min={0.001} step={1} />
+          <button type="button" onClick={() => runScoped((selected) => dejitterTimestamps(selected, { duplicatePolicy: dejitterPolicy, epsilonMs: dejitterEpsilonMs }))}>Apply{scoped ? ' to range' : ''}</button>
+        </Op>
+        <Op title="Resample by distance (monotone cubic)" desc="Fixed-distance resampling using Fritsch-Carlson monotone cubic interpolation; unlike a naive spline it cannot overshoot past neighboring samples. Full dataset only.">
+          <NumField label="interval (m)" value={distanceIntervalMeters} onChange={setDistanceIntervalMeters} min={0.001} step={1} />
+          <button type="button" onClick={runDistanceResample}>Apply</button>
+        </Op>
       </div>
     </div>
   )
