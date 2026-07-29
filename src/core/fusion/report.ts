@@ -69,9 +69,10 @@ export function fusionReportToMarkdown(report: FusionReport, overrides?: { point
 
 export function fusionDecisionsToCsv(decisions: readonly FusedPointDecision[]): string {
   const escape = (value: string) => `"${value.replace(/"/g, '""')}"`
-  const header = 'groupId,chosenSourceId,chosenSourceIndex,skippedSourceIds,reason,confidence'
+  const header = 'groupId,groupTimeMs,chosenSourceId,chosenSourceIndex,skippedSourceIds,reason,confidence'
   const rows = decisions.map((decision) => [
     decision.groupId,
+    decision.groupTimeMs === undefined ? '' : String(decision.groupTimeMs),
     decision.chosenSourceId,
     String(decision.chosenSourceIndex),
     escape(decision.skippedSourceIds.join(';')),

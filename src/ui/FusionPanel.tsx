@@ -161,7 +161,47 @@ export function FusionPanel({ datasets, fusionArtifacts = [], onCreateDataset }:
       </p>}
       {error && <p className="error-line small">⚠ {error}</p>}
       {report && <pre className="preview-body mono fusion-report">{report}</pre>}
-      {fusionArtifacts.length > 0 && <details className="analysis-summary"><summary>Previous fusion runs ({fusionArtifacts.length})</summary>{fusionArtifacts.map((artifact) => <div key={artifact.id}><p className="small"><strong>{artifact.id}</strong> — {artifact.pointOverrides?.length ?? 0} point, {artifact.intervalOverrides?.length ?? 0} interval override(s)</p><pre className="preview-body mono fusion-report">{fusionReportToMarkdown(artifact.report, artifact).replace('# Fusion Report', '# Prior Fusion Run')}</pre></div>)}</details>}
+      {fusionArtifacts.length > 0 && <details className="analysis-summary" open><summary>Fusion evidence ({fusionArtifacts.length} persisted run{fusionArtifacts.length === 1 ? '' : 's'})</summary>{fusionArtifacts.map((artifact) => <FusionEvidence key={artifact.id} artifact={artifact} datasets={datasets} />)}</details>}
     </div>
   )
+}
+
+function FusionEvidence({ artifact, datasets }: { artifact: FusionArtifact; datasets: Dataset[] }) {
+  const sourceLabels = new Map(artifact.sourceRegistrations.map((source) => [source.id, source.label]))
+  const fusedDataset = datasets.find((dataset) => dataset.id === artifact.fusedDatasetId)
+  const rows = artifact.decisions.map((decision, index) => ({
+    decision,
+    index,
+    time: decision.groupTimeMs ?? fusedDataset?.points[index]?.time,
+  })).sort((a, b) => (a.time ?? Number.POSITIVE_INFINITY) - (b.time ?? Number.POSITIVE_INFINITY) || a.decision.groupId.localeCompare(b.decision.groupId) || a.index - b.index)
+
+  return <section className="fusion-evidence" aria-labelledby={`fusion-evidence-${artifact.id}`}>
+    <h3 id={`fusion-evidence-${artifact.id}`}>Run {artifact.id}</h3>
+    <p className="small muted">Created {formatFusionTime(artifact.createdAt)} · {artifact.decisions.length.toLocaleString()} groups · {artifact.pointOverrides?.length ?? 0} point, {artifact.intervalOverrides?.length ?? 0} interval override(s)</p>
+    <div className="compact-table fusion-timeline">
+      <table>
+        <caption>Fusion decision timeline for {artifact.id}</caption>
+        <thead><tr><th scope="col">timestamp</th><th scope="col">group</th><th scope="col">chosen source</th><th scope="col">skipped sources</th><th scope="col">reason / confidence</th><th scope="col">override</th></tr></thead>
+        <tbody>{rows.map(({ decision, time }) => <tr key={`${artifact.id}-${decision.groupId}`}>
+          <td className="mono">{formatFusionTime(time)}</td>
+          <td className="mono">{decision.groupId}</td>
+          <td>{sourceLabels.get(decision.chosenSourceId) ?? decision.chosenSourceId}</td>
+          <td>{decision.skippedSourceIds.length > 0 ? decision.skippedSourceIds.map((id) => sourceLabels.get(id) ?? id).join(', ') : '—'}</td>
+          <td>{decision.reason}<br /><span className="muted mono">{decision.confidence.toFixed(3)}</span></td>
+          <td>{overrideForDecision(artifact, decision.groupId, time) ?? '—'}</td>
+        </tr>)}</tbody>
+      </table>
+    </div>
+    <pre className="preview-body mono fusion-report">{fusionReportToMarkdown(artifact.report, artifact).replace('# Fusion Report', '# Fusion Report — Evidence')}</pre>
+  </section>
+}
+
+function overrideForDecision(artifact: FusionArtifact, groupId: string, time: number | undefined): string | undefined {
+  if (artifact.pointOverrides?.some((override) => override.groupId === groupId)) return 'point'
+  if (time !== undefined && artifact.intervalOverrides?.some((override) => time >= override.startMs && time <= override.endMs)) return 'interval'
+  return undefined
+}
+
+function formatFusionTime(value: number | undefined): string {
+  return value !== undefined && Number.isFinite(value) ? new Date(value).toISOString() : 'Unavailable'
 }

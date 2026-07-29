@@ -44,6 +44,7 @@ export function autoCombine(
     points.push(candidateToTrackPoint(chosen))
     decisions.push(validateFusedPointDecision({
       groupId: group.id,
+      groupTimeMs: group.groupTimeMs,
       chosenSourceId: chosen.sourceId,
       chosenSourceIndex: chosen.sourceIndex,
       skippedSourceIds: skipped,

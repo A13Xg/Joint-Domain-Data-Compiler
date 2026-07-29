@@ -65,6 +65,8 @@ export interface SelectedPointOverride {
 
 export interface FusedPointDecision {
   groupId: string
+  /** Representative group time retained for durable timeline evidence. */
+  groupTimeMs?: number
   chosenSourceId: string
   chosenSourceIndex: number
   skippedSourceIds: string[]
@@ -163,12 +165,16 @@ export function validateCandidateGroup(input: { id: unknown; entityId: unknown; 
 
 export function validateFusedPointDecision(input: {
   groupId: unknown
+  groupTimeMs?: unknown
   chosenSourceId: unknown
   chosenSourceIndex: unknown
   skippedSourceIds: unknown
   reason: unknown
   confidence: unknown
 }): FusedPointDecision {
+  if (input.groupTimeMs !== undefined && (typeof input.groupTimeMs !== 'number' || !Number.isFinite(input.groupTimeMs))) {
+    throw new FusionValidationError('FusedPointDecision.groupTimeMs must be a finite number when present')
+  }
   if (typeof input.chosenSourceIndex !== 'number' || !Number.isInteger(input.chosenSourceIndex) || input.chosenSourceIndex < 0) {
     throw new FusionValidationError('FusedPointDecision.chosenSourceIndex must be a non-negative integer')
   }
@@ -180,6 +186,7 @@ export function validateFusedPointDecision(input: {
   }
   return {
     groupId: requireString(input.groupId, 'FusedPointDecision.groupId'),
+    ...(input.groupTimeMs === undefined ? {} : { groupTimeMs: input.groupTimeMs }),
     chosenSourceId: requireString(input.chosenSourceId, 'FusedPointDecision.chosenSourceId'),
     chosenSourceIndex: input.chosenSourceIndex,
     skippedSourceIds: [...input.skippedSourceIds],

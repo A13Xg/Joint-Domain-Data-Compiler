@@ -50,6 +50,7 @@ export function validateFusionArtifact(value: unknown): asserts value is FusionA
   }
   for (const decision of value.decisions) {
     if (!isRecord(decision) || typeof decision.chosenSourceId !== 'string' || !sourceIds.has(decision.chosenSourceId)) throw new Error('Fusion artifact decision references an unknown source')
+    if (decision.groupTimeMs !== undefined && (typeof decision.groupTimeMs !== 'number' || !Number.isFinite(decision.groupTimeMs))) throw new Error('Fusion artifact decision group time must be finite')
     if (!Array.isArray(decision.skippedSourceIds) || !decision.skippedSourceIds.every((sourceId) => typeof sourceId === 'string' && sourceIds.has(sourceId))) {
       throw new Error('Fusion artifact decision skips an unknown source')
     }
