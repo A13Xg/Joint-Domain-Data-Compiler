@@ -4,6 +4,7 @@ import type { OperationRecord, Recipe } from '../../core/recipes/model'
 import type { WorkspaceSelection } from '../../core/selection'
 import type { WorkspaceState } from '../../state/workspace'
 import type { WorkspaceDisplay } from '../../state/workspaceDisplay'
+import type { FusionArtifact } from '../../core/fusion/artifact'
 import {
   parseProjectManifest,
   serializeProjectManifest,
@@ -61,6 +62,9 @@ export function parseProjectArchive(text: string): ProjectArchive {
     value = JSON.parse(text)
   } catch (error) {
     throw new Error(`Project archive is not valid JSON: ${errorMessage(error)}`, { cause: error })
+  }
+  if (isRecord(value) && isRecord(value.manifest) && value.manifest.schemaVersion === 1) {
+    value = { ...value, manifest: parseProjectManifest(JSON.stringify(value.manifest)) }
   }
   validateProjectArchive(value)
   return value
@@ -173,6 +177,7 @@ export function buildProjectManifest(input: {
   projectId?: string
   projectName?: string
   notes?: string
+  fusionArtifacts?: FusionArtifact[]
   createdAt?: number
   applicationVersion: string
 }): ProjectManifest {
@@ -195,7 +200,7 @@ export function buildProjectManifest(input: {
   ]))
   return {
     schema: 'jddc-project',
-    schemaVersion: 1,
+    schemaVersion: 2,
     projectId: input.projectId ?? `project_${now}`,
     name: input.projectName ?? (input.datasets.length === 1 ? input.datasets[0]?.name ?? 'JDDC project' : `JDDC workspace (${input.datasets.length} datasets)`),
     ...(input.notes?.trim() ? { notes: input.notes.trim() } : {}),
@@ -214,6 +219,7 @@ export function buildProjectManifest(input: {
     })),
     recipes,
     bookmarks: input.bookmarks ?? [],
+    fusionArtifacts: input.fusionArtifacts ?? [],
     view: {
       activeDatasetId: input.activeDatasetId,
       activeTab: input.activeTab,

@@ -9,6 +9,7 @@ import { buildDiagnosticBundle, serializeDiagnosticBundle } from '../core/diagno
 import { logger } from '../core/logger'
 import { buildHtmlAnalysisReport } from '../core/reports/htmlReport'
 import type { OperationRecord } from '../core/recipes/model'
+import type { FusionArtifact } from '../core/fusion/artifact'
 import {
   archiveSummary,
   buildProjectManifest,
@@ -29,6 +30,7 @@ interface Props {
   datasetDisplay: WorkspaceDisplay
   bookmarks: ProjectBookmark[]
   operationRecords: Record<string, OperationRecord[]>
+  fusionArtifacts: FusionArtifact[]
   projectName: string
   projectNotes: string
   projectDirty: boolean
@@ -38,7 +40,7 @@ interface Props {
   onRestoreProject: (archive: ProjectArchive) => void
 }
 
-export function ProjectPanel({ datasets, histories, activeId, activeTab, workspace, datasetDisplay, bookmarks, operationRecords, projectName, projectNotes, projectDirty, onProjectNameChange, onProjectNotesChange, onProjectSaved, onRestoreProject }: Props) {
+export function ProjectPanel({ datasets, histories, activeId, activeTab, workspace, datasetDisplay, bookmarks, operationRecords, fusionArtifacts, projectName, projectNotes, projectDirty, onProjectNameChange, onProjectNotesChange, onProjectSaved, onRestoreProject }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -64,10 +66,11 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
     datasetDisplay,
     bookmarks,
     operationRecords,
+    fusionArtifacts,
     projectName: projectName.trim() || undefined,
     notes: projectNotes,
     applicationVersion: '0.1.0',
-  }), [datasets, activeId, activeTab, activeSelection.pointIndex, activeSelection.indexRange, projectName, projectNotes, workspace, datasetDisplay, bookmarks, operationRecords])
+  }), [datasets, activeId, activeTab, activeSelection.pointIndex, activeSelection.indexRange, projectName, projectNotes, workspace, datasetDisplay, bookmarks, operationRecords, fusionArtifacts])
 
   const archive = useMemo(() => createProjectArchive({ manifest, datasets, histories }), [manifest, datasets, histories])
   const summary = useMemo(() => archiveSummary(archive), [archive])

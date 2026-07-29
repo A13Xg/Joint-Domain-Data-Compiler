@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
+import { gunzipSync } from 'node:zlib'
 import { resolve } from 'node:path'
 
 const fixture = resolve('file-test/real-usgs.gpx')
@@ -37,6 +38,16 @@ test('fusion workflow creates a derived dataset without altering sources', async
   await expect(page.locator('.dataset-list').getByText('comparison-a.csv', { exact: true })).toBeVisible()
   await expect(page.locator('.dataset-list').getByText('comparison-b.csv', { exact: true })).toBeVisible()
   await expect(page.getByText(/Created Fused_/)).toBeVisible()
+  await page.getByRole('button', { name: 'Project', exact: true }).click()
+  const projectDownload = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Save complete project' }).click()
+  const projectPath = await (await projectDownload).path()
+  expect(projectPath).not.toBeNull()
+  const projectBytes = await readFile(projectPath!)
+  const projectJson = JSON.parse(gunzipSync(projectBytes).toString('utf8'))
+  expect(projectJson.manifest.schemaVersion).toBe(2)
+  expect(projectJson.manifest.fusionArtifacts).toHaveLength(1)
+  expect(projectJson.manifest.fusionArtifacts[0].sourceRegistrations).toHaveLength(2)
 })
 
 test('verified transform history replays from its retained source snapshot', async ({ page }) => {

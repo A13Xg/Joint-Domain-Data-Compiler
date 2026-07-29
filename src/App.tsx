@@ -30,6 +30,7 @@ import { KmlLibraryPanel } from './ui/KmlLibraryPanel'
 import { getSelectedPointIndex, getSelectedRange, restorePointSelection } from './state/pointSelection'
 import type { ProjectArchive, ProjectDatasetHistory } from './persistence/project/archive'
 import type { ProjectBookmark } from './persistence/project/manifest'
+import type { FusionArtifact } from './core/fusion/artifact'
 import { operationRecordsFromManifest } from './persistence/project/manifest'
 import { parseKml } from './core/parsers/kml'
 import { isDesktopKmlLibraryAvailable, readKmlLibraryText, saveKmlLibraryFile } from './desktop/kmlLibrary'
@@ -83,6 +84,7 @@ export default function App() {
   const [operationRecords, setOperationRecords] = useState<Record<string, OperationRecord[]>>({})
   const [datasetDisplay, setDatasetDisplay] = useState<WorkspaceDisplay>({})
   const [bookmarks, setBookmarks] = useState<ProjectBookmark[]>([])
+  const [fusionArtifacts, setFusionArtifacts] = useState<FusionArtifact[]>([])
   const [projectName, setProjectName] = useState('')
   const [projectNotes, setProjectNotes] = useState('')
   const [projectDirty, setProjectDirty] = useState(false)
@@ -393,6 +395,7 @@ export default function App() {
     setHistories((current) => { const next = { ...current }; delete next[id]; return next })
     setOperationRecords((current) => { const next = { ...current }; delete next[id]; return next })
     setBookmarks((current) => current.filter((bookmark) => bookmark.datasetId !== id))
+    setFusionArtifacts((current) => current.filter((artifact) => artifact.fusedDatasetId !== id && !artifact.sourceRegistrations.some((source) => source.datasetId === id)))
     // Reference/target dataset selectors in the comparison workspace state
     // can point at a removed dataset; reconcile them with the same
     // validation used on project restore rather than leaving a phantom ID
@@ -412,6 +415,7 @@ export default function App() {
     setWorkspace(normalizeWorkspaceState(archive.manifest.view.workspace, new Set(restoredDatasets.map((dataset) => dataset.id))))
     setDatasetDisplay(restoreWorkspaceDisplay(archive.manifest.view.datasetDisplay, restoredDatasets))
     setBookmarks(archive.manifest.bookmarks)
+    setFusionArtifacts(archive.manifest.fusionArtifacts)
     setOperationRecords(operationRecordsFromManifest(archive.manifest))
     setProjectName(archive.manifest.name)
     setProjectNotes(archive.manifest.notes ?? '')
@@ -473,11 +477,11 @@ export default function App() {
             {tab === 'compare' && <ComparisonPanel datasets={datasets} activeId={activeId} workspace={workspace.comparison} onWorkspaceChange={(comparison) => { setWorkspace((current) => ({ ...current, comparison })); setProjectDirty(true) }} onSelectReferenceSample={(datasetId, pointIndex) => { const reference = datasets.find((dataset) => dataset.id === datasetId); if (!reference) return; restorePointSelection(reference.points, pointIndex, null); setActiveId(datasetId) }} />}
             {tab === 'scene3d' && active && <Trajectory3dPanel dataset={active} datasets={datasets} workspace={workspace.scene3d} onWorkspaceChange={(scene3d) => { setWorkspace((current) => ({ ...current, scene3d })); setProjectDirty(true) }} />}
             {tab === 'transform' && active && <><TransformPanel dataset={active} onApply={applyTransform} onUndo={undo} onRedo={redo} canUndo={!!history && history.past.length > 0} canRedo={!!history && history.future.length > 0} operationHistory={operationRecords[active.id] ?? []} replaySource={history?.past[0]} onReplay={applyReplay} /><NotionalSmoothingPanel dataset={active} onCreateDataset={addDataset} /></>}
-            {tab === 'project' && <ProjectPanel datasets={datasets} histories={histories} activeId={activeId} activeTab={workspace.lastWorkspaceTab} workspace={workspace} datasetDisplay={syncedDisplay} bookmarks={bookmarks} operationRecords={operationRecords} projectName={projectName} projectNotes={projectNotes} projectDirty={projectDirty} onProjectNameChange={(name) => { setProjectName(name); setProjectDirty(true) }} onProjectNotesChange={(notes) => { setProjectNotes(notes); setProjectDirty(true) }} onProjectSaved={() => setProjectDirty(false)} onRestoreProject={restoreProject} />}
+            {tab === 'project' && <ProjectPanel datasets={datasets} histories={histories} activeId={activeId} activeTab={workspace.lastWorkspaceTab} workspace={workspace} datasetDisplay={syncedDisplay} bookmarks={bookmarks} operationRecords={operationRecords} fusionArtifacts={fusionArtifacts} projectName={projectName} projectNotes={projectNotes} projectDirty={projectDirty} onProjectNameChange={(name) => { setProjectName(name); setProjectDirty(true) }} onProjectNotesChange={(notes) => { setProjectNotes(notes); setProjectDirty(true) }} onProjectSaved={() => setProjectDirty(false)} onRestoreProject={restoreProject} />}
 
             {tab === 'export' && active && <ExportPanel dataset={active} />}
             {tab === 'sources' && <SourcesPanel datasets={datasets} activeId={activeId} display={syncedDisplay} onDisplayChange={(next) => { setDatasetDisplay(next); setProjectDirty(true) }} onSelectActive={setActiveId} />}
-            {tab === 'fusion' && <FusionPanel datasets={datasets} onCreateDataset={(dataset) => { addDataset(dataset); setTab('fusion') }} />}
+            {tab === 'fusion' && <FusionPanel datasets={datasets} onCreateDataset={(dataset, artifact) => { addDataset(dataset); setFusionArtifacts((current) => [...current, artifact]); setTab('fusion') }} />}
           </section>
         </main>
       </div>

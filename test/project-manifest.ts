@@ -15,7 +15,7 @@ function check(name: string, condition: boolean): void {
 
 const manifest: ProjectManifest = {
   schema: 'jddc-project',
-  schemaVersion: 1,
+  schemaVersion: 2,
   projectId: 'project-1',
   name: 'Manifest test',
   createdAt: 1000,
@@ -46,6 +46,7 @@ const manifest: ProjectManifest = {
   bookmarks: [
     { id: 'bookmark-1', label: 'Start', datasetId: 'dataset-1', pointIndex: 0 },
   ],
+  fusionArtifacts: [],
   view: {
     activeDatasetId: 'dataset-1',
     selection: { ...EMPTY_WORKSPACE_SELECTION, datasetId: 'dataset-1' },
@@ -115,7 +116,7 @@ check('Duplicate dataset ids are rejected', duplicateDatasetRejected)
 
 let versionRejected = false
 try {
-  validateProjectManifest({ ...manifest, schemaVersion: 2 })
+  validateProjectManifest({ ...manifest, schemaVersion: 3 })
 } catch {
   versionRejected = true
 }

@@ -11,6 +11,7 @@ import { candidateFromSourcePoint, type SourceRegistration } from '../core/fusio
 import { groupCandidatesByTime } from '../core/fusion/grouping'
 import { autoCombine } from '../core/fusion/autoCombine'
 import { buildFusionReport, fusionReportToMarkdown } from '../core/fusion/report'
+import type { FusionArtifact } from '../core/fusion/artifact'
 import { withPoints } from '../core/transforms'
 import { logger } from '../core/logger'
 
@@ -21,7 +22,7 @@ interface SourceConfig {
 
 const ENTITY_ID = 'adhoc'
 
-export function FusionPanel({ datasets, onCreateDataset }: { datasets: Dataset[]; onCreateDataset: (dataset: Dataset) => void }) {
+export function FusionPanel({ datasets, onCreateDataset }: { datasets: Dataset[]; onCreateDataset: (dataset: Dataset, artifact: FusionArtifact) => void }) {
   const [configs, setConfigs] = useState<Record<string, SourceConfig>>({})
   const [timeToleranceMs, setTimeToleranceMs] = useState(2000)
   const [report, setReport] = useState<string | null>(null)
@@ -71,9 +72,19 @@ export function FusionPanel({ datasets, onCreateDataset }: { datasets: Dataset[]
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
       const fusedDataset: Dataset = { ...fused, id: `fused_${timestamp}`, name: `Fused_${timestamp}`, createdAt: Date.now() }
       const fusionReport = buildFusionReport(result.decisions, sources)
+      const artifact: FusionArtifact = {
+        id: `fusion_${timestamp}`,
+        entityId: ENTITY_ID,
+        fusedDatasetId: fusedDataset.id,
+        sourceRegistrations: sources,
+        timeToleranceMs,
+        decisions: result.decisions,
+        report: fusionReport,
+        createdAt: Date.now(),
+      }
       setReport(fusionReportToMarkdown(fusionReport))
       logger.success('fusion', `Created ${fusedDataset.name} from ${includedDatasets.length} sources (${groups.length} groups)`)
-      onCreateDataset(fusedDataset)
+      onCreateDataset(fusedDataset, artifact)
     } catch (err) {
       const message = (err as Error).message
       setError(message)

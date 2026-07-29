@@ -1,5 +1,5 @@
 // Tranche 7 Task 7.1: the generic schema-migration engine. Only schema
-// version 1 exists in production today, so these tests exercise the engine
+// version 2 exists in production today, so these tests exercise the engine
 // generically with synthetic migrators rather than a real future schema —
 // the point is to prove the mechanism (sequencing, rejection rules,
 // cycle-guard) works correctly before a real v2 ever needs it.
@@ -86,12 +86,22 @@ checkThrows('Rejects null input', () => migrateToVersion(null, 1, []))
 // --- Integration: parseProjectManifest routes through the engine -----------
 {
   const manifest: ProjectManifest = {
-    schema: 'jddc-project', schemaVersion: 1, projectId: 'p1', name: 'Test', createdAt: 0, updatedAt: 0,
+    schema: 'jddc-project', schemaVersion: 2, projectId: 'p1', name: 'Test', createdAt: 0, updatedAt: 0,
     applicationVersion: '0.0.0', datasets: [], recipes: [], bookmarks: [],
+    fusionArtifacts: [],
     view: { activeDatasetId: null, selection: EMPTY_WORKSPACE_SELECTION, chartLayoutIds: [] },
   }
   const parsed = parseProjectManifest(JSON.stringify(manifest))
-  check('parseProjectManifest still accepts the current schema version', parsed.schemaVersion === 1)
+  check('parseProjectManifest still accepts the current schema version', parsed.schemaVersion === 2)
+}
+{
+  const v1 = {
+    schema: 'jddc-project', schemaVersion: 1, projectId: 'legacy', name: 'Legacy', createdAt: 0, updatedAt: 0,
+    applicationVersion: '0.0.0', datasets: [], recipes: [], bookmarks: [],
+    view: { activeDatasetId: null, selection: EMPTY_WORKSPACE_SELECTION, chartLayoutIds: [] },
+  }
+  const migrated = parseProjectManifest(JSON.stringify(v1))
+  check('v1 manifests migrate to v2 with an empty fusion artifact list', migrated.schemaVersion === 2 && migrated.fusionArtifacts.length === 0)
 }
 {
   let rejectedFutureVersion = false

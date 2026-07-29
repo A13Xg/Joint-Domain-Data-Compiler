@@ -1,6 +1,5 @@
 // Tranche 7 Task 7.1: a generic sequential schema-migration engine for
-// project manifests. Only one schema version (1) exists today, so the
-// production migrator list is empty — this exists so a future schema bump
+// project manifests.
 // has a tested, ready mechanism instead of an ad hoc rewrite, and so
 // "this project was saved by a newer app version" fails with a clear
 // message instead of a guess.
@@ -61,5 +60,9 @@ export function migrateToVersion(raw: unknown, currentVersion: number, migrators
   return record
 }
 
-/** No migrators exist yet — schema 1 is both the minimum and current version. */
-export const PROJECT_MANIFEST_MIGRATORS: readonly SchemaMigrator[] = []
+/** Schema v2 adds durable fusion provenance; v1 projects have none. */
+export const PROJECT_MANIFEST_MIGRATORS: readonly SchemaMigrator[] = [{
+  fromVersion: 1,
+  toVersion: 2,
+  migrate: (raw) => ({ ...raw, schemaVersion: 2, fusionArtifacts: [] }),
+}]

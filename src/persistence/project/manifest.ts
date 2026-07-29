@@ -3,8 +3,10 @@ import type { WorkspaceSelection } from '../../core/selection'
 import { normalizeWorkspaceState, type WorkspaceState } from '../../state/workspace'
 import { isValidWorkspaceDisplay, type WorkspaceDisplay } from '../../state/workspaceDisplay'
 import { migrateToVersion, PROJECT_MANIFEST_MIGRATORS } from './migrations'
+import type { FusionArtifact } from '../../core/fusion/artifact'
+import { validateFusionArtifact } from '../../core/fusion/artifact'
 
-const CURRENT_MANIFEST_SCHEMA_VERSION = 1
+const CURRENT_MANIFEST_SCHEMA_VERSION = 2
 
 export interface ProjectDatasetEntry {
   id: string
@@ -55,7 +57,12 @@ export interface ProjectManifestV1 {
   notes?: string
 }
 
-export type ProjectManifest = ProjectManifestV1
+export interface ProjectManifestV2 extends Omit<ProjectManifestV1, 'schemaVersion'> {
+  schemaVersion: 2
+  fusionArtifacts: FusionArtifact[]
+}
+
+export type ProjectManifest = ProjectManifestV2
 
 export function serializeProjectManifest(manifest: ProjectManifest): string {
   validateProjectManifest(manifest)
@@ -77,7 +84,7 @@ export function parseProjectManifest(text: string): ProjectManifest {
 export function validateProjectManifest(value: unknown): asserts value is ProjectManifest {
   if (!isRecord(value)) throw new Error('Project manifest must be an object')
   if (value.schema !== 'jddc-project') throw new Error('Unsupported project manifest schema')
-  if (value.schemaVersion !== 1) throw new Error(`Unsupported project manifest version: ${String(value.schemaVersion)}`)
+  if (value.schemaVersion !== 2) throw new Error(`Unsupported project manifest version: ${String(value.schemaVersion)}`)
   requireNonEmptyString(value.projectId, 'projectId')
   requireNonEmptyString(value.name, 'name')
   requireFiniteNumber(value.createdAt, 'createdAt')
@@ -87,6 +94,7 @@ export function validateProjectManifest(value: unknown): asserts value is Projec
   if (!Array.isArray(value.datasets)) throw new Error('datasets must be an array')
   if (!Array.isArray(value.recipes)) throw new Error('recipes must be an array')
   if (!Array.isArray(value.bookmarks)) throw new Error('bookmarks must be an array')
+  if (!Array.isArray(value.fusionArtifacts)) throw new Error('fusionArtifacts must be an array')
   if (!isRecord(value.view)) throw new Error('view must be an object')
 
   const datasetIds = new Set<string>()
@@ -94,6 +102,21 @@ export function validateProjectManifest(value: unknown): asserts value is Projec
     validateDatasetEntry(dataset)
     if (datasetIds.has(dataset.id)) throw new Error(`Duplicate dataset id: ${dataset.id}`)
     datasetIds.add(dataset.id)
+  }
+
+  const artifactIds = new Set<string>()
+  for (const artifact of value.fusionArtifacts) {
+    validateFusionArtifact(artifact)
+    if (artifactIds.has(artifact.id)) throw new Error(`Duplicate fusion artifact id: ${artifact.id}`)
+    artifactIds.add(artifact.id)
+    if (!datasetIds.has(artifact.fusedDatasetId)) throw new Error(`Fusion artifact ${artifact.id} references missing fused dataset ${artifact.fusedDatasetId}`)
+    for (const source of artifact.sourceRegistrations) {
+      if (!datasetIds.has(source.datasetId)) throw new Error(`Fusion artifact ${artifact.id} references missing source dataset ${source.datasetId}`)
+      if (source.entityId !== artifact.entityId) throw new Error(`Fusion artifact ${artifact.id} source ${source.id} has a mismatched entity`)
+    }
+    if (artifact.sourceRegistrations.some((source) => source.datasetId === artifact.fusedDatasetId)) {
+      throw new Error(`Fusion artifact ${artifact.id} fused dataset cannot also be a source dataset`)
+    }
   }
 
   const recipeIds = new Set<string>()

@@ -12,6 +12,7 @@ import {
   serializeProjectArchive,
 } from '../src/persistence/project/archive'
 import { operationRecordsFromManifest } from '../src/persistence/project/manifest'
+import type { FusionArtifact } from '../src/core/fusion/artifact'
 
 const dataset: Dataset = {
   id: 'track-1',
@@ -58,6 +59,30 @@ const manifest = buildProjectManifest({
   createdAt: 10_000,
   applicationVersion: '0.1.0',
 })
+
+const fusionArtifact: FusionArtifact = {
+  id: 'fusion-archive-1', entityId: 'adhoc', fusedDatasetId: 'track-1',
+  sourceRegistrations: [
+    { id: 'source-a', entityId: 'adhoc', datasetId: 'track-1', label: 'A', priority: 1 },
+    { id: 'source-b', entityId: 'adhoc', datasetId: 'track-1', label: 'B', priority: 2 },
+  ],
+  timeToleranceMs: 2_000, decisions: [],
+  report: { generatedAt: 1, totalGroups: 0, meanConfidence: 0, sourceSummaries: [] }, createdAt: 1,
+}
+// The archive fixture above cannot use one dataset as both source and output;
+// the round-trip test below supplies a valid multi-dataset artifact.
+const secondDataset = { ...dataset, id: 'track-2', name: 'Track Two' }
+const fusedDataset = { ...dataset, id: 'fused-1', name: 'Fused Track' }
+const durableArtifact: FusionArtifact = { ...fusionArtifact, fusedDatasetId: fusedDataset.id, sourceRegistrations: fusionArtifact.sourceRegistrations.map((source, index) => ({ ...source, datasetId: index === 0 ? dataset.id : secondDataset.id })) }
+const artifactManifest = buildProjectManifest({ datasets: [dataset, secondDataset, fusedDataset], activeDatasetId: fusedDataset.id, activeTab: 'project', selection: { ...EMPTY_WORKSPACE_SELECTION, datasetId: fusedDataset.id }, applicationVersion: '0.1.0', fusionArtifacts: [durableArtifact] })
+assert.equal(artifactManifest.fusionArtifacts[0]?.fusedDatasetId, 'fused-1', 'fusion artifact output link is persisted in the manifest')
+const durableArchive = createProjectArchive({ manifest: artifactManifest, datasets: [dataset, secondDataset, fusedDataset], histories: {} })
+assert.equal(parseProjectArchive(serializeProjectArchive(durableArchive)).manifest.fusionArtifacts[0]?.id, 'fusion-archive-1', 'fusion artifacts survive archive serialization')
+const legacyManifest = { ...manifest, schemaVersion: 1 as const }
+delete (legacyManifest as { fusionArtifacts?: unknown }).fusionArtifacts
+const migratedArchive = parseProjectArchive(JSON.stringify({ schema: 'jddc-project-archive', schemaVersion: 1, manifest: legacyManifest, datasets: [dataset], histories: {} }))
+assert.equal(migratedArchive.manifest.schemaVersion, 2, 'legacy archive manifests migrate to schema v2')
+assert.throws(() => createProjectArchive({ manifest: buildProjectManifest({ datasets: [dataset, secondDataset], activeDatasetId: dataset.id, activeTab: 'project', selection: { ...EMPTY_WORKSPACE_SELECTION, datasetId: dataset.id }, applicationVersion: '0.1.0', fusionArtifacts: [durableArtifact] }), datasets: [dataset, secondDataset], histories: {} }), /missing fused dataset/)
 
 assert.equal(manifest.bookmarks.length, 1, 'buildProjectManifest threads through caller-provided bookmarks')
 assert.equal(manifest.bookmarks[0]?.label, 'Turn point')
