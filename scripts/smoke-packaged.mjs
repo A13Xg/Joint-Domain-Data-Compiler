@@ -21,7 +21,7 @@ child.stderr.on('data', (chunk) => output.push(String(chunk)))
 
 try {
   const page = await waitForRenderer(port, child)
-  await assertWorkbenchMounted(page.webSocketDebuggerUrl)
+  await waitForWorkbenchMounted(page.webSocketDebuggerUrl)
   console.log(`Packaged ${process.platform} renderer launched: ${page.title}`)
 } catch (error) {
   const detail = output.join('').trim()
@@ -31,13 +31,19 @@ try {
   stopPackagedApp(child)
 }
 
-async function assertWorkbenchMounted(webSocketDebuggerUrl) {
+async function waitForWorkbenchMounted(webSocketDebuggerUrl) {
   if (typeof webSocketDebuggerUrl !== 'string') throw new Error('Packaged renderer did not expose a DevTools WebSocket endpoint.')
-  const state = await evaluateDevTools(webSocketDebuggerUrl, `(() => {
-    const root = document.querySelector('#root')
-    return { mounted: Boolean(root && root.childElementCount > 0 && /Joint Domain Data Compiler|Import/i.test(root.textContent || '')), readyState: document.readyState, rootHtml: root?.innerHTML.slice(0, 500) ?? null, location: location.href }
-  })()`)
-  if (state?.mounted !== true) throw new Error(`Packaged renderer opened, but the JDDC React workbench did not mount into #root: ${JSON.stringify(state)}`)
+  const deadline = Date.now() + 30_000
+  let state = null
+  while (Date.now() < deadline) {
+    state = await evaluateDevTools(webSocketDebuggerUrl, `(() => {
+      const root = document.querySelector('#root')
+      return { mounted: Boolean(root && root.childElementCount > 0 && /Joint Domain Data Compiler|Import/i.test(root.textContent || '')), readyState: document.readyState, rootHtml: root?.innerHTML.slice(0, 500) ?? null, location: location.href }
+    })()`)
+    if (state?.mounted === true) return
+    await new Promise((resolveWait) => setTimeout(resolveWait, 250))
+  }
+  throw new Error(`Packaged renderer opened, but the JDDC React workbench did not mount into #root: ${JSON.stringify(state)}`)
 }
 
 function evaluateDevTools(url, expression) {
