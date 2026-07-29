@@ -1,8 +1,30 @@
 import type { Dataset } from '../model'
 import type { OperationRecord } from '../recipes/model'
 import type { ProjectBookmark } from '../../persistence/project/manifest'
+import type { FusionReport } from '../fusion/report'
 import { detectQualityEvents } from '../quality/events'
 import { computeStats, formatDuration } from '../stats'
+import {
+  normalizeReportOptions,
+  REPORT_SECTIONS,
+  type ReportComparisonSummary,
+  type ReportOptions,
+  type ReportOverlayEntry,
+} from './options'
+
+export type { ReportOptions, ReportComparisonSummary, ReportOverlayEntry } from './options'
+export { DEFAULT_REPORT_OPTIONS, normalizeReportOptions } from './options'
+
+/**
+ * @deprecated retained for source-compat with older callers; use `Partial<ReportOptions>` going forward.
+ * Every field maps 1:1 onto the new `include*` option so passing this shape into `options` still works.
+ */
+export interface HtmlAnalysisReportOptions {
+  includeQualityEvents?: boolean
+  includeWarnings?: boolean
+  includeOperations?: boolean
+  includeBookmarks?: boolean
+}
 
 export interface HtmlAnalysisReportInput {
   title: string
@@ -11,37 +33,54 @@ export interface HtmlAnalysisReportInput {
   datasets: readonly Dataset[]
   bookmarks: readonly ProjectBookmark[]
   operationRecords: Readonly<Record<string, readonly OperationRecord[]>>
-  options?: HtmlAnalysisReportOptions
+  /** Cross-dataset comparison summary. Only rendered when `options.includeComparison` is enabled AND this is supplied. */
+  comparison?: ReportComparisonSummary
+  /** Multi-source fusion decision summary. Only rendered when `options.includeFusion` is enabled AND this is supplied. */
+  fusion?: FusionReport
+  /** Map overlay inventory. Only rendered when `options.includeOverlayInventory` is enabled AND this is supplied. */
+  overlays?: readonly ReportOverlayEntry[]
+  options?: Partial<ReportOptions> | HtmlAnalysisReportOptions
 }
 
-export interface HtmlAnalysisReportOptions {
-  includeQualityEvents?: boolean
-  includeWarnings?: boolean
-  includeOperations?: boolean
-  includeBookmarks?: boolean
+function resolveOptions(input: HtmlAnalysisReportInput): ReportOptions {
+  const raw = input.options as Record<string, unknown> | undefined
+  // Translate the legacy flat 4-flag shape (includeOperations, no title) onto the new contract before normalizing,
+  // so old call sites (and the old test suite) keep working unchanged.
+  const translated = raw
+    ? {
+        ...raw,
+        includeOperationHistory: raw.includeOperationHistory ?? raw.includeOperations,
+      }
+    : undefined
+  return normalizeReportOptions(translated, input.title).options
 }
 
 export function buildHtmlAnalysisReport(input: HtmlAnalysisReportInput): string {
-  const options: Required<HtmlAnalysisReportOptions> = { includeQualityEvents: true, includeWarnings: true, includeOperations: true, includeBookmarks: true, ...input.options }
-  const omittedCategories = [
-    !options.includeQualityEvents ? 'quality events' : null,
-    !options.includeWarnings ? 'import warnings' : null,
-    !options.includeOperations ? 'transform history' : null,
-    !options.includeBookmarks ? 'bookmarks' : null,
-  ].filter((category): category is string => category !== null)
-  const scopeDisclosure = omittedCategories.length
-    ? `Omitted categories: ${omittedCategories.join(', ')}.`
-    : 'All standard evidence categories are included.'
-  const title = input.title.trim() || 'JDDC Analysis Report'
+  const options = resolveOptions(input)
+  const title = options.title
   const totalPoints = input.datasets.reduce((sum, dataset) => sum + dataset.points.length, 0)
   const totalEvents = input.datasets.reduce((sum, dataset) => sum + detectQualityEvents(dataset.points).length, 0)
   const totalDistanceMeters = input.datasets.reduce((sum, dataset) => sum + computeStats(dataset).distanceMeters, 0)
-  const datasetSections = input.datasets.map((dataset, index) => datasetSection(
+
+  const datasetSections = input.datasets.map((dataset, index) => buildDatasetSection(
     dataset,
     input.bookmarks.filter((bookmark) => bookmark.datasetId === dataset.id),
     input.operationRecords[dataset.id] ?? [],
-    index, options,
+    index,
+    options,
   )).join('\n')
+
+  const body = [
+    buildHeaderSection(title, input.generatedAt, input.applicationVersion, input.datasets.length),
+    buildScopeSection(options),
+    buildOverviewSection(input.datasets.length, totalPoints, totalDistanceMeters, totalEvents),
+    datasetSections || '<p>No datasets were loaded when this report was generated.</p>',
+    buildComparisonSection(options, input.comparison),
+    buildFusionSection(options, input.fusion),
+    buildNotionalDisclosureSection(options, input.datasets),
+    buildOverlayInventorySection(options, input.overlays),
+    buildFooterSection(),
+  ].filter((section) => section !== '').join('\n')
 
   return `<!doctype html>
 <html lang="en">
@@ -93,21 +132,37 @@ td{color:#26372f;background:#fffef8;overflow-wrap:anywhere}
 .evidence-list li:before{content:"";position:absolute;left:13px;top:17px;width:7px;height:7px;border:1px solid var(--vector);transform:rotate(45deg)}
 .empty{margin:0;padding:12px 14px;border-left:2px solid #6f9684;background:#f1f5f1;color:#63746b;font-size:13px}
 .dataset-heading,.metric-grid,table,.evidence-list li{break-inside:avoid}
+.scope-block{margin:26px 0 0;padding:22px 26px;border:1px solid #6d8980;background:#f4f8f5}
+.scope-block h2{font-size:16px;letter-spacing:.02em}
+.scope-lede{margin:8px 0 16px;color:#405c50;font-size:13px}
+.scope-columns{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+.scope-columns h3{margin:0 0 8px}
 .report-footer{display:flex;justify-content:space-between;gap:24px;margin-top:50px;padding:18px 0;border-top:1px solid var(--line);color:#62776c;font:500 10px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase}
-@media(max-width:760px){body{padding:18px 14px 44px}.report-header{min-height:0;padding:28px 24px}.vector-mark{display:none}.overview-grid,.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.dataset{padding:22px 18px}.dataset-heading{grid-template-columns:auto 1fr}.dataset-format{grid-column:2}.report-footer{display:block}}
+@media(max-width:760px){body{padding:18px 14px 44px}.report-header{min-height:0;padding:28px 24px}.vector-mark{display:none}.overview-grid,.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.dataset{padding:22px 18px}.dataset-heading{grid-template-columns:auto 1fr}.dataset-format{grid-column:2}.scope-columns{grid-template-columns:1fr}.report-footer{display:block}}
 @page{margin:14mm}
-@media print{html,body{background:#fff;color:#17231d}body{max-width:none;margin:0;padding:0;background-image:none}.report-header{min-height:240px;background:#fff;box-shadow:none}.report-header:before{border-color:#b5cbc0;box-shadow:none}.report-header:after{box-shadow:none}.overview-card,.metric-card,.overview-card:nth-child(2n),.metric-card:nth-child(2n),.dataset{background:#fff;box-shadow:none}.dataset{break-before:auto}.vector-mark{opacity:.28}}
+@media print{html,body{background:#fff;color:#17231d}body{max-width:none;margin:0;padding:0;background-image:none}.report-header{min-height:240px;background:#fff;box-shadow:none}.report-header:before{border-color:#b5cbc0;box-shadow:none}.report-header:after{box-shadow:none}.overview-card,.metric-card,.overview-card:nth-child(2n),.metric-card:nth-child(2n),.dataset,.scope-block{background:#fff;box-shadow:none}.dataset{break-before:auto}.vector-mark{opacity:.28}}
 </style>
 </head>
 <body>
-<header class="report-header">
+${body}
+</body>
+</html>`
+}
+
+// --- Section builders ---------------------------------------------------
+// Each builder is a pure function of its inputs. Sections that are option-
+// gated return '' when disabled instead of being rendered and stripped —
+// there is no post-processing of the assembled HTML anywhere in this file.
+
+function buildHeaderSection(title: string, generatedAt: number, applicationVersion: string, datasetCount: number): string {
+  return `<header class="report-header">
   <div class="eyebrow">Joint Domain Data Compiler / Analysis Report</div>
   <h1>${escapeHtml(title)}</h1>
   <p class="lede">A local, evidence-based snapshot of loaded trajectory data, source references, quality signals, bookmarks, and recorded transformations. ${escapeHtml(scopeDisclosure)} Verify conclusions against source data and metadata.</p>
   <div class="status-rail">
-    <div class="status-item"><span class="status-label">Generated</span><span class="status-value">${escapeHtml(formatDate(input.generatedAt))}</span></div>
-    <div class="status-item"><span class="status-label">Application</span><span class="status-value">JDDC ${escapeHtml(input.applicationVersion)}</span></div>
-    <div class="status-item"><span class="status-label">Datasets</span><span class="status-value">${input.datasets.length.toLocaleString('en-US')}</span></div>
+    <div class="status-item"><span class="status-label">Generated</span><span class="status-value">${escapeHtml(formatDate(generatedAt))}</span></div>
+    <div class="status-item"><span class="status-label">Application</span><span class="status-value">JDDC ${escapeHtml(applicationVersion)}</span></div>
+    <div class="status-item"><span class="status-label">Datasets</span><span class="status-value">${datasetCount.toLocaleString('en-US')}</span></div>
   </div>
   <svg class="vector-mark" viewBox="0 0 330 150" aria-hidden="true">
     <g fill="none" stroke="currentColor" color="#68cbd0" stroke-width="1">
@@ -118,28 +173,42 @@ td{color:#26372f;background:#fffef8;overflow-wrap:anywhere}
       <circle cx="234" cy="76" r="4" fill="#86e8b2" stroke="#86e8b2"/>
     </g>
   </svg>
-</header>
-<div class="overview-grid" aria-label="Report summary">
-  ${metric('Datasets', input.datasets.length.toLocaleString('en-US'), 'overview-card')}
+</header>`
+}
+
+/**
+ * Mandatory "Included evidence" / "Not included" scope block. Always
+ * rendered (it is not itself an optional section) and driven entirely by
+ * which options are enabled, so a reader never has to infer what was left
+ * out from absence alone.
+ */
+function buildScopeSection(options: ReportOptions): string {
+  const included = REPORT_SECTIONS.filter((section) => options[section.key])
+  const excluded = REPORT_SECTIONS.filter((section) => !options[section.key])
+  return `<section class="scope-block" aria-label="Report scope">
+<h2>Report scope</h2>
+<p class="scope-lede">This report includes only the evidence explicitly enabled below. Nothing outside this list was calculated, checked, or implied — verify all figures against source data.</p>
+<div class="scope-columns">
+<div><h3>Included evidence</h3>${included.length > 0 ? bareList(included.map((section) => section.label)) : `<p class="empty">No optional evidence sections were enabled.</p>`}</div>
+<div><h3>Not included</h3>${excluded.length > 0 ? bareList(excluded.map((section) => section.label)) : `<p class="empty">All optional evidence sections were enabled.</p>`}</div>
+</div>
+</section>`
+}
+
+function buildOverviewSection(datasetCount: number, totalPoints: number, totalDistanceMeters: number, totalEvents: number): string {
+  return `<div class="overview-grid" aria-label="Report summary">
+  ${metric('Datasets', datasetCount.toLocaleString('en-US'), 'overview-card')}
   ${metric('Total points', totalPoints.toLocaleString('en-US'), 'overview-card')}
   ${metric('Track distance', `${formatNumber(totalDistanceMeters / 1000)} km`, 'overview-card')}
   ${metric('Quality events', totalEvents.toLocaleString('en-US'), 'overview-card')}
-</div>
-${datasetSections || '<p>No datasets were loaded when this report was generated.</p>'}
-<footer class="report-footer"><span>Generated locally by Joint Domain Data Compiler</span><span>Source-aware / User-verifiable</span></footer>
-</body>
-</html>`
+</div>`
 }
 
-function datasetSection(dataset: Dataset, bookmarks: readonly ProjectBookmark[], operations: readonly OperationRecord[], index: number, options: Required<HtmlAnalysisReportOptions>): string {
+function buildDatasetSection(dataset: Dataset, bookmarks: readonly ProjectBookmark[], operations: readonly OperationRecord[], index: number, options: ReportOptions): string {
   const stats = computeStats(dataset)
   const events = detectQualityEvents(dataset.points)
   const eventCounts = new Map<string, number>()
   for (const event of events) eventCounts.set(event.kind, (eventCounts.get(event.kind) ?? 0) + 1)
-  const metadata = dataset.metadata
-  const bounds = stats.bounds
-    ? `${formatNumber(stats.bounds.minLat)}, ${formatNumber(stats.bounds.minLon)} to ${formatNumber(stats.bounds.maxLat)}, ${formatNumber(stats.bounds.maxLon)}`
-    : 'Unavailable'
 
   return `<section class="dataset">
 <div class="dataset-heading"><span class="dataset-index">${String(index + 1).padStart(2, '0')}</span><h2>${escapeHtml(dataset.name)}</h2><span class="dataset-format">${escapeHtml(dataset.sourceFormat.toUpperCase())}</span></div>
@@ -151,7 +220,20 @@ ${metric('Distance', `${formatNumber(stats.distanceMeters / 1000)} km`)}
 ${metric('Duration', formatDuration(stats.durationMs))}
 ${metric('Quality events', events.length.toLocaleString('en-US'))}
 </div>
-<h3>Source and references</h3>
+${options.includeSourceMetadata ? buildSourceMetadataTable(dataset, stats.bounds) : ''}
+${options.includeQualityEvents ? listSection('Quality events', [...eventCounts].map(([kind, count]) => `${kind}: ${count}`), 'No quality events detected with the default thresholds.') : ''}
+${options.includeWarnings ? listSection('Import warnings', dataset.warnings, 'No parser warnings.') : ''}
+${options.includeOperationHistory ? listSection('Transform history', operations.map((operation) => `${formatDate(operation.createdAt)} — ${operation.summary}`), 'No transforms recorded in this session.') : ''}
+${options.includeBookmarks ? listSection('Bookmarks', bookmarks.map((bookmark) => `${bookmark.label} — point ${bookmark.pointIndex ?? 'n/a'}${bookmark.note ? ` — ${bookmark.note}` : ''}`), 'No bookmarks.') : ''}
+</section>`
+}
+
+function buildSourceMetadataTable(dataset: Dataset, bounds: ReturnType<typeof computeStats>['bounds']): string {
+  const metadata = dataset.metadata
+  const boundsText = bounds
+    ? `${formatNumber(bounds.minLat)}, ${formatNumber(bounds.minLon)} to ${formatNumber(bounds.maxLat)}, ${formatNumber(bounds.maxLon)}`
+    : 'Unavailable'
+  return `<h3>Source and references</h3>
 <table><tbody>
 ${row('Source file', metadata?.source.filename ?? 'Unavailable')}
 ${row('Source checksum', metadata?.source.checksum ? `SHA-256 ${metadata.source.checksum}` : 'Unavailable')}
@@ -159,13 +241,72 @@ ${row('Parser', metadata ? `${metadata.source.parserId} ${metadata.source.parser
 ${row('Coordinate system', metadata?.coordinateSystem ?? 'Unknown')}
 ${row('Altitude reference', metadata?.altitudeReference ?? 'UNKNOWN')}
 ${row('Time reference', metadata?.timeReference ?? 'UNKNOWN')}
-${row('Bounds', bounds)}
-</tbody></table>
-${options.includeQualityEvents ? listSection('Quality events', [...eventCounts].map(([kind, count]) => `${kind}: ${count}`), 'No quality events detected with the default thresholds.') : ''}
-${options.includeWarnings ? listSection('Import warnings', dataset.warnings, 'No parser warnings.') : ''}
-${options.includeOperations ? listSection('Transform history', operations.map((operation) => `${formatDate(operation.createdAt)} — ${operation.summary}`), 'No transforms recorded in this session.') : ''}
-${options.includeBookmarks ? listSection('Bookmarks', bookmarks.map((bookmark) => `${bookmark.label} — point ${bookmark.pointIndex ?? 'n/a'}${bookmark.note ? ` — ${bookmark.note}` : ''}`), 'No bookmarks.') : ''}
-</section>`
+${row('Bounds', boundsText)}
+</tbody></table>`
+}
+
+function buildComparisonSection(options: ReportOptions, comparison: ReportComparisonSummary | undefined): string {
+  if (!options.includeComparison) return ''
+  if (!comparison) {
+    return sectionWrapper('Cross-dataset comparison', `<p class="empty">Comparison was enabled, but no comparison data was supplied for this report.</p>`)
+  }
+  if (comparison.error) {
+    return sectionWrapper('Cross-dataset comparison', `<p class="empty">${escapeHtml(comparison.referenceDatasetName)} vs ${escapeHtml(comparison.targetDatasetName)}: ${escapeHtml(comparison.error)}</p>`)
+  }
+  return sectionWrapper('Cross-dataset comparison', `<table><tbody>
+${row('Reference dataset', comparison.referenceDatasetName)}
+${row('Target dataset', comparison.targetDatasetName)}
+${row('Aligned samples', comparison.sampleCount.toLocaleString('en-US'))}
+${row('Minimum range', comparison.minRangeMeters !== undefined ? `${formatNumber(comparison.minRangeMeters)} m` : 'Unavailable')}
+${row('Maximum range', comparison.maxRangeMeters !== undefined ? `${formatNumber(comparison.maxRangeMeters)} m` : 'Unavailable')}
+${row('Mean range', comparison.meanRangeMeters !== undefined ? `${formatNumber(comparison.meanRangeMeters)} m` : 'Unavailable')}
+${row('Mean horizontal range', comparison.meanHorizontalRangeMeters !== undefined ? `${formatNumber(comparison.meanHorizontalRangeMeters)} m` : 'Unavailable')}
+${row('Mean closure rate', comparison.meanClosureRateMps !== undefined ? `${formatNumber(comparison.meanClosureRateMps)} m/s` : 'Unavailable')}
+</tbody></table>`)
+}
+
+function buildFusionSection(options: ReportOptions, fusion: FusionReport | undefined): string {
+  if (!options.includeFusion) return ''
+  if (!fusion || fusion.sourceSummaries.length === 0) {
+    return sectionWrapper('Fusion decisions', `<p class="empty">Fusion evidence was enabled, but no fusion report was supplied for this report.</p>`)
+  }
+  const rows = fusion.sourceSummaries.map((summary) => row(`${summary.label} (${summary.sourceId})`, `${summary.chosenCount.toLocaleString('en-US')} chosen, ${summary.skippedCount.toLocaleString('en-US')} skipped`)).join('')
+  return sectionWrapper('Fusion decisions', `<table><tbody>
+${row('Total candidate groups', fusion.totalGroups.toLocaleString('en-US'))}
+${row('Mean confidence', fusion.meanConfidence.toFixed(3))}
+${rows}
+</tbody></table>`)
+}
+
+function buildNotionalDisclosureSection(options: ReportOptions, datasets: readonly Dataset[]): string {
+  if (!options.includeNotionalDisclosure) return ''
+  const perDataset = datasets.map((dataset) => {
+    const notionalCount = dataset.points.filter((point) => point.ext?.notional === true || point.provenance?.qualityFlags?.includes('notional')).length
+    return `${dataset.name}: ${notionalCount.toLocaleString('en-US')} of ${dataset.points.length.toLocaleString('en-US')} point(s)`
+  })
+  const totalNotional = datasets.reduce((sum, dataset) => sum + dataset.points.filter((point) => point.ext?.notional === true || point.provenance?.qualityFlags?.includes('notional')).length, 0)
+  const notice = totalNotional > 0
+    ? `<p class="empty">This report contains ${totalNotional.toLocaleString('en-US')} notional/derived point(s) — synthetic samples interpolated to fill time gaps. They are not observed telemetry and are flagged in provenance; do not treat them as source measurements.</p>`
+    : `<p class="empty">No notional/derived points were present in the datasets included in this report. All plotted points are as-observed from source.</p>`
+  return sectionWrapper('Notional / derived-data disclosure', `${notice}${perDataset.length > 0 ? bareList(perDataset) : ''}`)
+}
+
+function buildOverlayInventorySection(options: ReportOptions, overlays: readonly ReportOverlayEntry[] | undefined): string {
+  if (!options.includeOverlayInventory) return ''
+  if (!overlays || overlays.length === 0) {
+    return sectionWrapper('Map overlay inventory', `<p class="empty">No map overlays were active in this session.</p>`)
+  }
+  return sectionWrapper('Map overlay inventory', bareList(overlays.map((overlay) => `${overlay.name} (${overlay.sourceKind}) — ${overlay.visible ? 'visible' : 'hidden'}`)))
+}
+
+function buildFooterSection(): string {
+  return `<footer class="report-footer"><span>Generated locally by Joint Domain Data Compiler</span><span>Source-aware / User-verifiable</span></footer>`
+}
+
+// --- Shared render helpers ------------------------------------------------
+
+function sectionWrapper(title: string, bodyHtml: string): string {
+  return `<section class="dataset"><h2>${escapeHtml(title)}</h2>${bodyHtml}</section>`
 }
 
 function metric(label: string, value: string, className = 'metric-card'): string {
@@ -181,6 +322,10 @@ function listSection(title: string, items: readonly string[], empty: string): st
     ? `<ul class="evidence-list">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
     : `<p class="empty">${escapeHtml(empty)}</p>`
   return `<h3>${escapeHtml(title)}</h3>${body}`
+}
+
+function bareList(items: readonly string[]): string {
+  return `<ul class="evidence-list">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
 }
 
 function formatDate(value: number): string {
