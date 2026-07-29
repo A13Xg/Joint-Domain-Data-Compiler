@@ -115,9 +115,17 @@ function firstKmlFromKmz(bytes) {
         const localNameLen = bytes.readUInt16LE(localOffset + 26)
         const localExtraLen = bytes.readUInt16LE(localOffset + 28)
         const start = localOffset + 30 + localNameLen + localExtraLen
+        if (start > bytes.length || compressedSize > bytes.length - start) throw new Error('KMZ compressed entry is truncated')
         const payload = bytes.subarray(start, start + compressedSize)
-        const content = method === 0 ? payload : method === 8 ? zlib.inflateRawSync(payload) : null
+        const content = method === 0
+          ? payload
+          : method === 8
+            ? zlib.inflateRawSync(payload, { maxOutputLength: MAX_KML_LIBRARY_BYTES })
+            : null
         if (!content) throw new Error(`Unsupported KMZ compression method ${method}`)
+        if (content.length > MAX_KML_LIBRARY_BYTES || content.length !== uncompressedSize) {
+          throw new Error('KMZ embedded KML size is invalid or exceeds safety limit')
+        }
         return { text: content.toString('utf8'), entryName, modifiedAt: dosDateTimeToMs(modifiedDate, modifiedTime) }
       }
       cursor += 46 + nameLen + extraLen + commentLen
