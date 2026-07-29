@@ -1,6 +1,8 @@
 import type { TrackPoint } from '../core/model'
 import { extractChartSeries, type ChartXAxis } from '../visualization/charts/series'
 import { fixedRateResampleOperation, type ResampleParams } from '../core/operations/resample'
+import { buildGpxChunked } from '../core/compute/gpxExport'
+import type { GpxExportOptions } from '../core/exporters/gpx'
 import type { ComputeTaskDefinition } from './protocol'
 
 interface ChartSeriesPayload {
@@ -65,7 +67,46 @@ export const fixedRateResampleTask: ComputeTaskDefinition<ResamplePayload, Retur
   },
 }
 
-export const PRODUCTION_COMPUTE_TASKS = [chartSeriesTask, fixedRateResampleTask] as const
+interface GpxExportPayload {
+  points: TrackPoint[]
+  datasetName?: string
+  options?: GpxExportOptions
+}
+
+export const gpxExportTask: ComputeTaskDefinition<GpxExportPayload, Awaited<ReturnType<typeof buildGpxChunked>>> = {
+  id: 'gpx-export',
+  version: 1,
+  validatePayload(payload: unknown): GpxExportPayload {
+    const value = record(payload, 'gpx export payload')
+    return {
+      points: points(value.points),
+      datasetName: value.datasetName === undefined ? undefined : nonEmptyString(value.datasetName, 'datasetName'),
+      options: value.options === undefined ? undefined : gpxOptions(value.options),
+    }
+  },
+  async run(payload, context) {
+    if (context.signal.aborted) throw new Error('GPX export cancelled')
+    const dataset = {
+      id: 'worker-dataset',
+      name: payload.datasetName ?? 'Worker dataset',
+      sourceFormat: 'unknown' as const,
+      points: payload.points,
+      warnings: [],
+      channels: [],
+      createdAt: 0,
+    }
+    return buildGpxChunked(dataset, payload.options ?? {}, {
+      signal: context.signal,
+      reportProgress: (progress) => context.reportProgress({
+        completed: progress.completed,
+        total: progress.total,
+        message: 'Building GPX',
+      }),
+    })
+  },
+}
+
+export const PRODUCTION_COMPUTE_TASKS = [chartSeriesTask, fixedRateResampleTask, gpxExportTask] as const
 
 function record(value: unknown, field: string): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(`${field} must be an object`)
@@ -92,7 +133,30 @@ function positiveInteger(value: unknown, field: string): number {
   return result
 }
 
+function nonNegativeInteger(value: unknown, field: string): number {
+  const result = integer(value, field)
+  if (result < 0) throw new Error(`${field} must not be negative`)
+  return result
+}
+
 function nonEmptyString(value: unknown, field: string): string {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`${field} must be a non-empty string`)
+  return value
+}
+
+function gpxOptions(value: unknown): GpxExportOptions {
+  const raw = record(value, 'options')
+  const options: GpxExportOptions = {}
+  if (raw.creator !== undefined) options.creator = nonEmptyString(raw.creator, 'options.creator')
+  if (raw.trackName !== undefined) options.trackName = nonEmptyString(raw.trackName, 'options.trackName')
+  if (raw.includeExtensions !== undefined) options.includeExtensions = boolean(raw.includeExtensions, 'options.includeExtensions')
+  if (raw.sortByTime !== undefined) options.sortByTime = boolean(raw.sortByTime, 'options.sortByTime')
+  if (raw.coordinatePrecision !== undefined) options.coordinatePrecision = nonNegativeInteger(raw.coordinatePrecision, 'options.coordinatePrecision')
+  if (raw.bom !== undefined) options.bom = boolean(raw.bom, 'options.bom')
+  return options
+}
+
+function boolean(value: unknown, field: string): boolean {
+  if (typeof value !== 'boolean') throw new Error(`${field} must be a boolean`)
   return value
 }

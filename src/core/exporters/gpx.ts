@@ -37,12 +37,18 @@ export interface GpxExportOptions {
 const EXT_NS = 'jddc'
 const EXT_NS_URI = 'https://joint-domain-data-compiler.local/gpx/v1'
 
-interface PointXmlResult {
+export interface PointXmlResult {
   xml: string | null
   reason?: 'missing' | 'out_of_range'
 }
 
-function buildTrkpt(
+/**
+ * Build a single <trkpt> XML fragment for one point. Exported so the chunked
+ * compute core (src/core/compute/gpxExport.ts) can reuse the exact same
+ * per-point logic instead of duplicating it — chunking must never change the
+ * bytes produced for a given point.
+ */
+export function buildTrkpt(
   point: TrackPoint,
   opts: Required<Pick<GpxExportOptions, 'includeExtensions' | 'coordinatePrecision'>>,
 ): PointXmlResult {
@@ -124,8 +130,11 @@ export interface GpxBuildResult {
   skippedOutOfRange: number
 }
 
-export function buildGpx(dataset: Dataset, options: GpxExportOptions = {}): GpxBuildResult {
-  const opts = {
+export type NormalizedGpxOptions = Required<GpxExportOptions>
+
+/** Fill in defaults once so buildGpx and the chunked worker path agree byte-for-byte. */
+export function normalizeGpxOptions(dataset: Dataset, options: GpxExportOptions = {}): NormalizedGpxOptions {
+  return {
     creator: options.creator ?? 'Joint Domain Data Compiler',
     trackName: options.trackName ?? dataset.name ?? 'track',
     includeExtensions: options.includeExtensions ?? true,
@@ -133,33 +142,32 @@ export function buildGpx(dataset: Dataset, options: GpxExportOptions = {}): GpxB
     coordinatePrecision: options.coordinatePrecision ?? 7,
     bom: options.bom ?? false,
   }
+}
 
-  let points = dataset.points
-  if (opts.sortByTime && points.some((p) => p.time !== undefined)) {
-    points = [...points].sort((a, b) => {
-      if (a.time === undefined && b.time === undefined) return 0
-      if (a.time === undefined) return 1
-      if (b.time === undefined) return -1
-      return a.time - b.time
-    })
-  }
+/** Sort (or not) exactly as buildGpx does, exposed so chunked builds see the same point order. */
+export function sortGpxPoints(points: TrackPoint[], opts: NormalizedGpxOptions): TrackPoint[] {
+  if (!opts.sortByTime || !points.some((p) => p.time !== undefined)) return points
+  return [...points].sort((a, b) => {
+    if (a.time === undefined && b.time === undefined) return 0
+    if (a.time === undefined) return 1
+    if (b.time === undefined) return -1
+    return a.time - b.time
+  })
+}
 
-  const body: string[] = []
-  let skippedMissing = 0
-  let skippedOutOfRange = 0
-  let firstTime: number | undefined
-
-  for (const point of points) {
-    const result = buildTrkpt(point, opts)
-    if (!result.xml) {
-      if (result.reason === 'missing') skippedMissing++
-      else skippedOutOfRange++
-      continue
-    }
-    body.push(result.xml)
-    if (firstTime === undefined && point.time !== undefined) firstTime = point.time
-  }
-
+/**
+ * Assemble the final GPX document from already-built <trkpt> bodies. Shared by the
+ * synchronous buildGpx and the chunked/cancellable worker path so header, metadata,
+ * and footer formatting can never drift between the two.
+ */
+export function composeGpxDocument(
+  opts: NormalizedGpxOptions,
+  points: TrackPoint[],
+  body: string[],
+  skippedMissing: number,
+  skippedOutOfRange: number,
+  firstTime: number | undefined,
+): GpxBuildResult {
   const bounds = computeBounds(points)
   const metaTime = firstTime !== undefined ? epochMsToGpxTime(firstTime) : null
 
@@ -201,4 +209,27 @@ export function buildGpx(dataset: Dataset, options: GpxExportOptions = {}): GpxB
     skippedMissing,
     skippedOutOfRange,
   }
+}
+
+export function buildGpx(dataset: Dataset, options: GpxExportOptions = {}): GpxBuildResult {
+  const opts = normalizeGpxOptions(dataset, options)
+  const points = sortGpxPoints(dataset.points, opts)
+
+  const body: string[] = []
+  let skippedMissing = 0
+  let skippedOutOfRange = 0
+  let firstTime: number | undefined
+
+  for (const point of points) {
+    const result = buildTrkpt(point, opts)
+    if (!result.xml) {
+      if (result.reason === 'missing') skippedMissing++
+      else skippedOutOfRange++
+      continue
+    }
+    body.push(result.xml)
+    if (firstTime === undefined && point.time !== undefined) firstTime = point.time
+  }
+
+  return composeGpxDocument(opts, points, body, skippedMissing, skippedOutOfRange, firstTime)
 }
