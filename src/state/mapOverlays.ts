@@ -18,8 +18,13 @@ export interface MapOverlayState {
 
 export const DEFAULT_MAP_OVERLAY_STATE: MapOverlayState = Object.freeze({ overlays: [] })
 
+const MAX_OVERLAY_COUNT = 200
+const MAX_OVERLAY_ID_LENGTH = 200
+const MAX_OVERLAY_NAME_LENGTH = 200
+const MAX_OVERLAY_SOURCE_KEY_LENGTH = 512
+
 export function normalizeMapOverlayState(value: unknown): MapOverlayState {
-  if (!isRecord(value) || !Array.isArray(value.overlays)) return DEFAULT_MAP_OVERLAY_STATE
+  if (!isRecord(value) || !Array.isArray(value.overlays) || value.overlays.length > MAX_OVERLAY_COUNT) return DEFAULT_MAP_OVERLAY_STATE
   const overlays: MapOverlay[] = []
   const ids = new Set<string>()
   for (const candidate of value.overlays) {
@@ -41,7 +46,7 @@ export function reconcileMapOverlays(state: MapOverlayState, availableSourceKeys
 
 function normalizeOverlay(value: unknown): MapOverlay | null {
   if (!isRecord(value)) return null
-  if (!isNonEmptyString(value.id) || !isNonEmptyString(value.name) || !isSafeSourceKey(value.sourceKey)) return null
+  if (!isBoundedString(value.id, MAX_OVERLAY_ID_LENGTH) || !isBoundedString(value.name, MAX_OVERLAY_NAME_LENGTH) || !isSafeSourceKey(value.sourceKey)) return null
   if (value.sourceKind !== 'bundled' && value.sourceKind !== 'library' && value.sourceKind !== 'project') return null
   if (typeof value.visible !== 'boolean' || !isFiniteInRange(value.opacity, 0, 1) || !isNonNegativeSafeInteger(value.zIndex)) return null
   if (value.status !== undefined && value.status !== 'ready' && value.status !== 'missing' && value.status !== 'error') return null
@@ -61,12 +66,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.trim().length > 0
+function isBoundedString(value: unknown, maxLength: number): value is string {
+  return typeof value === 'string' && value.trim().length > 0 && value.length <= maxLength
 }
 
 function isSafeSourceKey(value: unknown): value is string {
-  return isNonEmptyString(value) && !value.includes('/') && !value.includes('\\') && value !== '.' && value !== '..'
+  return isBoundedString(value, MAX_OVERLAY_SOURCE_KEY_LENGTH) && !value.includes('/') && !value.includes('\\') && value !== '.' && value !== '..'
 }
 
 function isFiniteInRange(value: unknown, min: number, max: number): value is number {

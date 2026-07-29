@@ -1,6 +1,8 @@
 import { strict as assert } from 'node:assert'
 import type { Dataset } from '../src/core/model'
 import { EMPTY_WORKSPACE_SELECTION } from '../src/core/selection'
+import { DEFAULT_WORKSPACE_STATE } from '../src/state/workspace'
+import { reconcileMapOverlays, type MapOverlay } from '../src/state/mapOverlays'
 import {
   archiveSummary,
   buildProjectManifest,
@@ -10,6 +12,7 @@ import {
   parseProjectArchive,
   readStreamWithLimit,
   serializeProjectArchive,
+  validateProjectArchive,
 } from '../src/persistence/project/archive'
 import { operationRecordsFromManifest } from '../src/persistence/project/manifest'
 
@@ -99,5 +102,70 @@ await assert.rejects(() => readStreamWithLimit(new ReadableStream({ start(contro
 const corrupted = JSON.parse(serializeProjectArchive(archive))
 corrupted.datasets[0].points[0].lat = 99
 assert.throws(() => parseProjectArchive(JSON.stringify(corrupted)), /fingerprint does not match/)
+
+// --- Map overlay state through the full archive round trip ---
+
+const bundledOverlay: MapOverlay = {
+  id: 'bundled:special-use-airspace',
+  sourceKind: 'bundled',
+  sourceKey: 'Special_Use_Airspace.kml',
+  name: 'Special Use Airspace',
+  visible: true,
+  opacity: 0.75,
+  zIndex: 0,
+  status: 'ready',
+}
+const libraryOverlay: MapOverlay = {
+  id: 'library:custom-zone',
+  sourceKind: 'library',
+  sourceKey: 'custom-zone.kml',
+  name: 'Custom Zone',
+  visible: true,
+  opacity: 0.5,
+  zIndex: 1,
+  status: 'ready',
+}
+// Simulate opening a project where the library overlay's backing resource is
+// no longer on disk: reconciliation must mark it missing, not drop it.
+const reconciledOverlayState = reconcileMapOverlays({ overlays: [bundledOverlay, libraryOverlay] }, new Set(['Special_Use_Airspace.kml']))
+
+const manifestWithOverlays = buildProjectManifest({
+  datasets: [dataset],
+  activeDatasetId: dataset.id,
+  activeTab: 'project',
+  selection: EMPTY_WORKSPACE_SELECTION,
+  workspace: { ...DEFAULT_WORKSPACE_STATE, mapOverlays: reconciledOverlayState },
+  projectId: 'project-overlay-test',
+  projectName: 'Overlay Archive Test',
+  createdAt: 10_000,
+  applicationVersion: '0.1.0',
+})
+
+const overlayArchive = createProjectArchive({
+  manifest: manifestWithOverlays,
+  datasets: [dataset],
+  histories: { [dataset.id]: { past: [], future: [] } },
+})
+
+const overlayArchiveParsed = parseProjectArchive(serializeProjectArchive(overlayArchive))
+const overlaysOut = overlayArchiveParsed.manifest.view.workspace?.mapOverlays.overlays ?? []
+assert.equal(overlaysOut.length, 2, 'both overlays survive the archive round trip')
+assert.equal(overlaysOut[0]?.status, 'ready', 'available overlay keeps its ready status')
+assert.equal(overlaysOut[1]?.status, 'missing', 'unavailable overlay is surfaced as missing, not dropped')
+assert.equal(overlaysOut[1]?.sourceKey, 'custom-zone.kml', 'missing overlay retains its source key rather than being deleted')
+assert.deepEqual(overlaysOut[0], bundledOverlay, 'available overlay fields (id/sourceKind/sourceKey/name/visibility/opacity/zIndex/status) are unchanged')
+
+// Malformed overlay data embedded directly in an archive payload must be rejected on load, not crash or pass through silently.
+const corruptedOverlayArchive = JSON.parse(serializeProjectArchive(overlayArchive))
+corruptedOverlayArchive.manifest.view.workspace.mapOverlays.overlays[0].opacity = 7
+assert.throws(() => validateProjectArchive(corruptedOverlayArchive), /view\.workspace contains invalid or stale state/, 'archive with out-of-range overlay opacity is rejected')
+
+const corruptedSourceKindArchive = JSON.parse(serializeProjectArchive(overlayArchive))
+corruptedSourceKindArchive.manifest.view.workspace.mapOverlays.overlays[0].sourceKind = 'remote'
+assert.throws(() => validateProjectArchive(corruptedSourceKindArchive), /view\.workspace contains invalid or stale state/, 'archive with unknown overlay sourceKind is rejected')
+
+// Overlay state must never carry embedded point/dataset payloads.
+const overlaySection = JSON.stringify(overlayArchiveParsed.manifest.view.workspace?.mapOverlays)
+assert.ok(!/"points"|"lat"|"lon"|"channels"/.test(overlaySection ?? ''), 'overlay state does not duplicate dataset point payloads')
 
 console.log('project archive tests passed')
