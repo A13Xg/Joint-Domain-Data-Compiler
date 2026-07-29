@@ -380,6 +380,8 @@ function replayDelta(base: Dataset, delta: PersistedDelta, datasetId: string): D
   } else {
     throw new Error(`History ${datasetId} has an unsupported delta kind`)
   }
+  validateDataset(output)
+  if (output.points.length > MAX_TOTAL_POINTS) throw new Error(`History ${datasetId} delta exceeds ${MAX_TOTAL_POINTS.toLocaleString()} points`)
   if (fingerprintDataset(output) !== delta.outputHash) throw new Error(`History ${datasetId} delta output fingerprint mismatch`)
   return output
 }
@@ -440,6 +442,7 @@ function validateDataset(value: unknown): asserts value is Dataset {
   requireString(value.name, 'dataset.name')
   requireString(value.sourceFormat, 'dataset.sourceFormat')
   if (!Array.isArray(value.points)) throw new Error(`Dataset ${value.id} points must be an array`)
+  if (value.points.length > MAX_TOTAL_POINTS) throw new Error(`Dataset ${value.id} exceeds ${MAX_TOTAL_POINTS.toLocaleString()} points`)
   if (!Array.isArray(value.warnings) || !value.warnings.every((item) => typeof item === 'string')) throw new Error(`Dataset ${value.id} warnings must be strings`)
   if (!Array.isArray(value.channels) || !value.channels.every((item) => typeof item === 'string')) throw new Error(`Dataset ${value.id} channels must be strings`)
   requireFinite(value.createdAt, `Dataset ${value.id} createdAt`)
