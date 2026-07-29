@@ -3,6 +3,7 @@
 // only reports them, so the report can never disagree with the actual
 // fused output.
 import type { FusedPointDecision, SourceRegistration } from './model'
+import type { SelectedIntervalOverride, SelectedPointOverride } from './model'
 
 export interface FusionReportSourceSummary {
   sourceId: string
@@ -47,13 +48,14 @@ export function serializeFusionReportJson(report: FusionReport): string {
   return JSON.stringify(report, null, 2)
 }
 
-export function fusionReportToMarkdown(report: FusionReport): string {
+export function fusionReportToMarkdown(report: FusionReport, overrides?: { pointOverrides?: readonly SelectedPointOverride[]; intervalOverrides?: readonly SelectedIntervalOverride[] }): string {
   const lines = [
     '# Fusion Report',
     '',
     `Generated: ${new Date(report.generatedAt).toISOString()}`,
     `Total groups: ${report.totalGroups}`,
     `Mean confidence: ${report.meanConfidence.toFixed(3)}`,
+    ...(overrides ? [`Manual overrides: ${(overrides.pointOverrides?.length ?? 0)} point, ${(overrides.intervalOverrides?.length ?? 0)} interval`] : []),
     '',
     '| Source | Chosen | Skipped |',
     '| --- | --- | --- |',

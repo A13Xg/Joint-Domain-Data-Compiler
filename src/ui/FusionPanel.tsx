@@ -7,7 +7,7 @@
 // building a separate entity CRUD surface first.
 import { useState } from 'react'
 import type { Dataset } from '../core/model'
-import { candidateFromSourcePoint, type SourceRegistration } from '../core/fusion/model'
+import { candidateFromSourcePoint, type SelectedIntervalOverride, type SelectedPointOverride, type SourceRegistration } from '../core/fusion/model'
 import { groupCandidatesByTime } from '../core/fusion/grouping'
 import { autoCombine } from '../core/fusion/autoCombine'
 import { buildFusionReport, fusionReportToMarkdown } from '../core/fusion/report'
@@ -22,11 +22,16 @@ interface SourceConfig {
 
 const ENTITY_ID = 'adhoc'
 
-export function FusionPanel({ datasets, onCreateDataset }: { datasets: Dataset[]; onCreateDataset: (dataset: Dataset, artifact: FusionArtifact) => void }) {
+export function FusionPanel({ datasets, fusionArtifacts = [], onCreateDataset }: { datasets: Dataset[]; fusionArtifacts?: FusionArtifact[]; onCreateDataset: (dataset: Dataset, artifact: FusionArtifact) => void }) {
   const [configs, setConfigs] = useState<Record<string, SourceConfig>>({})
   const [timeToleranceMs, setTimeToleranceMs] = useState(2000)
   const [report, setReport] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [pointGroupId, setPointGroupId] = useState('')
+  const [pointSourceId, setPointSourceId] = useState('')
+  const [intervalStart, setIntervalStart] = useState('')
+  const [intervalEnd, setIntervalEnd] = useState('')
+  const [intervalSourceId, setIntervalSourceId] = useState('')
 
   // Reconcile configs during render when the dataset list changes — same
   // pattern used for the Sources panel's display settings.
@@ -42,6 +47,11 @@ export function FusionPanel({ datasets, onCreateDataset }: { datasets: Dataset[]
   }
 
   const includedDatasets = datasets.filter((dataset) => configs[dataset.id]?.included)
+  const includedSources: SourceRegistration[] = includedDatasets.map((dataset) => ({ id: dataset.id, entityId: ENTITY_ID, datasetId: dataset.id, label: dataset.name, priority: configs[dataset.id]?.priority ?? 1 }))
+  const previewGroups = (() => {
+    const candidates = includedDatasets.flatMap((dataset) => dataset.points.map((point, index) => point.time !== undefined ? candidateFromSourcePoint(dataset.id, index, point) : null).filter((candidate) => candidate !== null))
+    return candidates.length > 0 ? groupCandidatesByTime(candidates, { entityId: ENTITY_ID, timeToleranceMs }) : []
+  })()
 
   const toggleIncluded = (id: string) => setConfigs((current) => ({ ...current, [id]: { ...current[id]!, included: !current[id]?.included } }))
   const setPriority = (id: string, priority: number) => setConfigs((current) => ({ ...current, [id]: { ...current[id]!, priority } }))
@@ -66,11 +76,18 @@ export function FusionPanel({ datasets, onCreateDataset }: { datasets: Dataset[]
         return
       }
       const groups = groupCandidatesByTime(candidates, { entityId: ENTITY_ID, timeToleranceMs })
-      const result = autoCombine(groups, sources)
+      const pointOverrides: SelectedPointOverride[] = pointGroupId && pointSourceId ? [{ entityId: ENTITY_ID, groupId: pointGroupId, sourceId: pointSourceId }] : []
+      const startMs = intervalStart ? Date.parse(intervalStart) : NaN
+      const endMs = intervalEnd ? Date.parse(intervalEnd) : NaN
+      const intervalOverrides: SelectedIntervalOverride[] = intervalStart || intervalEnd || intervalSourceId
+        ? [{ entityId: ENTITY_ID, sourceId: intervalSourceId, startMs, endMs }]
+        : []
+      const result = autoCombine(groups, sources, { pointOverrides, intervalOverrides })
       const base = includedDatasets[0]!
       const fused = withPoints(base, result.points)
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-      const fusedDataset: Dataset = { ...fused, id: `fused_${timestamp}`, name: `Fused_${timestamp}`, createdAt: Date.now() }
+      const runTime = new Date()
+      const timestamp = runTime.toISOString().replace(/[:.]/g, '-')
+      const fusedDataset: Dataset = { ...fused, id: `fused_${timestamp}`, name: `Fused_${timestamp}`, createdAt: runTime.getTime() }
       const fusionReport = buildFusionReport(result.decisions, sources)
       const artifact: FusionArtifact = {
         id: `fusion_${timestamp}`,
@@ -78,11 +95,13 @@ export function FusionPanel({ datasets, onCreateDataset }: { datasets: Dataset[]
         fusedDatasetId: fusedDataset.id,
         sourceRegistrations: sources,
         timeToleranceMs,
+        pointOverrides,
+        intervalOverrides,
         decisions: result.decisions,
         report: fusionReport,
-        createdAt: Date.now(),
+        createdAt: runTime.getTime(),
       }
-      setReport(fusionReportToMarkdown(fusionReport))
+      setReport(fusionReportToMarkdown(fusionReport, { pointOverrides, intervalOverrides }))
       logger.success('fusion', `Created ${fusedDataset.name} from ${includedDatasets.length} sources (${groups.length} groups)`)
       onCreateDataset(fusedDataset, artifact)
     } catch (err) {
@@ -115,9 +134,21 @@ export function FusionPanel({ datasets, onCreateDataset }: { datasets: Dataset[]
         </tbody>
       </table>
       <label className="num-field"><span>time tolerance (ms)</span><input type="number" min={1} value={timeToleranceMs} onChange={(event) => setTimeToleranceMs(Math.max(1, Number(event.target.value) || 1))} /></label>
+      <details className="analysis-summary">
+        <summary>Manual source overrides (optional)</summary>
+        <p className="muted small">Overrides select an existing source point; raw datasets remain unchanged. Point selection is by the aligned group time.</p>
+        <div className="field-grid">
+          <label className="field"><span>Point group</span><select value={pointGroupId} onChange={(event) => setPointGroupId(event.target.value)}><option value="">No point override</option>{previewGroups.map((group) => <option key={group.id} value={group.id}>{new Date(group.groupTimeMs).toISOString()} ({group.id})</option>)}</select></label>
+          <label className="field"><span>Point source</span><select value={pointSourceId} disabled={!pointGroupId} onChange={(event) => setPointSourceId(event.target.value)}><option value="">Select source</option>{(previewGroups.find((group) => group.id === pointGroupId)?.candidates ?? []).map((candidate) => <option key={candidate.sourceId} value={candidate.sourceId}>{includedSources.find((source) => source.id === candidate.sourceId)?.label ?? candidate.sourceId}</option>)}</select></label>
+          <label className="field"><span>Interval start (local)</span><input type="datetime-local" value={intervalStart} onChange={(event) => setIntervalStart(event.target.value)} /></label>
+          <label className="field"><span>Interval end (local)</span><input type="datetime-local" value={intervalEnd} onChange={(event) => setIntervalEnd(event.target.value)} /></label>
+          <label className="field"><span>Interval source</span><select value={intervalSourceId} disabled={!intervalStart && !intervalEnd} onChange={(event) => setIntervalSourceId(event.target.value)}><option value="">Select source</option>{includedSources.map((source) => <option key={source.id} value={source.id}>{source.label}</option>)}</select></label>
+        </div>
+      </details>
       <button type="button" disabled={includedDatasets.length < 2} onClick={run}>Run Auto-Combine</button>
       {error && <p className="error-line small">⚠ {error}</p>}
       {report && <pre className="preview-body mono fusion-report">{report}</pre>}
+      {fusionArtifacts.length > 0 && <details className="analysis-summary"><summary>Previous fusion runs ({fusionArtifacts.length})</summary>{fusionArtifacts.map((artifact) => <div key={artifact.id}><p className="small"><strong>{artifact.id}</strong> — {artifact.pointOverrides?.length ?? 0} point, {artifact.intervalOverrides?.length ?? 0} interval override(s)</p><pre className="preview-body mono fusion-report">{fusionReportToMarkdown(artifact.report, artifact).replace('# Fusion Report', '# Prior Fusion Run')}</pre></div>)}</details>}
     </div>
   )
 }

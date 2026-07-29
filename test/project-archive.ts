@@ -75,11 +75,12 @@ const fusionArtifact: FusionArtifact = {
 // the round-trip test below supplies a valid multi-dataset artifact.
 const secondDataset = { ...dataset, id: 'track-2', name: 'Track Two' }
 const fusedDataset = { ...dataset, id: 'fused-1', name: 'Fused Track' }
-const durableArtifact: FusionArtifact = { ...fusionArtifact, fusedDatasetId: fusedDataset.id, sourceRegistrations: fusionArtifact.sourceRegistrations.map((source, index) => ({ ...source, datasetId: index === 0 ? dataset.id : secondDataset.id })) }
+const durableArtifact: FusionArtifact = { ...fusionArtifact, fusedDatasetId: fusedDataset.id, pointOverrides: [{ entityId: 'adhoc', groupId: 'group-1', sourceId: 'source-a' }], intervalOverrides: [{ entityId: 'adhoc', sourceId: 'source-b', startMs: 0, endMs: 10 }], sourceRegistrations: fusionArtifact.sourceRegistrations.map((source, index) => ({ ...source, datasetId: index === 0 ? dataset.id : secondDataset.id })) }
 const artifactManifest = buildProjectManifest({ datasets: [dataset, secondDataset, fusedDataset], activeDatasetId: fusedDataset.id, activeTab: 'project', selection: { ...EMPTY_WORKSPACE_SELECTION, datasetId: fusedDataset.id }, applicationVersion: '0.1.0', fusionArtifacts: [durableArtifact] })
 assert.equal(artifactManifest.fusionArtifacts[0]?.fusedDatasetId, 'fused-1', 'fusion artifact output link is persisted in the manifest')
 const durableArchive = createProjectArchive({ manifest: artifactManifest, datasets: [dataset, secondDataset, fusedDataset], histories: {} })
 assert.equal(parseProjectArchive(serializeProjectArchive(durableArchive)).manifest.fusionArtifacts[0]?.id, 'fusion-archive-1', 'fusion artifacts survive archive serialization')
+assert.equal(parseProjectArchive(serializeProjectArchive(durableArchive)).manifest.fusionArtifacts[0]?.pointOverrides[0]?.sourceId, 'source-a', 'fusion point overrides survive archive serialization')
 const legacyManifest = { ...manifest, schemaVersion: 1 as const }
 delete (legacyManifest as { fusionArtifacts?: unknown }).fusionArtifacts
 const migratedArchive = parseProjectArchive(JSON.stringify({ schema: 'jddc-project-archive', schemaVersion: 1, manifest: legacyManifest, datasets: [dataset], histories: {} }))

@@ -14,6 +14,7 @@ import {
   type SelectedPointOverride,
   type SourceRegistration,
   type SourceScore,
+  validateFusionOverrides,
 } from './model'
 import { rankScores, scoreCandidate } from './scoring'
 
@@ -33,6 +34,7 @@ export function autoCombine(
   sources: readonly SourceRegistration[],
   options: AutoCombineOptions = {},
 ): AutoCombineResult {
+  validateFusionOverrides(options, groups, sources)
   const sourcesById = new Map(sources.map((source) => [source.id, source]))
   const points: TrackPoint[] = []
   const decisions: FusedPointDecision[] = []

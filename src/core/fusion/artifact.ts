@@ -1,4 +1,4 @@
-import type { FusedPointDecision, SourceRegistration } from './model'
+import type { FusedPointDecision, SelectedIntervalOverride, SelectedPointOverride, SourceRegistration } from './model'
 import type { FusionReport } from './report'
 
 /** Durable, manifest-serializable provenance for one fusion run. */
@@ -8,6 +8,8 @@ export interface FusionArtifact {
   fusedDatasetId: string
   sourceRegistrations: SourceRegistration[]
   timeToleranceMs: number
+  pointOverrides: SelectedPointOverride[]
+  intervalOverrides: SelectedIntervalOverride[]
   decisions: FusedPointDecision[]
   report: FusionReport
   createdAt: number
@@ -20,6 +22,8 @@ export function validateFusionArtifact(value: unknown): asserts value is FusionA
   requireText(value.fusedDatasetId, 'fusion artifact fused dataset id')
   if (!Array.isArray(value.sourceRegistrations) || value.sourceRegistrations.length < 2) throw new Error('Fusion artifact requires at least two source registrations')
   if (!Array.isArray(value.decisions)) throw new Error('Fusion artifact decisions must be an array')
+  if (value.pointOverrides !== undefined && !Array.isArray(value.pointOverrides)) throw new Error('Fusion artifact point overrides must be an array')
+  if (value.intervalOverrides !== undefined && !Array.isArray(value.intervalOverrides)) throw new Error('Fusion artifact interval overrides must be an array')
   const timeToleranceMs = value.timeToleranceMs
   if (typeof timeToleranceMs !== 'number' || !Number.isFinite(timeToleranceMs) || timeToleranceMs < 1 || timeToleranceMs > 86_400_000) throw new Error('Fusion artifact time tolerance must be between 1 and 86400000 ms')
   if (!Number.isFinite(value.createdAt)) throw new Error('Fusion artifact createdAt must be finite')
@@ -31,6 +35,15 @@ export function validateFusionArtifact(value: unknown): asserts value is FusionA
     requireText(source.id, 'fusion source id'); requireText(source.datasetId, 'fusion source dataset id')
     if (sourceIds.has(source.id) || datasetIds.has(source.datasetId)) throw new Error('Fusion artifact source registrations must be unique')
     sourceIds.add(source.id); datasetIds.add(source.datasetId)
+  }
+  for (const override of [...(value.pointOverrides ?? []), ...(value.intervalOverrides ?? [])]) {
+    if (!isRecord(override) || typeof override.entityId !== 'string' || override.entityId !== value.entityId || typeof override.sourceId !== 'string' || !sourceIds.has(override.sourceId)) throw new Error('Fusion artifact override references an invalid source or entity')
+  }
+  for (const override of value.pointOverrides ?? []) {
+    if (typeof override.groupId !== 'string' || !override.groupId.trim()) throw new Error('Fusion artifact point override groupId is required')
+  }
+  for (const override of value.intervalOverrides ?? []) {
+    if (!Number.isFinite(override.startMs) || !Number.isFinite(override.endMs) || override.startMs > override.endMs) throw new Error('Fusion artifact interval override range is invalid')
   }
   for (const decision of value.decisions) {
     if (!isRecord(decision) || typeof decision.chosenSourceId !== 'string' || !sourceIds.has(decision.chosenSourceId)) throw new Error('Fusion artifact decision references an unknown source')
