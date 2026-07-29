@@ -103,6 +103,8 @@ test('primary local-first workflow: import, inspect, transform, save/open, and e
   await expect(page.locator('.operation-history').getByText(/Offset elevation by 10/)).toBeVisible()
   await expect(page.locator('.operation-history').getByText(/Derived standard kinematics/)).toBeVisible()
   await expect(page.locator('.operation-history').getByText(/not replayable: operation unavailable/)).toBeVisible()
+  await page.getByRole('button', { name: 'Replay verified history', exact: true }).click()
+  await expect(page.getByText(/Replay blocked: .*operation/i)).toBeVisible()
 
   await page.getByRole('button', { name: 'Sources', exact: true }).click()
   await page.getByLabel('Toggle visibility of real-usgs.gpx').uncheck()
