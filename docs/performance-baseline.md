@@ -17,21 +17,23 @@ synthetic spiral-climb track:
 - chart-series preparation,
 - 3D trajectory geometry construction,
 - nearest-time alignment plus relative-position comparison,
+- project archive JSON serialization and validation-backed re-open,
 - GPX parse/export (DOM parsing is intentionally capped at 100k points; see below).
 
 **Not covered yet** (deferred — these need their own harnesses): CSV/KML/NMEA/GPB parsing,
-GPX parsing above 100k points, browser map rendering, and project archive save/open. Task 6.1 explicitly calls for measuring all
+GPX parsing above 100k points and browser map rendering. Task 6.1 explicitly calls for measuring all
 of these; this pass established the mechanism and a larger, but still incomplete, matrix.
 
 ## Results
 
-Measurements were captured in one explicit full-range run: `npm run bench -- 100000 500000 1000000`.
+Measurements were captured in explicit 100k and 500k/1M runs: `npm run bench -- 100000` and
+`npm run bench -- 500000 1000000`.
 
-| Points | Generate | sort | dedupe | kinematics | quality | chart | 3D geometry | comparison | GPX parse | GPX export | Heap (post-GC) |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| 100,000 | 22 ms | 11 ms | 22 ms | 48 ms | 9 ms | 4 ms | 9 ms | 57 ms | 3,057 ms | 209 ms | 7 → 90 MB |
-| 500,000 | 27 ms | 64 ms | 174 ms | 194 ms | 32 ms | 40 ms | 36 ms | 222 ms | skipped >100k | 812 ms | 72 → 164 MB |
-| 1,000,000 | 55 ms | 227 ms | 154 ms | 441 ms | 63 ms | 92 ms | 45 ms | 771 ms | skipped >100k | 1,649 ms | 72 → 256 MB |
+| Points | Generate | sort | dedupe | kinematics | quality | chart | 3D geometry | comparison | archive write | archive read | archive size | GPX parse | GPX export | Heap (post-GC) |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 100,000 | 20 ms | 10 ms | 20 ms | 41 ms | 25 ms | 4 ms | 9 ms | 40 ms | 170 ms | 176 ms | 13.3 MB | 2,845 ms | 184 ms | 7 → 104 MB |
+| 500,000 | 80 ms | 64 ms | 79 ms | 220 ms | 32 ms | 25 ms | 33 ms | 232 ms | 859 ms | 975 ms | 66.6 MB | skipped >100k | 783 ms | 7 → 166 MB |
+| 1,000,000 | 101 ms | 116 ms | 289 ms | 358 ms | 52 ms | 44 ms | 49 ms | 482 ms | 1,750 ms | 1,847 ms | 133.1 MB | skipped >100k | 1,612 ms | 8 → 325 MB |
 
 ## Reading these numbers
 
@@ -46,6 +48,10 @@ Measurements were captured in one explicit full-range run: `npm run bench -- 100
 - **Comparison is the second-largest measured analytical cost** (~0.8 µs/point at 1M), while
   kinematics is ~0.3 µs/point. Both remain synchronous, so either is a candidate for a future
   worker decision only if interaction profiling shows a real UI responsiveness problem.
+- **Project archive I/O is a measured scale limit.** At 1M points, JSON archive serialization is
+  ~1.8 s and parse/validation/reconstruction is ~1.8 s for a 133 MB uncompressed archive. These
+  are synchronous benchmark measurements; UI workflows should keep their existing save/open
+  feedback and must not imply that multi-million-point project I/O is instant.
 - **Kinematics derivation** already clones the full
   point array once; this is consistent with the roadmap's existing note that transform history
   via full dataset snapshots is memory-proportional to point count × history depth.
@@ -79,7 +85,7 @@ work fine; this is purely an artifact of this particular shared sandbox at measu
 
 1. Add parse-time benchmarks per format (CSV/GPX/KML/NMEA/GPB) using `benchmarks/generate.ts`
    output re-serialized to each format, per the plan's explicit ask.
-2. Add parser, browser-map, and project archive I/O benchmarks.
+2. Add parser and browser-map benchmarks.
 3. Add an operation-history/undo-stack memory growth benchmark (N operations × snapshot size).
 4. Only after this fuller picture exists: decide whether Stage 10's columnar Worker architecture
    is justified, and where specifically (the plan is explicit that this should be evidence-led,
