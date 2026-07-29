@@ -1,8 +1,10 @@
 import {
   alignTracksByInterpolation,
   alignTracksByNearestTime,
+  computeAlongCrossTrack,
   deriveInterpolatedRelativePosition,
   deriveRelativePosition,
+  estimateClockDrift,
 } from '../src/core/analytics/relative.ts'
 import type { TrackPoint } from '../src/core/model.ts'
 
@@ -110,6 +112,63 @@ check('Negative alignment tolerance is rejected', invalidToleranceRejected)
   let threw = false
   try { alignTracksByInterpolation(reference, target, { maxBracketGapMs: 0 }) } catch { threw = true }
   check('A non-positive maxBracketGapMs is rejected', threw)
+}
+
+// --- Along-track / cross-track decomposition (Task 4.3) ---------------------
+{
+  // Reference path heads due north (lat increases, lon constant) between two points.
+  const pathRef: TrackPoint[] = [
+    { lat: 0, lon: 0, ele: 0, time: 1000 },
+    { lat: 0.001, lon: 0, ele: 0, time: 2000 },
+  ]
+  const onPathPair = [{ referenceIndex: 0, targetIndex: 0, referenceTimeMs: 1000, targetTimeMs: 1000, deltaTimeMs: 0 }]
+
+  const onPathTarget: TrackPoint[] = [{ lat: 0.0005, lon: 0, ele: 0, time: 1000 }]
+  const onPathSamples = deriveRelativePosition(pathRef, onPathTarget, onPathPair)
+  const onPathAC = computeAlongCrossTrack(pathRef, onPathSamples)
+  check('A target exactly on the reference path has ~zero cross-track distance', Math.abs(onPathAC[0]?.crossTrackM ?? 999) < 0.05, String(onPathAC[0]?.crossTrackM))
+  check('A target ahead on the path has positive along-track distance near 55.66 m', Math.abs((onPathAC[0]?.alongTrackM ?? 0) - 55.66) < 0.5, String(onPathAC[0]?.alongTrackM))
+
+  const eastOffsetTarget: TrackPoint[] = [{ lat: 0, lon: 0.001, ele: 0, time: 1000 }]
+  const eastOffsetSamples = deriveRelativePosition(pathRef, eastOffsetTarget, onPathPair)
+  const eastOffsetAC = computeAlongCrossTrack(pathRef, eastOffsetSamples)
+  check('A target offset due east of a north-heading path has ~zero along-track distance', Math.abs(eastOffsetAC[0]?.alongTrackM ?? 999) < 0.5, String(eastOffsetAC[0]?.alongTrackM))
+  check('A target offset due east of a north-heading path has negative cross-track ~ -111.19 m (right side)', Math.abs((eastOffsetAC[0]?.crossTrackM ?? 0) - -111.19) < 0.5, String(eastOffsetAC[0]?.crossTrackM))
+
+  const singlePointRef: TrackPoint[] = [{ lat: 0, lon: 0, time: 1000 }]
+  const singlePointSamples = deriveRelativePosition(singlePointRef, onPathTarget, onPathPair)
+  const singlePointAC = computeAlongCrossTrack(singlePointRef, singlePointSamples)
+  check('A single-point reference path has no determinable tangent and is skipped, not approximated', singlePointAC.length === 0)
+}
+
+// --- Clock offset/drift estimation (Task 4.3) --------------------------------
+{
+  const injectedOffsetMs = 500
+  const injectedDriftPerMs = 0.0002 // 200 ppm
+  const referenceTimes = [0, 10_000, 20_000, 30_000, 40_000]
+  const driftPairs = referenceTimes.map((referenceTimeMs) => ({
+    referenceTimeMs,
+    targetTimeMs: referenceTimeMs + injectedOffsetMs + injectedDriftPerMs * referenceTimeMs,
+  }))
+  const drift = estimateClockDrift(driftPairs)
+  check('Drift estimation recovers the injected offset', Math.abs(drift.offsetMs - injectedOffsetMs) < 1e-6, String(drift.offsetMs))
+  check('Drift estimation recovers the injected drift rate', Math.abs(drift.driftRatePerMs - injectedDriftPerMs) < 1e-9, String(drift.driftRatePerMs))
+  check('Drift estimation reports the first reference time as its epoch', drift.referenceEpochMs === 0)
+  check('Drift estimation reports the sample count used', drift.sampleCount === driftPairs.length)
+
+  // A constant offset with no drift should estimate a ~zero drift rate.
+  const staticPairs = referenceTimes.map((referenceTimeMs) => ({ referenceTimeMs, targetTimeMs: referenceTimeMs + 250 }))
+  const staticDrift = estimateClockDrift(staticPairs)
+  check('A constant offset with no drift estimates offset ~250 ms', Math.abs(staticDrift.offsetMs - 250) < 1e-9)
+  check('A constant offset with no drift estimates a ~zero drift rate', Math.abs(staticDrift.driftRatePerMs) < 1e-12)
+
+  let driftThrew = false
+  try { estimateClockDrift([]) } catch { driftThrew = true }
+  check('Clock drift estimation refuses an empty pair list', driftThrew)
+
+  // A single pair cannot determine a rate — it should fall back to zero drift, offset equal to the one observed delta.
+  const singlePairDrift = estimateClockDrift([{ referenceTimeMs: 1000, targetTimeMs: 1300 }])
+  check('A single aligned pair yields zero drift rate and the observed offset', singlePairDrift.driftRatePerMs === 0 && singlePairDrift.offsetMs === 300)
 }
 
 console.log(`\n${failures === 0 ? 'ALL RELATIVE ANALYTICS CHECKS PASSED' : `${failures} RELATIVE ANALYTICS CHECK(S) FAILED`}`)
