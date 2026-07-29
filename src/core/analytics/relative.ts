@@ -232,6 +232,123 @@ export function deriveInterpolatedRelativePosition(
   return samples
 }
 
+export interface AlongCrossTrackSample {
+  referenceIndex: number
+  targetIndex: number
+  /** Signed distance along the local reference-path tangent (positive = ahead in the direction of travel). */
+  alongTrackM: number
+  /** Signed perpendicular distance from the reference path (positive = left of the direction of travel). */
+  crossTrackM: number
+}
+
+/**
+ * Decomposes each relative-position sample's horizontal ENU offset into an
+ * along-track / cross-track pair, using the local tangent of the reference
+ * path at that sample's reference index (Task 4.3). This is a local
+ * decomposition — alongTrackM is the signed offset from the reference point
+ * along its path tangent, not cumulative distance travelled along the path.
+ *
+ * Samples whose reference index has no determinable path tangent (a
+ * single-point reference track, or coincident neighbouring points) are
+ * silently skipped — never approximated.
+ */
+export function computeAlongCrossTrack(
+  reference: readonly TrackPoint[],
+  samples: readonly RelativePointSample[],
+): AlongCrossTrackSample[] {
+  const results: AlongCrossTrackSample[] = []
+  for (const sample of samples) {
+    const tangent = pathTangent(reference, sample.referenceIndex)
+    if (!tangent) continue
+    const alongTrackM = tangent.eastM * sample.relativeEastM + tangent.northM * sample.relativeNorthM
+    const crossTrackM = tangent.eastM * sample.relativeNorthM - tangent.northM * sample.relativeEastM
+    results.push({
+      referenceIndex: sample.referenceIndex,
+      targetIndex: sample.targetIndex,
+      alongTrackM,
+      crossTrackM,
+    })
+  }
+  return results
+}
+
+/** Returns the unit tangent (east, north) of the reference path at `index`, or null when it cannot be determined. */
+function pathTangent(
+  reference: readonly TrackPoint[],
+  index: number,
+): { eastM: number; northM: number } | null {
+  const anchor = reference[index]
+  if (!anchor) return null
+  const forward = reference[index + 1]
+  const backward = reference[index - 1]
+  const neighbour = forward ?? backward
+  if (!neighbour) return null
+
+  const relative = geodeticToEnu(
+    { latDeg: neighbour.lat, lonDeg: neighbour.lon, heightM: neighbour.ele ?? 0 },
+    { latDeg: anchor.lat, lonDeg: anchor.lon, heightM: anchor.ele ?? 0 },
+  )
+  // If we stepped backward, the ENU vector points behind the direction of travel — flip it.
+  const eastM = forward ? relative.eastM : -relative.eastM
+  const northM = forward ? relative.northM : -relative.northM
+  const magnitude = Math.hypot(eastM, northM)
+  if (!Number.isFinite(magnitude) || magnitude < 1e-9) return null
+  return { eastM: eastM / magnitude, northM: northM / magnitude }
+}
+
+export interface ClockDriftEstimate {
+  /** Estimated target-minus-reference clock offset, in ms, evaluated at referenceEpochMs. */
+  offsetMs: number
+  /** Estimated drift rate: change in the offset per ms of reference time elapsed since referenceEpochMs (dimensionless, e.g. 1e-4 == 100 ppm). */
+  driftRatePerMs: number
+  /** The reference timestamp (ms) at which offsetMs applies — driftRatePerMs extrapolates away from this epoch. */
+  referenceEpochMs: number
+  sampleCount: number
+}
+
+/**
+ * Estimates a linear clock-offset/drift model between two tracks' raw
+ * timestamps via ordinary least squares (Task 4.3), rather than relying on
+ * a manually supplied constant offset. Fits
+ *   (targetTimeMs - referenceTimeMs) ≈ offsetMs + driftRatePerMs * (referenceTimeMs - referenceEpochMs)
+ * over the supplied aligned pairs. Pure and deterministic: the same pairs
+ * always produce the same estimate, and the input is never mutated.
+ */
+export function estimateClockDrift(
+  pairs: readonly { referenceTimeMs: number; targetTimeMs: number }[],
+): ClockDriftEstimate {
+  if (pairs.length === 0) throw new Error('At least one aligned pair is required to estimate clock drift')
+
+  const referenceEpochMs = pairs[0]!.referenceTimeMs
+  const dxs: number[] = []
+  const ys: number[] = []
+  for (const pair of pairs) {
+    if (!Number.isFinite(pair.referenceTimeMs) || !Number.isFinite(pair.targetTimeMs)) {
+      throw new Error('Clock drift estimation requires finite timestamps')
+    }
+    dxs.push(pair.referenceTimeMs - referenceEpochMs)
+    ys.push(pair.targetTimeMs - pair.referenceTimeMs)
+  }
+
+  const meanDx = mean(dxs)
+  const meanY = mean(ys)
+  let numerator = 0
+  let denominator = 0
+  for (let i = 0; i < dxs.length; i++) {
+    const dx = dxs[i]! - meanDx
+    numerator += dx * (ys[i]! - meanY)
+    denominator += dx * dx
+  }
+  const driftRatePerMs = denominator > 1e-9 ? numerator / denominator : 0
+  const offsetMs = meanY - driftRatePerMs * meanDx
+
+  return { offsetMs, driftRatePerMs, referenceEpochMs, sampleCount: pairs.length }
+}
+
+function mean(values: readonly number[]): number {
+  return values.reduce((sum, value) => sum + value, 0) / values.length
+}
+
 function findBracket(
   entries: readonly { index: number; time: number }[],
   time: number,

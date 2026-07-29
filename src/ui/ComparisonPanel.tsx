@@ -1,6 +1,15 @@
 import { useMemo } from 'react'
 import type { Dataset } from '../core/model'
-import { alignTracksByInterpolation, alignTracksByNearestTime, deriveInterpolatedRelativePosition, deriveRelativePosition, type RelativePointSample } from '../core/analytics/relative'
+import {
+  alignTracksByInterpolation,
+  alignTracksByNearestTime,
+  computeAlongCrossTrack,
+  deriveInterpolatedRelativePosition,
+  deriveRelativePosition,
+  estimateClockDrift,
+  type ClockDriftEstimate,
+  type RelativePointSample,
+} from '../core/analytics/relative'
 import { assessDatasetCompatibility } from '../core/metadataCompatibility'
 import { buildComparisonCsv } from '../core/analytics/comparisonReport'
 import type { WorkspaceState } from '../state/workspace'
@@ -14,6 +23,10 @@ interface ComparisonResult {
   meanHorizontal?: number
   meanClosure?: number
   closest?: RelativePointSample
+  meanAlongTrack?: number
+  meanCrossTrack?: number
+  maxCrossTrack?: number
+  drift?: ClockDriftEstimate
 }
 
 export function ComparisonPanel({ datasets, activeId, workspace, onWorkspaceChange, onSelectReferenceSample }: { datasets: Dataset[]; activeId: string | null; workspace: WorkspaceState['comparison']; onWorkspaceChange: (next: WorkspaceState['comparison']) => void; onSelectReferenceSample: (datasetId: string, pointIndex: number) => void }) {
@@ -36,6 +49,15 @@ export function ComparisonPanel({ datasets, activeId, workspace, onWorkspaceChan
       const horizontal = samples.map((sample) => sample.horizontalRangeM)
       const closures = samples.map((sample) => sample.closureRateMps).filter((value): value is number => value !== undefined)
       const minRange = Math.min(...ranges)
+      const alongCross = computeAlongCrossTrack(reference.points, samples)
+      const alongTrack = alongCross.map((sample) => sample.alongTrackM)
+      const crossTrack = alongCross.map((sample) => sample.crossTrackM)
+      let drift: ClockDriftEstimate | undefined
+      try {
+        drift = estimateClockDrift(samples.map((sample) => ({ referenceTimeMs: sample.referenceTimeMs, targetTimeMs: sample.targetTimeMs })))
+      } catch {
+        drift = undefined
+      }
       return {
         samples,
         error: null,
@@ -45,6 +67,10 @@ export function ComparisonPanel({ datasets, activeId, workspace, onWorkspaceChan
         meanHorizontal: mean(horizontal),
         meanClosure: closures.length > 0 ? mean(closures) : undefined,
         closest: samples[ranges.indexOf(minRange)],
+        meanAlongTrack: alongTrack.length > 0 ? mean(alongTrack) : undefined,
+        meanCrossTrack: crossTrack.length > 0 ? mean(crossTrack) : undefined,
+        maxCrossTrack: crossTrack.length > 0 ? Math.max(...crossTrack.map((value) => Math.abs(value))) : undefined,
+        drift,
       }
     } catch (error) {
       return { samples: [], error: error instanceof Error ? error.message : String(error) }
@@ -74,6 +100,11 @@ export function ComparisonPanel({ datasets, activeId, workspace, onWorkspaceChan
             <Metric label="maximum slant range" value={`${format(result.maxRange)} m`} />
             <Metric label="mean horizontal range" value={`${format(result.meanHorizontal)} m`} />
             <Metric label="mean closure rate" value={result.meanClosure === undefined ? 'n/a' : `${format(result.meanClosure)} m/s`} />
+            <Metric label="mean along-track" value={result.meanAlongTrack === undefined ? 'n/a' : `${format(result.meanAlongTrack)} m`} />
+            <Metric label="mean cross-track" value={result.meanCrossTrack === undefined ? 'n/a' : `${format(result.meanCrossTrack)} m`} />
+            <Metric label="max |cross-track|" value={result.maxCrossTrack === undefined ? 'n/a' : `${format(result.maxCrossTrack)} m`} />
+            <Metric label="estimated clock offset" value={result.drift === undefined ? 'n/a' : `${format(result.drift.offsetMs)} ms`} />
+            <Metric label="estimated clock drift" value={result.drift === undefined ? 'n/a' : `${format(result.drift.driftRatePerMs * 1_000_000)} ppm`} />
           </div>
           <button type="button" onClick={() => downloadComparison(result.samples, referenceId, targetId)}>Export comparison CSV</button>
           {result.closest && <div className="analysis-summary mono">Closest approach at reference index {result.closest.referenceIndex}, target index {result.closest.targetIndex}: bearing {format(result.closest.bearingDeg)}°, Δt {format(result.closest.deltaTimeMs)} ms, vertical separation {format(result.closest.relativeUpM)} m.</div>}
