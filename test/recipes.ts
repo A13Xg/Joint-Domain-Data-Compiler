@@ -3,7 +3,7 @@ import { buildRecipe, executeOperation, replayRecipe } from '../src/core/recipes
 import { fingerprintDataset } from '../src/core/recipes/hash.ts'
 import type { OperationDefinition } from '../src/core/recipes/model.ts'
 import { clearOperationsForTests, registerOperation } from '../src/core/recipes/registry.ts'
-import { offsetElevationOperation, shiftTimeOperation } from '../src/core/operations/basic.ts'
+import { offsetElevationOperation, shiftTimeOperation, standardKinematicsOperation } from '../src/core/operations/basic.ts'
 
 let failures = 0
 function check(name: string, condition: boolean): void {
@@ -76,6 +76,12 @@ try {
   versionMismatchRejected = /version/i.test((error as Error).message)
 }
 check('Operation version mismatch is rejected with a clear warning', versionMismatchRejected)
+
+registerOperation(standardKinematicsOperation)
+const kinematicsExecution = executeOperation(source, 'standard-kinematics', {})
+check('Standard kinematics operation derives replayable channels', kinematicsExecution.dataset.channels.includes('ground_speed_mps'))
+const kinematicsRecipe = buildRecipe('Kinematics test', source, [kinematicsExecution.record])
+check('Standard kinematics recipe replays byte-identical dataset state', fingerprintDataset(replayRecipe(source, kinematicsRecipe)) === fingerprintDataset(kinematicsExecution.dataset))
 
 let invalidParamsRejected = false
 try {
