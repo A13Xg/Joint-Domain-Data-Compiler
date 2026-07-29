@@ -18,10 +18,9 @@ synthetic spiral-climb track:
 - 3D trajectory geometry construction,
 - nearest-time alignment plus relative-position comparison,
 - project archive JSON serialization and validation-backed re-open,
-- GPX parse/export (DOM parsing is intentionally capped at 100k points; see below).
+- GPX/GeoJSON/KML/GPB parsing and GPX export (DOM parsing is intentionally capped at 100k points; see below).
 
-**Not covered yet** (deferred — these need their own harnesses): CSV/KML/NMEA/GPB parsing,
-GPX parsing above 100k points and browser map rendering. Task 6.1 explicitly calls for measuring all
+**Not covered yet** (deferred — these need their own harnesses): CSV/NMEA parsing and DOM parsing above 100k points. Task 6.1 explicitly calls for measuring all
 of these; this pass established the mechanism and a larger, but still incomplete, matrix.
 
 ## Results
@@ -31,7 +30,7 @@ Measurements were captured in explicit 100k and 500k/1M runs: `npm run bench -- 
 
 | Points | Generate | sort | dedupe | kinematics | quality | chart | 3D geometry | comparison | archive write | archive read | archive size | GPX parse | GPX export | Heap (post-GC) |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 100,000 | 20 ms | 10 ms | 20 ms | 41 ms | 25 ms | 4 ms | 9 ms | 40 ms | 170 ms | 176 ms | 13.3 MB | 2,845 ms | 184 ms | 7 → 104 MB |
+| 100,000 | 23 ms | 11 ms | 24 ms | 55 ms | 34 ms | 4 ms | 9 ms | 44 ms | 187 ms | 198 ms | 13.3 MB | 3,112 ms | 185 ms | 7 → 104 MB |
 | 500,000 | 80 ms | 64 ms | 79 ms | 220 ms | 32 ms | 25 ms | 33 ms | 232 ms | 859 ms | 975 ms | 66.6 MB | skipped >100k | 783 ms | 7 → 166 MB |
 | 1,000,000 | 101 ms | 116 ms | 289 ms | 358 ms | 52 ms | 44 ms | 49 ms | 482 ms | 1,750 ms | 1,847 ms | 133.1 MB | skipped >100k | 1,612 ms | 8 → 325 MB |
 
@@ -41,10 +40,21 @@ Measurements were captured in explicit 100k and 500k/1M runs: `npm run bench -- 
 
 | Points | Map activation | Drawn points |
 |---:|---:|---:|
-| 100,000 | 1,136 ms | ≤4,000 |
-| 500,000 | 1,061 ms | ≤4,000 |
+| 100,000 | 987 ms | ≤4,000 |
+| 500,000 | 1,095 ms | ≤4,000 |
 
 The browser-map benchmark deliberately caps at 500k points: that is the practical ceiling for this evidence pass, and larger CSV inputs predominantly measure CSV analysis/import rather than the downsampled map view.
+
+### Parser throughput at 100k points
+
+The scale runner reserializes the deterministic source track in each supported format before parsing it. GPX and KML use the same DOM-compatible parser environment as existing parser tests; results above 100k remain deliberately out of scope because the DOM parser is already known to be memory-heavy.
+
+| Format | Parse time at 100k |
+|---|---:|
+| GPX | 3,112 ms |
+| GeoJSON | 80 ms |
+| KML | 1,760 ms |
+| GPB | 5 ms |
 
 ## Reading these numbers
 
@@ -97,7 +107,7 @@ work fine; this is purely an artifact of this particular shared sandbox at measu
 
 1. Add parse-time benchmarks per format (CSV/GPX/KML/NMEA/GPB) using `benchmarks/generate.ts`
    output re-serialized to each format, per the plan's explicit ask.
-2. Add parser benchmarks.
+2. Add bounded CSV and NMEA parser benchmarks.
 3. Add an operation-history/undo-stack memory growth benchmark (N operations × snapshot size).
 4. Only after this fuller picture exists: decide whether Stage 10's columnar Worker architecture
    is justified, and where specifically (the plan is explicit that this should be evidence-led,

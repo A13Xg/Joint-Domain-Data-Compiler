@@ -8,6 +8,9 @@ import { extractChartSeries } from '../src/visualization/charts/series.ts'
 import { buildTrajectory3dGeometry } from '../src/visualization/scene3d/trajectory.ts'
 import { alignTracksByNearestTime, deriveRelativePosition } from '../src/core/analytics/relative.ts'
 import { parseGpx } from '../src/core/parsers/gpx.ts'
+import { parseGeoJson } from '../src/core/parsers/geojson.ts'
+import { parseKml } from '../src/core/parsers/kml.ts'
+import { buildGpb, parseGpb } from '../src/core/parsers/gpb.ts'
 import { buildProjectManifest, createProjectArchive, parseProjectArchive, serializeProjectArchive } from '../src/persistence/project/archive.ts'
 import { EMPTY_WORKSPACE_SELECTION } from '../src/core/selection.ts'
 import { DOMParser } from 'linkedom'
@@ -42,10 +45,10 @@ function makeDataset(points: ReturnType<typeof generateSyntheticTrack>): Dataset
 export async function run(): Promise<void> {
   console.log('JDDC scale benchmark — Tranche 8 Task 8.1')
   console.log('Node', process.version, '| gc exposed:', typeof global.gc === 'function')
-  console.log('Covers: dataset construction, sortByTime, dedupe, standard-kinematics derivation, quality-event detection, chart/3D preparation, nearest-time comparison, GPX parse/export, and project archive serialize/parse.')
-  console.log('Does NOT cover (deferred): other parser formats and browser map rendering.\n')
+  console.log('Covers: dataset construction, sortByTime, dedupe, standard-kinematics derivation, quality-event detection, chart/3D preparation, nearest-time comparison, GPX/GeoJSON/KML/GPB parse, GPX export, and project archive serialize/parse.')
+  console.log('Does NOT cover (deferred): CSV/NMEA parser throughput and browser map rendering.\n')
 
-  const header = ['points', 'generate ms', 'sortByTime ms', 'dedupe ms', 'kinematics ms', 'quality-events ms', 'chart ms', '3D geometry ms', 'comparison ms', 'archive write ms', 'archive read ms', 'archive MB', 'gpx parse ms', 'gpx export ms', 'heap MB (post-GC)']
+  const header = ['points', 'generate ms', 'sortByTime ms', 'dedupe ms', 'kinematics ms', 'quality-events ms', 'chart ms', '3D geometry ms', 'comparison ms', 'archive write ms', 'archive read ms', 'archive MB', 'gpx parse ms', 'geojson parse ms', 'kml parse ms', 'gpb parse ms', 'gpx export ms', 'heap MB (post-GC)']
   console.log(header.join('  |  '))
 
   for (const size of sizesToRun) {
@@ -75,6 +78,14 @@ export async function run(): Promise<void> {
     const parseTime = size <= MAX_DOM_PARSE_BENCHMARK_POINTS
       ? timeMs(() => { parseGpx(exportDataset(dataset!, 'gpx').text) })
       : null
+    const geoJsonParseTime = size <= MAX_DOM_PARSE_BENCHMARK_POINTS
+      ? timeMs(() => { parseGeoJson(exportDataset(dataset!, 'geojson').text) })
+      : null
+    const kmlParseTime = size <= MAX_DOM_PARSE_BENCHMARK_POINTS
+      ? timeMs(() => { parseKml(exportDataset(dataset!, 'kml').text) })
+      : null
+    const gpb = buildGpb(dataset!.name, dataset!.points, dataset!.channels)
+    const gpbParseTime = timeMs(() => { parseGpb(gpb) })
     const exportTime = timeMs(() => { exportDataset(dataset!, 'gpx') })
     const heapAfter = heapMb()
 
@@ -92,6 +103,9 @@ export async function run(): Promise<void> {
       archiveRead.toFixed(0),
       (Buffer.byteLength(serializedArchive) / (1024 * 1024)).toFixed(1),
       parseTime === null ? `skipped >${MAX_DOM_PARSE_BENCHMARK_POINTS.toLocaleString()}` : parseTime.toFixed(0),
+      geoJsonParseTime === null ? `skipped >${MAX_DOM_PARSE_BENCHMARK_POINTS.toLocaleString()}` : geoJsonParseTime.toFixed(0),
+      kmlParseTime === null ? `skipped >${MAX_DOM_PARSE_BENCHMARK_POINTS.toLocaleString()}` : kmlParseTime.toFixed(0),
+      gpbParseTime.toFixed(0),
       exportTime.toFixed(0),
       `${heapBefore.toFixed(0)} → ${heapAfter.toFixed(0)}`,
     ].join('  |  '))
