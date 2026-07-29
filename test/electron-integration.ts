@@ -28,7 +28,9 @@ check('IPC surface exposes only the expected six operations', Object.keys(IPC_CH
 check('Exact development origin is allowed', isAllowedAppUrl(DEV_ORIGIN, true))
 check('Development origin paths are allowed', isAllowedAppUrl(`${DEV_ORIGIN}/index.html`, true))
 check('Lookalike development origins are blocked', !isAllowedAppUrl(`${DEV_ORIGIN}.attacker.invalid`, true))
-check('Packaged file URLs are allowed', isAllowedAppUrl('file:///opt/jddc/dist/index.html', false))
+const packagedRendererUrl = 'file:///opt/jddc/dist/index.html'
+check('Packaged renderer URL is allowed', isAllowedAppUrl(packagedRendererUrl, false, packagedRendererUrl))
+check('Other packaged file URLs are blocked', !isAllowedAppUrl('file:///tmp/attacker.html', false, packagedRendererUrl))
 check('Packaged web navigation is blocked', !isAllowedAppUrl('https://example.test', false))
 
 check('Valid KML filename is preserved', safeLibraryName('Track 1.kml') === 'Track 1.kml')

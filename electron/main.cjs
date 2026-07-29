@@ -1,6 +1,7 @@
 const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require('electron')
 const fs = require('fs')
 const path = require('path')
+const { pathToFileURL } = require('url')
 const zlib = require('zlib')
 const { seedKmlLibrary } = require('./kml-seed.cjs')
 const {
@@ -14,6 +15,7 @@ const {
 } = require('./security.cjs')
 
 const isDev = !app.isPackaged
+const packagedRendererUrl = pathToFileURL(path.join(__dirname, '../dist/index.html')).href
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -38,7 +40,7 @@ function createWindow() {
   })
 
   window.webContents.on('will-navigate', (event, url) => {
-    if (!isAllowedAppUrl(url, isDev)) {
+    if (!isAllowedAppUrl(url, isDev, packagedRendererUrl)) {
       event.preventDefault()
       if (url.startsWith('https://')) void shell.openExternal(url)
     }

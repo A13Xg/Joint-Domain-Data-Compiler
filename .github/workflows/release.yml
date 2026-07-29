@@ -223,7 +223,12 @@ jobs:
         run: |
           mkdir -p release
           find release-bundle -maxdepth 1 -type f -exec cp {} release/ \;
-          find release -maxdepth 1 -type f ! -name 'SHA256SUMS.txt' -printf '%f\n' | sort | xargs sha256sum > release/SHA256SUMS.txt
+          (
+            cd release
+            find . -maxdepth 1 -type f ! -name 'SHA256SUMS.txt' -printf '%f\0' |
+              sort -z |
+              xargs -0 sha256sum
+          ) > release/SHA256SUMS.txt
           node scripts/verify-release-bundle.mjs release
 
       - name: Attest release artifact provenance
