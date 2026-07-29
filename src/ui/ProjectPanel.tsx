@@ -8,6 +8,9 @@ import type { ProjectBookmark } from '../persistence/project/manifest'
 import { buildDiagnosticBundle, serializeDiagnosticBundle } from '../core/diagnostics/bundle'
 import { logger } from '../core/logger'
 import { buildHtmlAnalysisReport } from '../core/reports/htmlReport'
+import type { ReportOptions } from '../core/reports/options'
+import { deriveDefaultReportTitle, sanitizeFilename } from '../core/reports/exportNaming'
+import { ReportExportDialog } from './ReportExportDialog'
 import type { OperationRecord, Recipe } from '../core/recipes/model'
 import type { FusionArtifact } from '../core/fusion/artifact'
 import {
@@ -47,9 +50,7 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [diagnosticNote, setDiagnosticNote] = useState('')
-  const [reportTitle, setReportTitle] = useState('')
-  const [reportFilename, setReportFilename] = useState('')
-  const [reportOptions, setReportOptions] = useState({ includeQualityEvents: true, includeWarnings: true, includeOperations: true, includeBookmarks: true })
+  const [reportDialogOpen, setReportDialogOpen] = useState(false)
   const activeDataset = datasets.find((dataset) => dataset.id === activeId) ?? null
   const activeSelection = usePointSelection(activeDataset?.points ?? EMPTY_POINTS)
 
@@ -97,19 +98,21 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
     setStatus('Exported the human-readable project manifest without embedded data.')
   }
 
-  const exportReport = () => {
-    const title = reportTitle.trim() || `${manifest.name} — Analysis Report`
-    const filename = safeName(reportFilename.trim() || `${manifest.name}-report`)
+  const defaultReportTitle = deriveDefaultReportTitle(manifest.name)
+  const defaultReportFilename = safeName(`${manifest.name}-report`)
+
+  const confirmExportReport = ({ options, filename }: { options: ReportOptions; filename: string }) => {
     const html = buildHtmlAnalysisReport({
-      title,
+      title: options.title,
       generatedAt: Date.now(),
       applicationVersion: '0.1.0',
       datasets,
       bookmarks,
       operationRecords,
-      options: reportOptions,
+      options,
     })
-    downloadBlob(new Blob([html], { type: 'text/html' }), `${filename}.html`)
+    downloadBlob(new Blob([html], { type: 'text/html' }), `${sanitizeFilename(filename)}.html`)
+    setReportDialogOpen(false)
     setStatus('Exported a self-contained HTML analysis report. Open it in a browser to print or save as PDF.')
   }
 
@@ -172,20 +175,19 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
         <button type="button" className="export-btn" disabled={datasets.length === 0 || busy} onClick={() => void saveProject()}>{busy ? 'Working…' : 'Save complete project'}</button>
         <button type="button" disabled={busy} onClick={() => inputRef.current?.click()}>Open project</button>
         <button type="button" disabled={datasets.length === 0 || busy} onClick={exportManifest}>Export manifest only</button>
-        <button type="button" disabled={datasets.length === 0 || busy} onClick={exportReport}>Export HTML report</button>
+        <button type="button" disabled={datasets.length === 0 || busy} onClick={() => setReportDialogOpen(true)}>Export HTML report</button>
         <input ref={inputRef} className="hidden-input" type="file" accept=".jddc-project,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void openProject(file); event.target.value = '' }} />
       </div>
       <p className="muted small">A <code>.jddc-project</code> file is a self-contained, gzip-compressed workspace archive. It embeds current datasets, semantic metadata, undo/redo snapshots, the active dataset and tab, and point/range selection. The manifest remains versioned and fingerprint-verified during restore.</p>
       <label className="field"><span>Project notes</span><textarea rows={3} value={projectNotes} placeholder="Purpose, assumptions, provenance, or handoff notes." onChange={(event) => onProjectNotesChange(event.target.value)} /></label>
-      <details className="analysis-summary">
-        <summary>HTML report options</summary>
-        <div className="field-grid">
-          <label className="field"><span>Visible report title</span><input value={reportTitle} placeholder={`${manifest.name} — Analysis Report`} onChange={(event) => setReportTitle(event.target.value)} /></label>
-          <label className="field"><span>Download filename</span><input value={reportFilename} placeholder={`${safeName(manifest.name)}-report`} onChange={(event) => setReportFilename(event.target.value)} /></label>
-        </div>
-        <p className="muted small">Filename characters are sanitized independently from the visible title. Disabled evidence categories are omitted from the generated report.</p>
-        {(['includeQualityEvents', 'includeWarnings', 'includeOperations', 'includeBookmarks'] as const).map((key) => <label className="header-compat-toggle" key={key}><input type="checkbox" checked={reportOptions[key]} onChange={(event) => setReportOptions((current) => ({ ...current, [key]: event.target.checked }))} />{key.replace('include', 'Include ')}</label>)}
-      </details>
+      {reportDialogOpen && (
+        <ReportExportDialog
+          suggestedTitle={defaultReportTitle}
+          suggestedFilename={defaultReportFilename}
+          onCancel={() => setReportDialogOpen(false)}
+          onConfirm={confirmExportReport}
+        />
+      )}
       <div className="metric-grid">
         <Metric label="loaded datasets" value={summary.datasets.toLocaleString()} />
         <Metric label="current points" value={summary.currentPoints.toLocaleString()} />
