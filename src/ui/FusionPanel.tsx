@@ -14,6 +14,7 @@ import { buildFusionReport, fusionReportToMarkdown } from '../core/fusion/report
 import type { FusionArtifact } from '../core/fusion/artifact'
 import { withPoints } from '../core/transforms'
 import { logger } from '../core/logger'
+import { assessFusionCompatibility } from '../core/metadataCompatibility'
 
 interface SourceConfig {
   included: boolean
@@ -48,6 +49,7 @@ export function FusionPanel({ datasets, fusionArtifacts = [], onCreateDataset }:
 
   const includedDatasets = datasets.filter((dataset) => configs[dataset.id]?.included)
   const includedSources: SourceRegistration[] = includedDatasets.map((dataset) => ({ id: dataset.id, entityId: ENTITY_ID, datasetId: dataset.id, label: dataset.name, priority: configs[dataset.id]?.priority ?? 1 }))
+  const compatibility = assessFusionCompatibility(includedDatasets)
   const previewGroups = (() => {
     const candidates = includedDatasets.flatMap((dataset) => dataset.points.map((point, index) => point.time !== undefined ? candidateFromSourcePoint(dataset.id, index, point) : null).filter((candidate) => candidate !== null))
     return candidates.length > 0 ? groupCandidatesByTime(candidates, { entityId: ENTITY_ID, timeToleranceMs }) : []
@@ -61,6 +63,12 @@ export function FusionPanel({ datasets, fusionArtifacts = [], onCreateDataset }:
     setReport(null)
     if (includedDatasets.length < 2) {
       setError('Select at least two datasets to fuse.')
+      return
+    }
+    if (compatibility.level === 'blocked') {
+      const message = `Fusion blocked: ${compatibility.reasons.join(' ')}`
+      setError(message)
+      logger.warn('fusion', message)
       return
     }
     try {
@@ -89,6 +97,7 @@ export function FusionPanel({ datasets, fusionArtifacts = [], onCreateDataset }:
       const timestamp = runTime.toISOString().replace(/[:.]/g, '-')
       const fusedDataset: Dataset = { ...fused, id: `fused_${timestamp}`, name: `Fused_${timestamp}`, createdAt: runTime.getTime() }
       const fusionReport = buildFusionReport(result.decisions, sources)
+      fusionReport.compatibility = compatibility
       const artifact: FusionArtifact = {
         id: `fusion_${timestamp}`,
         entityId: ENTITY_ID,
@@ -100,6 +109,7 @@ export function FusionPanel({ datasets, fusionArtifacts = [], onCreateDataset }:
         decisions: result.decisions,
         report: fusionReport,
         createdAt: runTime.getTime(),
+        compatibility,
       }
       setReport(fusionReportToMarkdown(fusionReport, { pointOverrides, intervalOverrides }))
       logger.success('fusion', `Created ${fusedDataset.name} from ${includedDatasets.length} sources (${groups.length} groups)`)
@@ -146,6 +156,9 @@ export function FusionPanel({ datasets, fusionArtifacts = [], onCreateDataset }:
         </div>
       </details>
       <button type="button" disabled={includedDatasets.length < 2} onClick={run}>Run Auto-Combine</button>
+      {includedDatasets.length >= 2 && <p className={`small ${compatibility.level === 'blocked' ? 'error-line' : 'muted'}`}>
+        {compatibility.level === 'blocked' ? '⚠ Fusion blocked: ' : 'Compatibility gate: '}{compatibility.reasons.length > 0 ? compatibility.reasons.join(' ') : 'Selected sources declare matching references and comparable spatial coverage.'}
+      </p>}
       {error && <p className="error-line small">⚠ {error}</p>}
       {report && <pre className="preview-body mono fusion-report">{report}</pre>}
       {fusionArtifacts.length > 0 && <details className="analysis-summary"><summary>Previous fusion runs ({fusionArtifacts.length})</summary>{fusionArtifacts.map((artifact) => <div key={artifact.id}><p className="small"><strong>{artifact.id}</strong> — {artifact.pointOverrides?.length ?? 0} point, {artifact.intervalOverrides?.length ?? 0} interval override(s)</p><pre className="preview-body mono fusion-report">{fusionReportToMarkdown(artifact.report, artifact).replace('# Fusion Report', '# Prior Fusion Run')}</pre></div>)}</details>}

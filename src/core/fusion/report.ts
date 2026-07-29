@@ -4,6 +4,7 @@
 // fused output.
 import type { FusedPointDecision, SourceRegistration } from './model'
 import type { SelectedIntervalOverride, SelectedPointOverride } from './model'
+import type { FusionCompatibility } from '../metadataCompatibility'
 
 export interface FusionReportSourceSummary {
   sourceId: string
@@ -17,6 +18,7 @@ export interface FusionReport {
   totalGroups: number
   meanConfidence: number
   sourceSummaries: FusionReportSourceSummary[]
+  compatibility?: FusionCompatibility
 }
 
 export function buildFusionReport(
@@ -56,6 +58,7 @@ export function fusionReportToMarkdown(report: FusionReport, overrides?: { point
     `Total groups: ${report.totalGroups}`,
     `Mean confidence: ${report.meanConfidence.toFixed(3)}`,
     ...(overrides ? [`Manual overrides: ${(overrides.pointOverrides?.length ?? 0)} point, ${(overrides.intervalOverrides?.length ?? 0)} interval`] : []),
+    ...(report.compatibility ? [`Compatibility gate: ${report.compatibility.level}`, ...report.compatibility.reasons.map((reason) => `Gate note: ${reason}`)] : []),
     '',
     '| Source | Chosen | Skipped |',
     '| --- | --- | --- |',

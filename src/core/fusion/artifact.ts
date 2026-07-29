@@ -1,5 +1,6 @@
 import type { FusedPointDecision, SelectedIntervalOverride, SelectedPointOverride, SourceRegistration } from './model'
 import type { FusionReport } from './report'
+import type { FusionCompatibility } from '../metadataCompatibility'
 
 /** Durable, manifest-serializable provenance for one fusion run. */
 export interface FusionArtifact {
@@ -13,6 +14,8 @@ export interface FusionArtifact {
   decisions: FusedPointDecision[]
   report: FusionReport
   createdAt: number
+  /** Compatibility evidence captured before auto-combine (optional for legacy artifacts). */
+  compatibility?: FusionCompatibility
 }
 
 export function validateFusionArtifact(value: unknown): asserts value is FusionArtifact {

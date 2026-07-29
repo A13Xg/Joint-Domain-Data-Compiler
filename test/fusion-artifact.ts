@@ -1,4 +1,5 @@
 import { validateFusionArtifact } from '../src/core/fusion/artifact.ts'
+import { assessFusionCompatibility } from '../src/core/metadataCompatibility.ts'
 
 let failures = 0
 function check(name: string, condition: boolean): void { if (!condition) failures++; console.log(`  [${condition ? 'PASS' : 'FAIL'}] ${name}`) }
@@ -13,12 +14,17 @@ const artifact = {
   ],
   decisions: [{ groupId: 'group-1', chosenSourceId: 'source-a', chosenSourceIndex: 0, skippedSourceIds: ['source-b'], reason: 'priority', confidence: 1 }],
   report: { generatedAt: 1, totalGroups: 1, meanConfidence: 1, sourceSummaries: [] },
+  compatibility: assessFusionCompatibility([
+    { id: 'dataset-a', name: 'A', sourceFormat: 'csv' as const, points: [{ lat: 1, lon: 2 }], warnings: [], channels: [], createdAt: 0, metadata: { coordinateSystem: 'EPSG:4326', altitudeReference: 'MSL' as const, timeReference: 'UTC' as const, channels: [], source: { filename: 'a', importedAt: 0, parserId: 'csv', parserVersion: '1' } } },
+    { id: 'dataset-b', name: 'B', sourceFormat: 'csv' as const, points: [{ lat: 1, lon: 2 }], warnings: [], channels: [], createdAt: 0, metadata: { coordinateSystem: 'EPSG:4326', altitudeReference: 'MSL' as const, timeReference: 'UTC' as const, channels: [], source: { filename: 'b', importedAt: 0, parserId: 'csv', parserVersion: '1' } } },
+  ]),
 }
 
 let accepted = true
 try { validateFusionArtifact(artifact) } catch { accepted = false }
 check('Valid fusion artifact is accepted', accepted)
 check('Manual override configuration is part of the durable artifact', artifact.pointOverrides.length === 1 && artifact.intervalOverrides[0]?.sourceId === 'source-a')
+check('Compatibility gate evidence is persisted with the artifact', artifact.compatibility?.level === 'compatible' && artifact.compatibility.sources.length === 2)
 
 let unknownSourceRejected = false
 try { validateFusionArtifact({ ...artifact, decisions: [{ ...artifact.decisions[0], chosenSourceId: 'missing' }] }) } catch { unknownSourceRejected = true }
