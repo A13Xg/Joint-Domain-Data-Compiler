@@ -121,6 +121,9 @@ function toBuffer(bytes: Buffer): ArrayBuffer {
     truncatedRejected = /Truncated GPB/.test((error as Error).message)
   }
   check('Malformed GPB (truncated container) reports an actionable error', truncatedRejected)
+  checkThrows('GPB declared point count is rejected before point materialization', () => {
+    parseGpb(new Uint8Array([71, 80, 66, 49, 1, 0, 0, 0, 255, 255, 255, 255]).buffer, 3_000_000)
+  })
 }
 
 // --- CSV -------------------------------------------------------------------

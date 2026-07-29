@@ -16,7 +16,7 @@ import { parseGeoJson } from './geojson'
 import { parseKml } from './kml'
 import { parseNmea } from './nmea'
 import { parseGpb, looksLikeGpb } from './gpb'
-import { assertByteBudget, assertPointBudget } from './limits'
+import { assertByteBudget, assertPointBudget, DEFAULT_FORMAT_BUDGETS } from './limits'
 import { describeSignatureMismatch, sniffBinarySignature, sniffTextSignature } from './contentSignature'
 
 export interface FormatDescriptor {
@@ -107,7 +107,7 @@ export async function parseFileToDataset(file: File, format: FormatDescriptor): 
     let mismatch: string | null
     if (format.binary) {
       if (format.id === 'gpb' || looksLikeGpb(bytes)) {
-        result = parseGpb(buffer)
+        result = parseGpb(buffer, DEFAULT_FORMAT_BUDGETS.gpb.maxPoints)
       } else {
         throw new Error(`No binary parser available for ${file.name}.`)
       }

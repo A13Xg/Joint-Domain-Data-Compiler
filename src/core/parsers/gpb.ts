@@ -34,7 +34,7 @@ export function looksLikeGpb(bytes: Uint8Array): boolean {
   )
 }
 
-export function parseGpb(buffer: ArrayBuffer): ParseResult {
+export function parseGpb(buffer: ArrayBuffer, maxPoints = Number.MAX_SAFE_INTEGER): ParseResult {
   const bytes = new Uint8Array(buffer)
   if (!looksLikeGpb(bytes)) {
     throw new Error(
@@ -75,6 +75,9 @@ export function parseGpb(buffer: ArrayBuffer): ParseResult {
 
   requireBytes(4, 'point count')
   const pointCount = view.getUint32(offset, true); offset += 4
+  if (pointCount > maxPoints) {
+    throw new Error(`GPB source declares ${pointCount.toLocaleString()} points, over the ${maxPoints.toLocaleString()} point import limit. Split the file or decimate before import.`)
+  }
   const bytesPerPoint = 16 + (hasEle ? 4 : 0) + (hasTime ? 8 : 0) + channelCount * 4
   requireBytes(pointCount * bytesPerPoint, 'point payload')
   const points: TrackPoint[] = []
