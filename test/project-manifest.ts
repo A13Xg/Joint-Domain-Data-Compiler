@@ -1,5 +1,6 @@
 import { EMPTY_WORKSPACE_SELECTION } from '../src/core/selection.ts'
 import { DEFAULT_WORKSPACE_STATE } from '../src/state/workspace.ts'
+import { reconcileMapOverlays, type MapOverlay } from '../src/state/mapOverlays.ts'
 import {
   parseProjectManifest,
   serializeProjectManifest,
@@ -163,6 +164,156 @@ try {
   staleDisplayRejected = true
 }
 check('Stale persisted dataset display settings are rejected', staleDisplayRejected)
+
+// --- Map overlay state: round trip, malformed rejection, missing reconciliation ---
+
+const bundledOverlay: MapOverlay = {
+  id: 'bundled:special-use-airspace',
+  sourceKind: 'bundled',
+  sourceKey: 'Special_Use_Airspace.kml',
+  name: 'Special Use Airspace',
+  visible: true,
+  opacity: 0.75,
+  zIndex: 0,
+  status: 'ready',
+}
+
+const libraryOverlay: MapOverlay = {
+  id: 'library:custom-zone',
+  sourceKind: 'library',
+  sourceKey: 'custom-zone.kml',
+  name: 'Custom Zone',
+  visible: false,
+  opacity: 0.3,
+  zIndex: 1,
+  status: 'ready',
+}
+
+const manifestWithOverlays: ProjectManifest = {
+  ...manifest,
+  view: {
+    ...manifest.view,
+    workspace: { ...DEFAULT_WORKSPACE_STATE, mapOverlays: { overlays: [bundledOverlay, libraryOverlay] } },
+  },
+}
+
+validateProjectManifest(manifestWithOverlays)
+const overlayParsed = parseProjectManifest(serializeProjectManifest(manifestWithOverlays))
+const overlays = overlayParsed.view.workspace?.mapOverlays.overlays ?? []
+check('Bundled overlay round-trips unchanged', JSON.stringify(overlays[0]) === JSON.stringify(bundledOverlay))
+check('Library overlay round-trips unchanged', JSON.stringify(overlays[1]) === JSON.stringify(libraryOverlay))
+check('Overlay count is preserved', overlays.length === 2)
+
+let overlayOpacityRejected = false
+try {
+  validateProjectManifest({
+    ...manifest,
+    view: {
+      ...manifest.view,
+      workspace: { ...DEFAULT_WORKSPACE_STATE, mapOverlays: { overlays: [{ ...bundledOverlay, opacity: 1.5 }] } },
+    },
+  })
+} catch {
+  overlayOpacityRejected = true
+}
+check('Overlay opacity outside [0,1] is rejected', overlayOpacityRejected)
+
+let overlayNegativeOpacityRejected = false
+try {
+  validateProjectManifest({
+    ...manifest,
+    view: {
+      ...manifest.view,
+      workspace: { ...DEFAULT_WORKSPACE_STATE, mapOverlays: { overlays: [{ ...bundledOverlay, opacity: -0.1 }] } },
+    },
+  })
+} catch {
+  overlayNegativeOpacityRejected = true
+}
+check('Overlay opacity below 0 is rejected', overlayNegativeOpacityRejected)
+
+let overlayUnknownSourceKindRejected = false
+try {
+  validateProjectManifest({
+    ...manifest,
+    view: {
+      ...manifest.view,
+      workspace: { ...DEFAULT_WORKSPACE_STATE, mapOverlays: { overlays: [{ ...bundledOverlay, sourceKind: 'remote' }] } },
+    },
+  })
+} catch {
+  overlayUnknownSourceKindRejected = true
+}
+check('Overlay with unknown sourceKind is rejected', overlayUnknownSourceKindRejected)
+
+let overlayUnsafeSourceKeyRejected = false
+try {
+  validateProjectManifest({
+    ...manifest,
+    view: {
+      ...manifest.view,
+      workspace: { ...DEFAULT_WORKSPACE_STATE, mapOverlays: { overlays: [{ ...bundledOverlay, sourceKey: '../../etc/escape.kml' }] } },
+    },
+  })
+} catch {
+  overlayUnsafeSourceKeyRejected = true
+}
+check('Overlay with path-traversal sourceKey is rejected', overlayUnsafeSourceKeyRejected)
+
+let overlayGarbageStringRejected = false
+try {
+  validateProjectManifest({
+    ...manifest,
+    view: {
+      ...manifest.view,
+      workspace: {
+        ...DEFAULT_WORKSPACE_STATE,
+        mapOverlays: { overlays: [{ ...bundledOverlay, name: 'x'.repeat(1_000_000), sourceKey: 'y'.repeat(1_000_000) }] },
+      },
+    },
+  })
+} catch {
+  overlayGarbageStringRejected = true
+}
+check('Overlay with oversized garbage strings is rejected rather than silently passed through', overlayGarbageStringRejected)
+
+let overlayZIndexRejected = false
+try {
+  validateProjectManifest({
+    ...manifest,
+    view: {
+      ...manifest.view,
+      workspace: { ...DEFAULT_WORKSPACE_STATE, mapOverlays: { overlays: [{ ...bundledOverlay, zIndex: -1 }] } },
+    },
+  })
+} catch {
+  overlayZIndexRejected = true
+}
+check('Overlay with negative zIndex is rejected', overlayZIndexRejected)
+
+// Missing overlay resources are surfaced as an 'unavailable' (missing) status via
+// reconcileMapOverlays, not silently dropped, and that status survives a manifest round trip.
+const reconciled = reconcileMapOverlays({ overlays: [bundledOverlay, libraryOverlay] }, new Set(['custom-zone.kml']))
+check('Reconciliation marks the unavailable overlay missing', reconciled.overlays[0]?.status === 'missing' && reconciled.overlays[0]?.visible === false)
+check('Reconciliation leaves the available overlay untouched', reconciled.overlays[1]?.status === 'ready' && reconciled.overlays[1]?.visible === false)
+check('Reconciliation keeps both overlays present (not deleted)', reconciled.overlays.length === 2)
+
+const manifestWithReconciledOverlays: ProjectManifest = {
+  ...manifest,
+  view: { ...manifest.view, workspace: { ...DEFAULT_WORKSPACE_STATE, mapOverlays: reconciled } },
+}
+validateProjectManifest(manifestWithReconciledOverlays)
+const reconciledParsed = parseProjectManifest(serializeProjectManifest(manifestWithReconciledOverlays))
+const reconciledOverlays = reconciledParsed.view.workspace?.mapOverlays.overlays ?? []
+check('Missing overlay status survives a manifest round trip', reconciledOverlays[0]?.status === 'missing')
+check('Missing overlay is still present after round trip (not silently dropped)', reconciledOverlays.length === 2)
+
+// Overlay state must not embed dataset/point payloads: only the known scalar
+// overlay fields may appear anywhere under view.workspace.mapOverlays.
+const overlayJson = JSON.stringify(manifestWithOverlays.view.workspace?.mapOverlays)
+const allowedOverlayKeys = new Set(['overlays', 'id', 'sourceKind', 'sourceKey', 'name', 'visible', 'opacity', 'zIndex', 'status'])
+const overlayKeysOnly = Object.keys(JSON.parse(overlayJson ?? '{}').overlays[0]).every((key: string) => allowedOverlayKeys.has(key))
+check('Overlay JSON does not contain point/dataset payload keys', overlayKeysOnly && !/"points"|"lat"|"lon"|"channels"/.test(overlayJson ?? ''))
 
 console.log(`\n${failures === 0 ? 'ALL PROJECT MANIFEST CHECKS PASSED' : `${failures} PROJECT MANIFEST CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)
