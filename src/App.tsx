@@ -352,13 +352,19 @@ export default function App() {
 
   const applyReplay = useCallback((replayed: Dataset, summary: string) => {
     if (!active) return
+    const selectedPointIndex = getSelectedPointIndex(active.points)
+    const selectedRange = getSelectedRange(active.points)
     setDatasets((current) => current.map((dataset) => dataset.id === active.id ? replayed : dataset))
     setHistories((current) => {
       const existing = current[active.id] ?? { past: [], future: [] }
       return { ...current, [active.id]: { past: appendHistorySnapshot(existing.past, active), future: [] } }
     })
     setProjectDirty(true)
-    restorePointSelection(replayed.points, null, null)
+    restorePointSelection(
+      replayed.points,
+      replayed.points.length === active.points.length ? selectedPointIndex : null,
+      replayed.points.length === active.points.length ? selectedRange : null,
+    )
     flashToast(summary)
     logger.success('transform', summary)
   }, [active, flashToast])

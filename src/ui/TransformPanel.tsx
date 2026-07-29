@@ -4,7 +4,7 @@ import {
   decimate, dedupe, dropInvalid, exponentialMovingAverageElevation, hampelFilterElevation, medianFilterElevation, removeElevationOutliers,
   simplify, smooth, sortByTime, swapLatLon, type TransformResult,
 } from '../core/transforms'
-import { runDerivation } from '../core/analytics/registry'
+
 import { fixedRateResampleOperation, type InterpolationMode, type ResampleParams } from '../core/operations/resample'
 import { applyTransformToRange } from '../core/rangeTransform'
 import { computeOperationPreview, describeOperationPreview } from '../core/recipes/preview'
@@ -164,7 +164,7 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
         </Op>
         <Op title="Simplify (Douglas–Peucker)" desc="Shape-preserving reduction within an epsilon. Full dataset only."><NumField label="ε (m)" value={simplifyEps} onChange={setSimplifyEps} min={0.1} step={0.5} /><button type="button" onClick={() => run(() => simplify(points, simplifyEps), false)}>Apply</button></Op>
         <Op title="Smooth" desc="Moving-average filter to reduce GPS jitter. Supports selected-range scope."><NumField label="window" value={smoothWindow} onChange={setSmoothWindow} min={2} step={1} /><label className="chk"><input type="checkbox" checked={smoothCoords} onChange={(event) => setSmoothCoords(event.target.checked)} /> position</label><label className="chk"><input type="checkbox" checked={smoothEle} onChange={(event) => setSmoothEle(event.target.checked)} /> elevation</label><button type="button" onClick={() => runScoped((selected) => smooth(selected, smoothWindow, { coords: smoothCoords, elevation: smoothEle }))}>Apply{scoped ? ' to range' : ''}</button></Op>
-        <Op title="Derive kinematics" desc="Compute distance, ground/vertical speed, heading, turn rate, acceleration, and sample timing. Full dataset only."><button type="button" onClick={() => run(() => runDerivation('standard-kinematics', dataset))}>Apply</button></Op>
+        <Op title="Derive kinematics" desc="Compute distance, ground/vertical speed, heading, turn rate, acceleration, and sample timing. Full dataset only."><button type="button" onClick={() => runReplayable('standard-kinematics', {})}>Apply</button></Op>
         <Op title="Shift time" desc="Add a fixed offset to timestamps. Full dataset operation with replayable parameters."><NumField label="seconds" value={timeShift} onChange={setTimeShift} step={1} /><button type="button" onClick={() => runReplayable('shift-time', { seconds: timeShift })}>Apply</button></Op>
         <Op title="Offset elevation" desc="Datum correction. Full dataset operation with replayable parameters."><NumField label="meters" value={eleOffset} onChange={setEleOffset} step={1} /><button type="button" onClick={() => runReplayable('offset-elevation', { meters: eleOffset })}>Apply</button></Op>
         <Op title="Remove elevation outliers" desc="MAD-based spike rejection on elevation. Supports selected-range scope."><NumField label="σ threshold" value={outlierSigma} onChange={setOutlierSigma} min={1} step={0.5} /><button type="button" onClick={() => runScoped((selected) => removeElevationOutliers(selected, outlierSigma))}>Apply{scoped ? ' to range' : ''}</button></Op>
