@@ -158,7 +158,7 @@ function buildHeaderSection(title: string, generatedAt: number, applicationVersi
   return `<header class="report-header">
   <div class="eyebrow">Joint Domain Data Compiler / Analysis Report</div>
   <h1>${escapeHtml(title)}</h1>
-  <p class="lede">A local, evidence-based snapshot of loaded trajectory data, source references, quality signals, bookmarks, and recorded transformations. ${escapeHtml(scopeDisclosure)} Verify conclusions against source data and metadata.</p>
+  <p class="lede">A local, evidence-based snapshot of loaded trajectory data, source references, quality signals, bookmarks, and recorded transformations. See the report scope below for exactly what is included. Verify conclusions against source data and metadata.</p>
   <div class="status-rail">
     <div class="status-item"><span class="status-label">Generated</span><span class="status-value">${escapeHtml(formatDate(generatedAt))}</span></div>
     <div class="status-item"><span class="status-label">Application</span><span class="status-value">JDDC ${escapeHtml(applicationVersion)}</span></div>

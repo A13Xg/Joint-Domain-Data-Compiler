@@ -72,7 +72,11 @@ const minimalHtml = buildHtmlAnalysisReport({
   options: { includeQualityEvents: false, includeWarnings: false, includeOperations: false, includeBookmarks: false },
 })
 check('Omits disabled evidence sections', !minimalHtml.includes('Quality events</h3>') && !minimalHtml.includes('Import warnings</h3>') && !minimalHtml.includes('Transform history</h3>') && !minimalHtml.includes('Bookmarks</h3>'))
-check('Discloses omitted evidence categories', minimalHtml.includes('Omitted categories: quality events, import warnings, transform history, bookmarks.'))
+check('Discloses omitted evidence categories', (() => {
+  const notIncludedBlock = minimalHtml.split('Not included')[1] ?? ''
+  return notIncludedBlock.includes('Automated quality-event detection') && notIncludedBlock.includes('Import/parser warnings')
+    && notIncludedBlock.includes('Recorded transform/operation history') && notIncludedBlock.includes('Bookmarks')
+})())
 
 // --- Task 3.1: mandatory scope block --------------------------------------
 
