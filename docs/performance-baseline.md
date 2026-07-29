@@ -35,6 +35,17 @@ Measurements were captured in explicit 100k and 500k/1M runs: `npm run bench -- 
 | 500,000 | 80 ms | 64 ms | 79 ms | 220 ms | 32 ms | 25 ms | 33 ms | 232 ms | 859 ms | 975 ms | 66.6 MB | skipped >100k | 783 ms | 7 → 166 MB |
 | 1,000,000 | 101 ms | 116 ms | 289 ms | 358 ms | 52 ms | 44 ms | 49 ms | 482 ms | 1,750 ms | 1,847 ms | 133.1 MB | skipped >100k | 1,612 ms | 8 → 325 MB |
 
+### Browser map activation (offline basemap)
+
+`npm run bench:map` imports deterministic GPB tracks so this measures the map path rather than CSV preview/mapping work. The benchmark retains every raw point but asserts that the map draws no more than its 4,000-point visual budget.
+
+| Points | Map activation | Drawn points |
+|---:|---:|---:|
+| 100,000 | 1,136 ms | ≤4,000 |
+| 500,000 | 1,061 ms | ≤4,000 |
+
+The browser-map benchmark deliberately caps at 500k points: that is the practical ceiling for this evidence pass, and larger CSV inputs predominantly measure CSV analysis/import rather than the downsampled map view.
+
 ## Reading these numbers
 
 - **GPX DOM parsing is not scale-safe in this runner.** The 100k parse took ~3.1 seconds and grew
@@ -52,6 +63,7 @@ Measurements were captured in explicit 100k and 500k/1M runs: `npm run bench -- 
   ~1.8 s and parse/validation/reconstruction is ~1.8 s for a 133 MB uncompressed archive. These
   are synchronous benchmark measurements; UI workflows should keep their existing save/open
   feedback and must not imply that multi-million-point project I/O is instant.
+- **Map activation remains bounded by the visual point budget.** The map retains raw points for selection and analysis while drawing at most 4,000 valid points. A previous `maxPoints + 1` endpoint edge case was corrected; the budget is now strict.
 - **Kinematics derivation** already clones the full
   point array once; this is consistent with the roadmap's existing note that transform history
   via full dataset snapshots is memory-proportional to point count × history depth.
@@ -85,7 +97,7 @@ work fine; this is purely an artifact of this particular shared sandbox at measu
 
 1. Add parse-time benchmarks per format (CSV/GPX/KML/NMEA/GPB) using `benchmarks/generate.ts`
    output re-serialized to each format, per the plan's explicit ask.
-2. Add parser and browser-map benchmarks.
+2. Add parser benchmarks.
 3. Add an operation-history/undo-stack memory growth benchmark (N operations × snapshot size).
 4. Only after this fuller picture exists: decide whether Stage 10's columnar Worker architecture
    is justified, and where specifically (the plan is explicit that this should be evidence-led,

@@ -23,6 +23,7 @@
     "test:e2e": "playwright test",
     "test:legacy": "esbuild test/validate.ts --bundle --platform=node --format=esm --outfile=.test-build/validate.mjs && node .test-build/validate.mjs",
     "bench": "node --expose-gc scripts/run-benchmarks.mjs",
+    "bench:map": "playwright test test/e2e/map-performance.spec.ts --reporter=line",
     "lint": "eslint .",
     "check:unit": "npm run lint && npm test",
     "check:web": "npm run build",

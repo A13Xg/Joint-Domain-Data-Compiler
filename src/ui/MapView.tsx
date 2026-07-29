@@ -43,7 +43,9 @@ function gradientColor(value: number): string {
 
 function downsample<T>(values: T[], maxPoints: number): T[] {
   if (values.length <= maxPoints) return values
-  const step = Math.ceil(values.length / maxPoints)
+  // Reserve one slot for the final point so the render budget is a strict
+  // maximum rather than maxPoints plus a trailing endpoint.
+  const step = Math.ceil((values.length - 1) / (maxPoints - 1))
   const sampled = values.filter((_, index) => index % step === 0)
   if (sampled[sampled.length - 1] !== values[values.length - 1]) sampled.push(values[values.length - 1]!)
   return sampled

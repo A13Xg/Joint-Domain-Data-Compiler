@@ -25,41 +25,51 @@ export function calculateRangeStatistics(
   if (points.length === 0) throw new Error('Cannot calculate range statistics for an empty dataset')
   const startIndex = Math.max(0, Math.min(points.length - 1, Math.min(range.start, range.end)))
   const endIndex = Math.max(0, Math.min(points.length - 1, Math.max(range.start, range.end)))
-  const selected = points.slice(startIndex, endIndex + 1)
-
   let distanceMeters = 0
-  for (let index = 1; index < selected.length; index++) {
-    const previous = selected[index - 1]
-    const current = selected[index]
-    if (!previous || !current) continue
-    distanceMeters += haversineMeters(previous.lat, previous.lon, current.lat, current.lon)
+  let firstTime: number | undefined
+  let lastTime: number | undefined
+  let previous: TrackPoint | undefined
+  const summaries = new Map<string, { count: number; min: number; max: number; sum: number }>()
+  const ids = [...new Set(['elevation', ...channelIds])]
+  for (let index = startIndex; index <= endIndex; index++) {
+    const current = points[index]
+    if (!current) continue
+    if (previous) distanceMeters += haversineMeters(previous.lat, previous.lon, current.lat, current.lon)
+    previous = current
+    if (current.time !== undefined) {
+      firstTime ??= current.time
+      lastTime = current.time
+    }
+    for (const id of ids) {
+      const value = numericValue(current, id)
+      if (value === null) continue
+      const summary = summaries.get(id)
+      if (summary) {
+        summary.count++
+        summary.min = Math.min(summary.min, value)
+        summary.max = Math.max(summary.max, value)
+        summary.sum += value
+      } else summaries.set(id, { count: 1, min: value, max: value, sum: value })
+    }
   }
-
-  const firstTime = selected.find((point) => point.time !== undefined)?.time
-  const lastTime = [...selected].reverse().find((point) => point.time !== undefined)?.time
   const durationSeconds = firstTime !== undefined && lastTime !== undefined && lastTime >= firstTime
     ? (lastTime - firstTime) / 1000
     : undefined
 
-  const ids = [...new Set(['elevation', ...channelIds])]
   const channels: Record<string, NumericSummary> = {}
-  for (const id of ids) {
-    const values = selected
-      .map((point) => numericValue(point, id))
-      .filter((value): value is number => value !== null)
-    if (values.length === 0) continue
+  for (const [id, summary] of summaries) {
     channels[id] = {
-      count: values.length,
-      min: Math.min(...values),
-      max: Math.max(...values),
-      mean: values.reduce((sum, value) => sum + value, 0) / values.length,
+      count: summary.count,
+      min: summary.min,
+      max: summary.max,
+      mean: summary.sum / summary.count,
     }
   }
 
   return {
     startIndex,
     endIndex,
-    pointCount: selected.length,
+    pointCount: endIndex - startIndex + 1,
     durationSeconds,
     distanceMeters,
     channels,
