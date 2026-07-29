@@ -17,25 +17,29 @@ synthetic spiral-climb track:
 - chart-series preparation,
 - 3D trajectory geometry construction,
 - nearest-time alignment plus relative-position comparison,
-- GPX export.
+- GPX parse/export (DOM parsing is intentionally capped at 100k points; see below).
 
-**Not covered yet** (deferred — these need their own harnesses): CSV/GPX/KML/NMEA/GPB *parsing*,
-browser map rendering, and project archive save/open. Task 6.1 explicitly calls for measuring all
+**Not covered yet** (deferred — these need their own harnesses): CSV/KML/NMEA/GPB parsing,
+GPX parsing above 100k points, browser map rendering, and project archive save/open. Task 6.1 explicitly calls for measuring all
 of these; this pass established the mechanism and a larger, but still incomplete, matrix.
 
 ## Results
 
 Measurements were captured in one explicit full-range run: `npm run bench -- 100000 500000 1000000`.
 
-| Points | Generate | sort | dedupe | kinematics | quality | chart | 3D geometry | comparison | GPX export | Heap (post-GC) |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 100,000 | 24 ms | 10 ms | 19 ms | 40 ms | 24 ms | 3 ms | 8 ms | 39 ms | 162 ms | 5 → 24 MB |
-| 500,000 | 48 ms | 54 ms | 76 ms | 302 ms | 38 ms | 25 ms | 30 ms | 223 ms | 830 ms | 6 → 98 MB |
-| 1,000,000 | 103 ms | 117 ms | 324 ms | 344 ms | 54 ms | 77 ms | 53 ms | 797 ms | 1,590 ms | 6 → 190 MB |
+| Points | Generate | sort | dedupe | kinematics | quality | chart | 3D geometry | comparison | GPX parse | GPX export | Heap (post-GC) |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 100,000 | 22 ms | 11 ms | 22 ms | 48 ms | 9 ms | 4 ms | 9 ms | 57 ms | 3,057 ms | 209 ms | 7 → 90 MB |
+| 500,000 | 27 ms | 64 ms | 174 ms | 194 ms | 32 ms | 40 ms | 36 ms | 222 ms | skipped >100k | 812 ms | 72 → 164 MB |
+| 1,000,000 | 55 ms | 227 ms | 154 ms | 441 ms | 63 ms | 92 ms | 45 ms | 771 ms | skipped >100k | 1,649 ms | 72 → 256 MB |
 
 ## Reading these numbers
 
-- **GPX export dominates at every size** (~1.7 s at 1M points, ~64% of the measured per-size
+- **GPX DOM parsing is not scale-safe in this runner.** The 100k parse took ~3.1 seconds and grew
+  post-GC heap to 90 MB; the uncapped 500k parse exhausted Node's ~4 GB heap. The benchmark now
+  refuses DOM-parser timing above 100k rather than risking an OOM. This is evidence of a parser
+  architecture limitation, not a successful 500k/1M parsing claim.
+- **GPX export dominates among the full-range operations** (~1.6 s at 1M points, ~64% of the measured per-size
   total) and scales roughly linearly (~1.7 µs/point). It is the first thing to profile if export
   responsiveness at scale becomes a product concern — likely string-building overhead in the GPX
   writer, not investigated further here.

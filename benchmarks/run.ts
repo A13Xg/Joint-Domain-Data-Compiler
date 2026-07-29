@@ -7,6 +7,12 @@ import { exportDataset } from '../src/core/exporters/index.ts'
 import { extractChartSeries } from '../src/visualization/charts/series.ts'
 import { buildTrajectory3dGeometry } from '../src/visualization/scene3d/trajectory.ts'
 import { alignTracksByNearestTime, deriveRelativePosition } from '../src/core/analytics/relative.ts'
+import { parseGpx } from '../src/core/parsers/gpx.ts'
+import { DOMParser } from 'linkedom'
+
+// Browser parsing uses the platform DOMParser. The Node benchmark runner
+// supplies the same lightweight XML-compatible shim used by parser tests.
+if (typeof globalThis.DOMParser === 'undefined') globalThis.DOMParser = DOMParser as unknown as typeof globalThis.DOMParser
 
 // Default to sizes safe in a memory-constrained CI/sandbox runner. Pass
 // explicit sizes to exercise the full 100k/500k/1M range on a machine with
@@ -14,6 +20,7 @@ import { alignTracksByNearestTime, deriveRelativePosition } from '../src/core/an
 const DEFAULT_SIZES = [10_000, 50_000, 100_000]
 const SIZES = process.argv.slice(2).map(Number).filter((n) => Number.isFinite(n) && n > 0)
 const sizesToRun = SIZES.length > 0 ? SIZES : DEFAULT_SIZES
+const MAX_DOM_PARSE_BENCHMARK_POINTS = 100_000
 
 function timeMs(fn: () => void): number {
   const start = process.hrtime.bigint()
@@ -33,10 +40,10 @@ function makeDataset(points: ReturnType<typeof generateSyntheticTrack>): Dataset
 export async function run(): Promise<void> {
   console.log('JDDC scale benchmark — Tranche 8 Task 8.1')
   console.log('Node', process.version, '| gc exposed:', typeof global.gc === 'function')
-  console.log('Covers: dataset construction, sortByTime, dedupe, standard-kinematics derivation, quality-event detection, chart/3D preparation, nearest-time comparison, GPX export.')
-  console.log('Does NOT cover (deferred): map rendering and project archive save/open.\n')
+  console.log('Covers: dataset construction, sortByTime, dedupe, standard-kinematics derivation, quality-event detection, chart/3D preparation, nearest-time comparison, GPX parse/export.')
+  console.log('Does NOT cover (deferred): other parser formats, map rendering, and project archive save/open.\n')
 
-  const header = ['points', 'generate ms', 'sortByTime ms', 'dedupe ms', 'kinematics ms', 'quality-events ms', 'chart ms', '3D geometry ms', 'comparison ms', 'gpx export ms', 'heap MB (post-GC)']
+  const header = ['points', 'generate ms', 'sortByTime ms', 'dedupe ms', 'kinematics ms', 'quality-events ms', 'chart ms', '3D geometry ms', 'comparison ms', 'gpx parse ms', 'gpx export ms', 'heap MB (post-GC)']
   console.log(header.join('  |  '))
 
   for (const size of sizesToRun) {
@@ -55,6 +62,9 @@ export async function run(): Promise<void> {
       const pairs = alignTracksByNearestTime(dataset!.points, dataset!.points, { toleranceMs: 0 })
       deriveRelativePosition(dataset!.points, dataset!.points, pairs)
     })
+    const parseTime = size <= MAX_DOM_PARSE_BENCHMARK_POINTS
+      ? timeMs(() => { parseGpx(exportDataset(dataset!, 'gpx').text) })
+      : null
     const exportTime = timeMs(() => { exportDataset(dataset!, 'gpx') })
     const heapAfter = heapMb()
 
@@ -68,6 +78,7 @@ export async function run(): Promise<void> {
       chartTime.toFixed(0),
       geometryTime.toFixed(0),
       comparisonTime.toFixed(0),
+      parseTime === null ? `skipped >${MAX_DOM_PARSE_BENCHMARK_POINTS.toLocaleString()}` : parseTime.toFixed(0),
       exportTime.toFixed(0),
       `${heapBefore.toFixed(0)} → ${heapAfter.toFixed(0)}`,
     ].join('  |  '))
