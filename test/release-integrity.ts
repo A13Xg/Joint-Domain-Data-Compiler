@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseChecksumManifest, validateReleaseFileSet, verifyReleaseBundle } from '../scripts/verify-release-bundle.mjs'
@@ -38,6 +38,9 @@ check('Checksum manifest rejects path traversal', unsafeRejected)
 let duplicateRejected = false
 try { parseChecksumManifest(`${hash}  artifact.exe\n${hash}  artifact.exe\n`) } catch { duplicateRejected = true }
 check('Checksum manifest rejects duplicate entries', duplicateRejected)
+
+const releaseWorkflow = await readFile('.github/workflows/release.yml', 'utf8')
+check('Prerelease tags are published as prereleases', releaseWorkflow.includes("prerelease: ${{ contains(github.ref_name, '-') }}"))
 
 const fixtureDirectory = await mkdtemp(join(tmpdir(), 'jddc-release-integrity-'))
 try {
