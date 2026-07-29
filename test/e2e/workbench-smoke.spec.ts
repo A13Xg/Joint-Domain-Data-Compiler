@@ -48,6 +48,7 @@ test('verified transform history replays from its retained source snapshot', asy
   await elevationOffsetCard.getByRole('button', { name: 'Apply' }).click()
   await page.getByRole('button', { name: 'Replay verified history', exact: true }).click()
   await expect(page.locator('.toast').getByText('Replayed 1 verified operation(s)')).toBeVisible()
+  await expect(page.getByText('Operation history (1)')).toBeVisible()
 })
 
 test('CSV mapping workflow previews and builds an immutable dataset', async ({ page }) => {
