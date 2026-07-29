@@ -39,6 +39,17 @@ test('fusion workflow creates a derived dataset without altering sources', async
   await expect(page.getByText(/Created Fused_/)).toBeVisible()
 })
 
+test('verified transform history replays from its retained source snapshot', async ({ page }) => {
+  await page.goto('/')
+  await page.locator('input[type=file][multiple]').first().setInputFiles(fixture)
+  await page.getByRole('button', { name: 'Transform', exact: true }).click()
+  const elevationOffsetCard = page.locator('.op-card').filter({ hasText: 'Offset elevation' })
+  await elevationOffsetCard.getByRole('spinbutton', { name: 'meters' }).fill('10')
+  await elevationOffsetCard.getByRole('button', { name: 'Apply' }).click()
+  await page.getByRole('button', { name: 'Replay verified history', exact: true }).click()
+  await expect(page.locator('.toast').getByText('Replayed 1 verified operation(s)')).toBeVisible()
+})
+
 test('CSV mapping workflow previews and builds an immutable dataset', async ({ page }) => {
   await page.goto('/')
   await page.locator('input[type="file"]').setInputFiles(csvFixture)

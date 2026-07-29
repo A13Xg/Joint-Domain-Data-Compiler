@@ -350,6 +350,19 @@ export default function App() {
     flashToast(summary)
   }, [active, flashToast])
 
+  const applyReplay = useCallback((replayed: Dataset, summary: string) => {
+    if (!active) return
+    setDatasets((current) => current.map((dataset) => dataset.id === active.id ? replayed : dataset))
+    setHistories((current) => {
+      const existing = current[active.id] ?? { past: [], future: [] }
+      return { ...current, [active.id]: { past: appendHistorySnapshot(existing.past, active), future: [] } }
+    })
+    setProjectDirty(true)
+    restorePointSelection(replayed.points, null, null)
+    flashToast(summary)
+    logger.success('transform', summary)
+  }, [active, flashToast])
+
   const undo = useCallback(() => {
     if (!active || !history || history.past.length === 0) return
     const previousDataset = history.past[history.past.length - 1]!
@@ -453,7 +466,7 @@ export default function App() {
             {tab === 'table' && active && <DataTable points={active.points} channels={active.channels} />}
             {tab === 'compare' && <ComparisonPanel datasets={datasets} activeId={activeId} workspace={workspace.comparison} onWorkspaceChange={(comparison) => { setWorkspace((current) => ({ ...current, comparison })); setProjectDirty(true) }} onSelectReferenceSample={(datasetId, pointIndex) => { const reference = datasets.find((dataset) => dataset.id === datasetId); if (!reference) return; restorePointSelection(reference.points, pointIndex, null); setActiveId(datasetId) }} />}
             {tab === 'scene3d' && active && <Trajectory3dPanel dataset={active} datasets={datasets} workspace={workspace.scene3d} onWorkspaceChange={(scene3d) => { setWorkspace((current) => ({ ...current, scene3d })); setProjectDirty(true) }} />}
-            {tab === 'transform' && active && <><TransformPanel dataset={active} onApply={applyTransform} onUndo={undo} onRedo={redo} canUndo={!!history && history.past.length > 0} canRedo={!!history && history.future.length > 0} operationHistory={operationRecords[active.id] ?? []} /><NotionalSmoothingPanel dataset={active} onCreateDataset={addDataset} /></>}
+            {tab === 'transform' && active && <><TransformPanel dataset={active} onApply={applyTransform} onUndo={undo} onRedo={redo} canUndo={!!history && history.past.length > 0} canRedo={!!history && history.future.length > 0} operationHistory={operationRecords[active.id] ?? []} replaySource={history?.past[0]} onReplay={applyReplay} /><NotionalSmoothingPanel dataset={active} onCreateDataset={addDataset} /></>}
             {tab === 'project' && <ProjectPanel datasets={datasets} histories={histories} activeId={activeId} activeTab={workspace.lastWorkspaceTab} workspace={workspace} datasetDisplay={syncedDisplay} bookmarks={bookmarks} operationRecords={operationRecords} projectName={projectName} projectNotes={projectNotes} projectDirty={projectDirty} onProjectNameChange={(name) => { setProjectName(name); setProjectDirty(true) }} onProjectNotesChange={(notes) => { setProjectNotes(notes); setProjectDirty(true) }} onProjectSaved={() => setProjectDirty(false)} onRestoreProject={restoreProject} />}
 
             {tab === 'export' && active && <ExportPanel dataset={active} />}

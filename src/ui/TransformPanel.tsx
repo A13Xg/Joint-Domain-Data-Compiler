@@ -8,8 +8,8 @@ import { runDerivation } from '../core/analytics/registry'
 import { fixedRateResampleOperation, type InterpolationMode, type ResampleParams } from '../core/operations/resample'
 import { applyTransformToRange } from '../core/rangeTransform'
 import { computeOperationPreview, describeOperationPreview } from '../core/recipes/preview'
-import type { OperationRecord } from '../core/recipes/model'
-import { executeOperation } from '../core/recipes/executor'
+import type { OperationRecord, Recipe } from '../core/recipes/model'
+import { executeOperation, replayRecipe } from '../core/recipes/executor'
 import { getOperation } from '../core/recipes/registry'
 import { usePointSelection } from '../state/pointSelection'
 import { ComputeClient, type ComputeRunHandle } from '../compute/client'
@@ -23,11 +23,13 @@ interface Props {
   canUndo: boolean
   canRedo: boolean
   operationHistory: OperationRecord[]
+  replaySource?: Dataset
+  onReplay: (dataset: Dataset, summary: string) => void
 }
 
 interface ResampleWorkerResult { dataset: Dataset; summary: string; warnings?: string[] }
 
-export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canRedo, operationHistory }: Props) {
+export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canRedo, operationHistory, replaySource, onReplay }: Props) {
   const [dedupeTol, setDedupeTol] = useState(0)
   const [decimateFactor, setDecimateFactor] = useState(2)
   const [simplifyEps, setSimplifyEps] = useState(5)
@@ -41,8 +43,18 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
   const [emaAlpha, setEmaAlpha] = useState(0.25)
   const [hampelWindow, setHampelWindow] = useState(11)
   const [hampelSigma, setHampelSigma] = useState(3)
+  const [replayError, setReplayError] = useState<string | null>(null)
   const [resampleRateHz, setResampleRateHz] = useState(1)
   const [resampleMode, setResampleMode] = useState<InterpolationMode>('linear')
+  const replayHistory = () => {
+    if (!replaySource || operationHistory.length === 0) return
+    try {
+      const recipe: Recipe = { schemaVersion: 1, id: 'current-history', name: 'Current operation history', createdAt: operationHistory[0]!.createdAt, sourceDatasetHash: operationHistory[0]!.inputDatasetHash, operations: operationHistory }
+      const replayed = replayRecipe(replaySource, recipe)
+      onReplay(replayed, `Replayed ${operationHistory.length} verified operation(s)`)
+      setReplayError(null)
+    } catch (error) { setReplayError((error as Error).message) }
+  }
   const [resampleMaxGapSeconds, setResampleMaxGapSeconds] = useState(10)
   const [limitResampleGaps, setLimitResampleGaps] = useState(true)
   const [resampleProgress, setResampleProgress] = useState<string | null>(null)
@@ -136,6 +148,7 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
         const replayable = registered?.version === record.operationVersion
         return <li key={record.id} className="mono small"><span className="muted">{new Date(record.createdAt).toLocaleTimeString()}</span> {record.summary}{!replayable && <span className="warn"> — not replayable: {registered ? `requires v${registered.version}` : 'operation unavailable'}</span>}</li>
       })}</ul></details>}
+      {operationHistory.length > 0 && <div className="analysis-toolbar"><button type="button" disabled={!replaySource} onClick={replayHistory}>Replay verified history</button>{!replaySource && <span className="muted small">No retained source snapshot is available for replay.</span>}{replayError && <span className="error-line">Replay blocked: {replayError}</span>}</div>}
       <div className="transform-grid">
         <Op title="Sort by time" desc="Order points chronologically. Required by most track players."><button type="button" onClick={() => run(() => sortByTime(points), false)}>Apply</button></Op>
         <Op title="Swap lat / lon" desc="Fix transposed coordinate columns. Supports selected-range scope."><button type="button" onClick={() => runScoped((selected) => swapLatLon(selected))}>Apply{scoped ? ' to range' : ''}</button></Op>
