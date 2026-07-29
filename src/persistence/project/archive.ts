@@ -1,4 +1,4 @@
-import type { Dataset, TrackPoint } from '../../core/model'
+import { isValidLat, isValidLon, type Dataset, type TrackPoint } from '../../core/model'
 import { fingerprintDataset } from '../../core/recipes/hash'
 import type { OperationRecord, Recipe } from '../../core/recipes/model'
 import { getOperation } from '../../core/recipes/registry'
@@ -451,6 +451,8 @@ function validatePoint(value: unknown, datasetId: string): asserts value is Trac
   if (!isRecord(value)) throw new Error(`Dataset ${datasetId} contains a non-object point`)
   requireFinite(value.lat, `Dataset ${datasetId} point latitude`)
   requireFinite(value.lon, `Dataset ${datasetId} point longitude`)
+  if (!isValidLat(value.lat)) throw new Error(`Dataset ${datasetId} point latitude is outside [-90, 90]`)
+  if (!isValidLon(value.lon)) throw new Error(`Dataset ${datasetId} point longitude is outside [-180, 180]`)
   if (value.ele !== undefined) requireFinite(value.ele, `Dataset ${datasetId} point elevation`)
   if (value.time !== undefined) requireFinite(value.time, `Dataset ${datasetId} point time`)
   if (value.name !== undefined && typeof value.name !== 'string') throw new Error(`Dataset ${datasetId} point name must be a string`)

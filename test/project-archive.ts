@@ -144,7 +144,7 @@ await assert.rejects(() => readStreamWithLimit(new ReadableStream({ start(contro
 
 const corrupted = JSON.parse(serializeProjectArchive(archive))
 corrupted.datasets[0].points[0].lat = 99
-assert.throws(() => parseProjectArchive(JSON.stringify(corrupted)), /fingerprint does not match/)
+assert.throws(() => parseProjectArchive(JSON.stringify(corrupted)), /latitude is outside/)
 
 const corruptedDelta = JSON.parse(serializeProjectArchive(archive)) as { histories: Record<string, { past: unknown[]; future: unknown[]; checkpoint: Dataset | null }> }
 const deltaHistory = corruptedDelta.histories[dataset.id]!
