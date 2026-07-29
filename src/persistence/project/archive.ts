@@ -58,6 +58,7 @@ const MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
 const MAX_DECOMPRESSED_ARCHIVE_BYTES = 512 * 1024 * 1024
 const MAX_DATASETS = 100
 const MAX_TOTAL_POINTS = 10_000_000
+const MAX_PATCHES_PER_DELTA = 100_000
 const textEncoder = new TextEncoder()
 const textDecoder = new TextDecoder()
 
@@ -395,6 +396,9 @@ function applyPatches(base: Dataset, patches: PersistedDelta['patches'], dataset
     let target: Record<string, unknown> | unknown[] = output
     for (const segment of patch.path.slice(0, -1)) {
       if (!isRecord(target) && !Array.isArray(target)) throw new Error(`History ${datasetId} patch path is not traversable`)
+      if (Array.isArray(target) && (!/^0$|^[1-9]\d*$/.test(segment) || Number(segment) >= target.length)) {
+        throw new Error(`History ${datasetId} patch path cannot create sparse arrays`)
+      }
       target = (target as Record<string, unknown>)[segment] as Record<string, unknown> | unknown[]
     }
     const key = patch.path[patch.path.length - 1]!
@@ -423,7 +427,13 @@ function validatePersistedDelta(value: unknown, datasetId: string): asserts valu
   if (value.kind === 'operation') {
     if (!isRecord(value.operation) || typeof value.operation.operationId !== 'string' || !Number.isSafeInteger(value.operation.operationVersion)) throw new Error(`History ${datasetId} operation delta is malformed`)
   } else if (value.kind === 'patch') {
-    if (!Array.isArray(value.patches)) throw new Error(`History ${datasetId} patch delta is malformed`)
+    if (!Array.isArray(value.patches) || value.patches.length > MAX_PATCHES_PER_DELTA) throw new Error(`History ${datasetId} patch delta is malformed`)
+    for (const patch of value.patches) {
+      if (!isRecord(patch) || !Array.isArray(patch.path) || patch.path.length === 0 || patch.path.length > 12 || !patch.path.every((segment) => typeof segment === 'string' && segment.length > 0 && segment.length <= 128 && segment !== '__proto__' && segment !== 'constructor' && segment !== 'prototype')) {
+        throw new Error(`History ${datasetId} patch delta contains an unsafe patch path`)
+      }
+      if (patch.delete !== undefined && patch.delete !== true) throw new Error(`History ${datasetId} patch delta delete marker is invalid`)
+    }
   } else throw new Error(`History ${datasetId} delta kind is unsupported`)
 }
 
