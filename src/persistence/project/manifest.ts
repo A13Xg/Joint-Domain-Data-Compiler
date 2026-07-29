@@ -140,7 +140,7 @@ export function operationRecordsFromManifest(manifest: ProjectManifest): Record<
   const recipesById = new Map(manifest.recipes.map((recipe) => [recipe.id, recipe]))
   return Object.fromEntries(manifest.datasets.map((dataset) => [
     dataset.id,
-    dataset.recipeIds.filter((recipeId) => recipeId === `operations_${dataset.id}`).flatMap((recipeId) => recipesById.get(recipeId)?.operations ?? []),
+    dataset.recipeIds.filter((recipeId) => recipesById.get(recipeId)?.kind !== 'named').flatMap((recipeId) => recipesById.get(recipeId)?.operations ?? []),
   ]))
 }
 
@@ -149,7 +149,7 @@ export function namedRecipesFromManifest(manifest: ProjectManifest): Record<stri
   const recipesById = new Map(manifest.recipes.map((recipe) => [recipe.id, recipe]))
   return Object.fromEntries(manifest.datasets.map((dataset) => [
     dataset.id,
-    dataset.recipeIds.filter((recipeId) => recipeId !== `operations_${dataset.id}`).flatMap((recipeId) => {
+    dataset.recipeIds.filter((recipeId) => recipesById.get(recipeId)?.kind === 'named').flatMap((recipeId) => {
       const recipe = recipesById.get(recipeId)
       return recipe ? [structuredClone(recipe)] : []
     }),
@@ -180,6 +180,7 @@ function validateRecipe(value: unknown): asserts value is Recipe {
   if (!isRecord(value)) throw new Error('recipe entries must be objects')
   if (value.schemaVersion !== 1) throw new Error(`Unsupported recipe schema version: ${String(value.schemaVersion)}`)
   requireNonEmptyString(value.id, 'recipe.id')
+  if (value.kind !== undefined && value.kind !== 'named' && value.kind !== 'operation-history') throw new Error(`Recipe ${value.id} kind is invalid`)
   requireNonEmptyString(value.name, `Recipe ${value.id} name`)
   requireFiniteNumber(value.createdAt, `Recipe ${value.id} createdAt`)
   requireNonEmptyString(value.sourceDatasetHash, `Recipe ${value.id} sourceDatasetHash`)

@@ -71,7 +71,7 @@ const namedRecipeManifest: ProjectManifest = {
   datasets: [{ ...manifest.datasets[0]!, recipeIds: ['operations_dataset-1', 'named-1'] }],
   recipes: [
     { ...manifest.recipes[0]!, id: 'operations_dataset-1', name: 'Operation history' },
-    { schemaVersion: 1, id: 'named-1', name: 'Named recipe', createdAt: 1000, sourceDatasetHash: 'fnv1a32:12345678', operations: [] },
+    { schemaVersion: 1, kind: 'named', id: 'named-1', name: 'Named recipe', createdAt: 1000, sourceDatasetHash: 'fnv1a32:12345678', operations: [] },
   ],
 }
 check('Named recipes are listed separately from operation history', namedRecipesFromManifest(namedRecipeManifest)['dataset-1']?.[0]?.name === 'Named recipe' && operationRecordsFromManifest(namedRecipeManifest)['dataset-1']?.length === 0)

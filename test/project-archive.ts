@@ -13,6 +13,8 @@ import {
 } from '../src/persistence/project/archive'
 import { namedRecipesFromManifest, operationRecordsFromManifest } from '../src/persistence/project/manifest'
 import type { FusionArtifact } from '../src/core/fusion/artifact'
+import { ensureBuiltinOperationsRegistered } from '../src/core/operations/basic'
+import { executeOperation } from '../src/core/recipes/executor'
 
 const dataset: Dataset = {
   id: 'track-1',
@@ -93,7 +95,7 @@ assert.equal(manifest.datasets[0]?.recipeIds[0], manifest.recipes[0]?.id, 'datas
 const namedManifest = buildProjectManifest({
   datasets: [dataset], activeDatasetId: dataset.id, activeTab: 'transform', selection: { ...EMPTY_WORKSPACE_SELECTION, datasetId: dataset.id },
   operationRecords: { [dataset.id]: manifest.recipes[0]!.operations },
-  namedRecipes: { [dataset.id]: [{ ...manifest.recipes[0]!, id: 'recipe_named', name: 'Named offset recipe' }] },
+  namedRecipes: { [dataset.id]: [{ ...manifest.recipes[0]!, kind: 'named', id: 'recipe_named', name: 'Named offset recipe' }] },
   applicationVersion: '0.1.0',
 })
 assert.equal(namedManifest.recipes.length, 2, 'named recipes are included beside operation history')
@@ -105,7 +107,7 @@ const archive = createProjectArchive({
   datasets: [dataset],
   histories: {
     [dataset.id]: {
-      past: [{ ...dataset, points: dataset.points.slice(0, 1) }],
+      past: [{ ...dataset, points: [] }, { ...dataset, points: dataset.points.slice(0, 1) }],
       future: [],
     },
   },
@@ -113,8 +115,16 @@ const archive = createProjectArchive({
 
 const parsed = parseProjectArchive(serializeProjectArchive(archive))
 assert.deepEqual(parsed, archive)
+const persistedArchive = JSON.parse(serializeProjectArchive(archive)) as { schemaVersion: number; histories: Record<string, unknown> }
+assert.equal(persistedArchive.schemaVersion, 2, 'new archives use the checkpoint/delta schema')
+assert.equal(
+  (persistedArchive.histories[dataset.id] as { past?: unknown[] }).past?.some((entry) => typeof entry === 'object' && entry !== null && 'points' in entry),
+  false,
+  'persisted history entries do not contain full dataset snapshots',
+)
+
 assert.equal(archiveSummary(parsed).currentPoints, 2)
-assert.equal(archiveSummary(parsed).historySnapshots, 1)
+assert.equal(archiveSummary(parsed).historySnapshots, 2)
 assert.equal(parsed.manifest.view.selection.pointIndex, 1)
 assert.equal(parsed.manifest.bookmarks[0]?.id, 'bm-1', 'bookmarks survive the full archive round-trip')
 assert.equal(parsed.manifest.view.datasetDisplay?.[dataset.id]?.visible, false, 'dataset display settings survive the full archive round-trip')
@@ -134,5 +144,29 @@ await assert.rejects(() => readStreamWithLimit(new ReadableStream({ start(contro
 const corrupted = JSON.parse(serializeProjectArchive(archive))
 corrupted.datasets[0].points[0].lat = 99
 assert.throws(() => parseProjectArchive(JSON.stringify(corrupted)), /fingerprint does not match/)
+
+const corruptedDelta = JSON.parse(serializeProjectArchive(archive)) as { histories: Record<string, { past: unknown[]; future: unknown[]; checkpoint: Dataset | null }> }
+const deltaHistory = corruptedDelta.histories[dataset.id]!
+const delta = (deltaHistory.past[0] ?? deltaHistory.future[0]) as { outputHash?: string }
+if (delta) delta.outputHash = 'fnv1a32:corrupted'
+assert.throws(() => parseProjectArchive(JSON.stringify(corruptedDelta)), /delta output fingerprint mismatch/)
+
+ensureBuiltinOperationsRegistered()
+const firstOperation = executeOperation(dataset, 'offset-elevation', { meters: 10 })
+const secondOperation = executeOperation(firstOperation.dataset, 'offset-elevation', { meters: 10 })
+const replayManifest = buildProjectManifest({
+  datasets: [secondOperation.dataset], activeDatasetId: secondOperation.dataset.id, activeTab: 'transform',
+  selection: { ...EMPTY_WORKSPACE_SELECTION, datasetId: secondOperation.dataset.id }, applicationVersion: '0.1.0',
+  operationRecords: { [dataset.id]: [firstOperation.record, secondOperation.record] },
+})
+const replayArchive = createProjectArchive({
+  manifest: replayManifest, datasets: [secondOperation.dataset],
+  histories: { [dataset.id]: { past: [dataset, firstOperation.dataset], future: [] } },
+})
+const replayPersisted = JSON.parse(serializeProjectArchive(replayArchive)) as { histories: Record<string, { past: Array<{ kind: string; operation?: { operationVersion: number } }> }> }
+assert.equal(replayPersisted.histories[dataset.id]?.past[0]?.kind, 'operation', 'recorded transforms persist as replayable operation deltas')
+const badOperationVersion = JSON.parse(serializeProjectArchive(replayArchive)) as { histories: Record<string, { past: Array<{ operation?: { operationVersion: number } }> }> }
+badOperationVersion.histories[dataset.id]!.past[0]!.operation!.operationVersion = 99
+assert.throws(() => parseProjectArchive(JSON.stringify(badOperationVersion)), /operation version mismatch/)
 
 console.log('project archive tests passed')
