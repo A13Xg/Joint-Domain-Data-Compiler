@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require('electron')
 const fs = require('fs')
 const path = require('path')
 const zlib = require('zlib')
@@ -182,6 +182,9 @@ function registerDiagnosticIpc() {
 }
 
 app.whenReady().then(() => {
+  // The workbench owns its visible navigation and commands. Remove Electron's
+  // default File/Edit/View/Window menu in both development and packaged builds.
+  Menu.setApplicationMenu(null)
   registerKmlLibraryIpc()
   registerDiagnosticIpc()
   createWindow()
