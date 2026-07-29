@@ -62,6 +62,33 @@ test('verified transform history replays from its retained source snapshot', asy
   await expect(page.getByText('Operation history (1)')).toBeVisible()
 })
 
+test('named recipes can be captured, replayed, deleted, and persisted', async ({ page }) => {
+  await page.goto('/')
+  await page.locator('input[type=file][multiple]').first().setInputFiles(fixture)
+  await page.getByRole('button', { name: 'Transform', exact: true }).click()
+  const elevationOffsetCard = page.locator('.op-card').filter({ hasText: 'Offset elevation' })
+  await elevationOffsetCard.getByRole('spinbutton', { name: 'meters' }).fill('10')
+  await elevationOffsetCard.getByRole('button', { name: 'Apply' }).click()
+  await page.getByLabel('Recipe name').fill('Ten meter offset')
+  await page.getByRole('button', { name: 'Save named recipe', exact: true }).click()
+  await expect(page.getByText('Named recipes (1)')).toBeVisible()
+  await page.getByRole('button', { name: 'Replay', exact: true }).click()
+  await expect(page.locator('.toast').getByText('Replayed recipe “Ten meter offset”')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Project', exact: true }).click()
+  const projectDownload = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Save complete project' }).click()
+  const projectPath = await (await projectDownload).path()
+  expect(projectPath).not.toBeNull()
+  const projectJson = JSON.parse(gunzipSync(await readFile(projectPath!)).toString('utf8'))
+  expect(projectJson.manifest.recipes).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'Ten meter offset' })]))
+
+  await page.getByRole('button', { name: 'Transform', exact: true }).click()
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: 'Delete', exact: true }).click()
+  await expect(page.getByText('Named recipes (1)')).toHaveCount(0)
+})
+
 test('CSV mapping workflow previews and builds an immutable dataset', async ({ page }) => {
   await page.goto('/')
   await page.locator('input[type="file"]').setInputFiles(csvFixture)

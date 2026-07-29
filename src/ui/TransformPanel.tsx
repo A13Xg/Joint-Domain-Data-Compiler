@@ -9,7 +9,7 @@ import { fixedRateResampleOperation, type InterpolationMode, type ResampleParams
 import { applyTransformToRange } from '../core/rangeTransform'
 import { computeOperationPreview, describeOperationPreview } from '../core/recipes/preview'
 import type { OperationRecord, Recipe } from '../core/recipes/model'
-import { executeOperation, replayRecipe } from '../core/recipes/executor'
+import { buildRecipe, executeOperation, replayRecipe } from '../core/recipes/executor'
 import { getOperation } from '../core/recipes/registry'
 import { usePointSelection } from '../state/pointSelection'
 import { ComputeClient, type ComputeRunHandle } from '../compute/client'
@@ -24,12 +24,15 @@ interface Props {
   canRedo: boolean
   operationHistory: OperationRecord[]
   replaySource?: Dataset
+  namedRecipes: Recipe[]
+  onSaveRecipe: (recipe: Recipe) => void
+  onDeleteRecipe: (recipeId: string) => void
   onReplay: (dataset: Dataset, summary: string) => void
 }
 
 interface ResampleWorkerResult { dataset: Dataset; summary: string; warnings?: string[] }
 
-export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canRedo, operationHistory, replaySource, onReplay }: Props) {
+export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canRedo, operationHistory, replaySource, namedRecipes, onSaveRecipe, onDeleteRecipe, onReplay }: Props) {
   const [dedupeTol, setDedupeTol] = useState(0)
   const [decimateFactor, setDecimateFactor] = useState(2)
   const [simplifyEps, setSimplifyEps] = useState(5)
@@ -44,6 +47,8 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
   const [hampelWindow, setHampelWindow] = useState(11)
   const [hampelSigma, setHampelSigma] = useState(3)
   const [replayError, setReplayError] = useState<string | null>(null)
+  const [recipeName, setRecipeName] = useState('')
+  const [loadedRecipeId, setLoadedRecipeId] = useState<string | null>(null)
   const [resampleRateHz, setResampleRateHz] = useState(1)
   const [resampleMode, setResampleMode] = useState<InterpolationMode>('linear')
   const replayHistory = () => {
@@ -52,6 +57,22 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
       const recipe: Recipe = { schemaVersion: 1, id: 'current-history', name: 'Current operation history', createdAt: operationHistory[0]!.createdAt, sourceDatasetHash: operationHistory[0]!.inputDatasetHash, operations: operationHistory }
       const replayed = replayRecipe(replaySource, recipe)
       onReplay(replayed, `Replayed ${operationHistory.length} verified operation(s)`)
+      setReplayError(null)
+    } catch (error) { setReplayError((error as Error).message) }
+  }
+  const replayableHistory = operationHistory.length > 0 && operationHistory.every((record) => getOperation(record.operationId)?.version === record.operationVersion)
+  const saveRecipe = () => {
+    if (!replaySource || !replayableHistory) return
+    const recipe = buildRecipe(recipeName, replaySource, operationHistory)
+    onSaveRecipe(recipe)
+    setLoadedRecipeId(recipe.id)
+    setRecipeName('')
+    setReplayError(null)
+  }
+  const replayNamedRecipe = (recipe: Recipe) => {
+    if (!replaySource) { setReplayError('No retained source snapshot is available for this recipe.'); return }
+    try {
+      onReplay(replayRecipe(replaySource, recipe), `Replayed recipe “${recipe.name}”`)
       setReplayError(null)
     } catch (error) { setReplayError((error as Error).message) }
   }
@@ -149,6 +170,8 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
         return <li key={record.id} className="mono small"><span className="muted">{new Date(record.createdAt).toLocaleTimeString()}</span> {record.summary}{!replayable && <span className="warn"> — not replayable: {registered ? `requires v${registered.version}` : 'operation unavailable'}</span>}</li>
       })}</ul></details>}
       {operationHistory.length > 0 && <div className="analysis-toolbar"><button type="button" disabled={!replaySource} onClick={replayHistory}>Replay verified history</button>{!replaySource && <span className="muted small">No retained source snapshot is available for replay.</span>}{replayError && <span className="error-line">Replay blocked: {replayError}</span>}</div>}
+      {operationHistory.length > 0 && <div className="recipe-capture analysis-toolbar"><label className="field"><span>Recipe name</span><input aria-label="Recipe name" value={recipeName} placeholder="e.g. clean and derive" onChange={(event) => setRecipeName(event.target.value)} /></label><button type="button" disabled={!replayableHistory || !replaySource || !recipeName.trim()} onClick={saveRecipe}>Save named recipe</button>{!replayableHistory && <span className="warn small">Cannot save: one or more history records are not replayable at the current operation version.</span>}{replayableHistory && !replaySource && <span className="warn small">Cannot save: no retained source snapshot is available.</span>}</div>}
+      {namedRecipes.length > 0 && <details className="named-recipes" open><summary>Named recipes ({namedRecipes.length})</summary><ul>{namedRecipes.map((recipe) => <li key={recipe.id} className="analysis-toolbar"><span><strong>{recipe.name}</strong> <span className="muted small">{recipe.operations.length} operation(s)</span>{recipe.id === loadedRecipeId && <span className="muted small"> — loaded</span>}</span><span><button type="button" onClick={() => setLoadedRecipeId(recipe.id)}>Load</button><button type="button" disabled={!replaySource} onClick={() => replayNamedRecipe(recipe)}>Replay</button><button type="button" onClick={() => { if (window.confirm(`Delete recipe “${recipe.name}”?`)) onDeleteRecipe(recipe.id) }}>Delete</button></span></li>)}</ul>{loadedRecipeId && <p className="muted small">Loaded recipe is ready to replay from the retained source snapshot.</p>}</details>}
       <div className="transform-grid">
         <Op title="Sort by time" desc="Order points chronologically. Required by most track players."><button type="button" onClick={() => run(() => sortByTime(points), false)}>Apply</button></Op>
         <Op title="Swap lat / lon" desc="Fix transposed coordinate columns. Supports selected-range scope."><button type="button" onClick={() => runScoped((selected) => swapLatLon(selected))}>Apply{scoped ? ' to range' : ''}</button></Op>

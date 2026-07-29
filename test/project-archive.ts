@@ -11,7 +11,7 @@ import {
   readStreamWithLimit,
   serializeProjectArchive,
 } from '../src/persistence/project/archive'
-import { operationRecordsFromManifest } from '../src/persistence/project/manifest'
+import { namedRecipesFromManifest, operationRecordsFromManifest } from '../src/persistence/project/manifest'
 import type { FusionArtifact } from '../src/core/fusion/artifact'
 
 const dataset: Dataset = {
@@ -89,6 +89,16 @@ assert.equal(manifest.bookmarks[0]?.label, 'Turn point')
 assert.equal(manifest.view.datasetDisplay?.[dataset.id]?.opacity, 0.65, 'dataset display settings are persisted')
 assert.equal(manifest.recipes.length, 1, 'operation records produce a durable recipe')
 assert.equal(manifest.datasets[0]?.recipeIds[0], manifest.recipes[0]?.id, 'dataset references its operation-history recipe')
+
+const namedManifest = buildProjectManifest({
+  datasets: [dataset], activeDatasetId: dataset.id, activeTab: 'transform', selection: { ...EMPTY_WORKSPACE_SELECTION, datasetId: dataset.id },
+  operationRecords: { [dataset.id]: manifest.recipes[0]!.operations },
+  namedRecipes: { [dataset.id]: [{ ...manifest.recipes[0]!, id: 'recipe_named', name: 'Named offset recipe' }] },
+  applicationVersion: '0.1.0',
+})
+assert.equal(namedManifest.recipes.length, 2, 'named recipes are included beside operation history')
+assert.equal(operationRecordsFromManifest(namedManifest)[dataset.id]?.length, 1, 'named recipes do not become operation history')
+assert.equal(namedRecipesFromManifest(namedManifest)[dataset.id]?.[0]?.name, 'Named offset recipe', 'named recipes restore independently')
 
 const archive = createProjectArchive({
   manifest,

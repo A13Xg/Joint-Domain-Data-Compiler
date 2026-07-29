@@ -178,11 +178,12 @@ export function buildProjectManifest(input: {
   projectName?: string
   notes?: string
   fusionArtifacts?: FusionArtifact[]
+  namedRecipes?: Readonly<Record<string, readonly Recipe[]>>
   createdAt?: number
   applicationVersion: string
 }): ProjectManifest {
   const now = Date.now()
-  const recipes: Recipe[] = input.datasets.flatMap((dataset) => {
+  const operationRecipes: Recipe[] = input.datasets.flatMap((dataset) => {
     const operations = input.operationRecords?.[dataset.id] ?? []
     if (operations.length === 0) return []
     return [{
@@ -194,9 +195,11 @@ export function buildProjectManifest(input: {
       operations: operations.map((operation) => structuredClone(operation)),
     }]
   })
+  const namedRecipes = input.datasets.flatMap((dataset) => (input.namedRecipes?.[dataset.id] ?? []).map((recipe) => structuredClone(recipe)))
+  const recipes = [...operationRecipes, ...namedRecipes]
   const recipeIdsByDataset = new Map(input.datasets.map((dataset) => [
     dataset.id,
-    recipes.filter((recipe) => recipe.id === `operations_${dataset.id}`).map((recipe) => recipe.id),
+    recipes.filter((recipe) => recipe.id === `operations_${dataset.id}` || (input.namedRecipes?.[dataset.id] ?? []).some((named) => named.id === recipe.id)).map((recipe) => recipe.id),
   ]))
   return {
     schema: 'jddc-project',

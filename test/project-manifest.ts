@@ -4,6 +4,8 @@ import {
   parseProjectManifest,
   serializeProjectManifest,
   validateProjectManifest,
+  namedRecipesFromManifest,
+  operationRecordsFromManifest,
   type ProjectManifest,
 } from '../src/persistence/project/manifest.ts'
 
@@ -63,6 +65,16 @@ check('Dataset references are preserved', parsed.datasets[0]?.recipeIds[0] === '
 check('Selection is preserved', parsed.view.selection.datasetId === 'dataset-1')
 check('Workspace state is preserved', parsed.view.workspace?.scene3d.gapThresholdSeconds === 3)
 check('Project notes are preserved', parsed.notes === 'Analyst handoff note')
+
+const namedRecipeManifest: ProjectManifest = {
+  ...manifest,
+  datasets: [{ ...manifest.datasets[0]!, recipeIds: ['operations_dataset-1', 'named-1'] }],
+  recipes: [
+    { ...manifest.recipes[0]!, id: 'operations_dataset-1', name: 'Operation history' },
+    { schemaVersion: 1, id: 'named-1', name: 'Named recipe', createdAt: 1000, sourceDatasetHash: 'fnv1a32:12345678', operations: [] },
+  ],
+}
+check('Named recipes are listed separately from operation history', namedRecipesFromManifest(namedRecipeManifest)['dataset-1']?.[0]?.name === 'Named recipe' && operationRecordsFromManifest(namedRecipeManifest)['dataset-1']?.length === 0)
 
 const malformedNotes = JSON.stringify({ ...manifest, notes: 42 })
 let malformedNotesRejected = false

@@ -140,7 +140,19 @@ export function operationRecordsFromManifest(manifest: ProjectManifest): Record<
   const recipesById = new Map(manifest.recipes.map((recipe) => [recipe.id, recipe]))
   return Object.fromEntries(manifest.datasets.map((dataset) => [
     dataset.id,
-    dataset.recipeIds.flatMap((recipeId) => recipesById.get(recipeId)?.operations ?? []),
+    dataset.recipeIds.filter((recipeId) => recipeId === `operations_${dataset.id}`).flatMap((recipeId) => recipesById.get(recipeId)?.operations ?? []),
+  ]))
+}
+
+/** Returns user-named recipes without treating them as live operation history. */
+export function namedRecipesFromManifest(manifest: ProjectManifest): Record<string, Recipe[]> {
+  const recipesById = new Map(manifest.recipes.map((recipe) => [recipe.id, recipe]))
+  return Object.fromEntries(manifest.datasets.map((dataset) => [
+    dataset.id,
+    dataset.recipeIds.filter((recipeId) => recipeId !== `operations_${dataset.id}`).flatMap((recipeId) => {
+      const recipe = recipesById.get(recipeId)
+      return recipe ? [structuredClone(recipe)] : []
+    }),
   ]))
 }
 
