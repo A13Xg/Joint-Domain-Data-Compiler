@@ -21,6 +21,10 @@ let unknownSourceRejected = false
 try { validateFusionArtifact({ ...artifact, decisions: [{ ...artifact.decisions[0], chosenSourceId: 'missing' }] }) } catch { unknownSourceRejected = true }
 check('Decision source must be registered', unknownSourceRejected)
 
+let unknownSkippedSourceRejected = false
+try { validateFusionArtifact({ ...artifact, decisions: [{ ...artifact.decisions[0], skippedSourceIds: ['missing'] }] }) } catch { unknownSkippedSourceRejected = true }
+check('Skipped decision source must be registered', unknownSkippedSourceRejected)
+
 let reportMismatchRejected = false
 try { validateFusionArtifact({ ...artifact, report: { ...artifact.report, totalGroups: 2 } }) } catch { reportMismatchRejected = true }
 check('Report group count must match decisions', reportMismatchRejected)
