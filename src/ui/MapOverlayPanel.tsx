@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { formatBytes } from '../core/format'
 import {
   isDesktopKmlLibraryAvailable,
@@ -74,6 +74,7 @@ function nextZIndex(overlays: MapOverlay[]): number {
  */
 export function MapOverlayPanel({ overlayState, onOverlayStateChange, onImportAsTrack }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const panelId = useId()
   const [open, setOpen] = useState(false)
   const [entries, setEntries] = useState<KmlLibraryEntry[]>([])
   const [busy, setBusy] = useState(false)
@@ -184,8 +185,12 @@ export function MapOverlayPanel({ overlayState, onOverlayStateChange, onImportAs
   }
 
   const showOnMap = (entry: KmlLibraryEntry) => {
-    const sourceKind = sourceKindFor(entry.name)
     const id = `overlay:${entry.name}`
+    const existingOverlay = overlayStateRef.current.overlays.find((overlay) => overlay.id === id)
+    // Preserve a non-bundled overlay's existing sourceKind (e.g. 'project')
+    // across a re-show rather than recomputing it fresh each time, so only
+    // a genuinely bundled-seed name ever forces the 'bundled' badge.
+    const sourceKind = sourceKindFor(entry.name, existingOverlay?.sourceKind)
     // Enforce, at creation time, the same caps `mapOverlays.ts` applies at
     // project load time (`normalizeMapOverlayState`/`normalizeOverlay`).
     // Without this, an overlay minted from an over-long library filename, or
@@ -201,7 +206,7 @@ export function MapOverlayPanel({ overlayState, onOverlayStateChange, onImportAs
     setError(null)
     updateOverlays((overlays) => {
       if (overlays.some((overlay) => overlay.id === id)) {
-        return overlays.map((overlay) => overlay.id === id ? { ...overlay, visible: true, status: 'ready' } : overlay)
+        return overlays.map((overlay) => overlay.id === id ? { ...overlay, sourceKind, visible: true, status: 'ready' } : overlay)
       }
       return [...overlays, {
         id,
@@ -232,6 +237,7 @@ export function MapOverlayPanel({ overlayState, onOverlayStateChange, onImportAs
   }
 
   const removeFile = async (entry: KmlLibraryEntry) => {
+    if (!window.confirm(`Delete "${entry.name}" from the persistent KML/KMZ library? This cannot be undone; any map overlay showing it will be removed too.`)) return
     setBusy(true)
     setError(null)
     try {
@@ -277,11 +283,11 @@ export function MapOverlayPanel({ overlayState, onOverlayStateChange, onImportAs
 
   return (
     <div className="map-overlay-drawer">
-      <button type="button" className="map-overlay-toggle" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+      <button type="button" className="map-overlay-toggle" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen((value) => !value)}>
         Overlays{overlayState.overlays.length > 0 && ` (${overlayState.overlays.filter((overlay) => overlay.visible).length}/${overlayState.overlays.length})`}
       </button>
       {open && (
-        <div className="map-overlay-panel analysis-panel" role="region" aria-label="Map overlay manager">
+        <div id={panelId} className="map-overlay-panel analysis-panel" role="region" aria-label="Map overlay manager">
           {!available && (
             <div className="panel-empty">
               <span aria-hidden="true">{'ℹ'}</span> Persistent KML/KMZ overlay storage is available in the Electron desktop app. In the browser build, use Import to load a KML/KMZ file as a dataset.
