@@ -52,11 +52,18 @@ export function ComparisonPanel({ datasets, activeId, workspace, onWorkspaceChan
       const alongCross = computeAlongCrossTrack(reference.points, samples)
       const alongTrack = alongCross.map((sample) => sample.alongTrackM)
       const crossTrack = alongCross.map((sample) => sample.crossTrackM)
+      // Interpolated samples set targetTimeMs = referenceTimeMs by construction
+      // (see deriveInterpolatedRelativePosition), so estimating drift from them
+      // would always yield a fabricated offset/rate of exactly zero rather than
+      // a real measurement. Skip the estimate entirely in that mode instead of
+      // showing a value indistinguishable from a genuine zero-drift result.
       let drift: ClockDriftEstimate | undefined
-      try {
-        drift = estimateClockDrift(samples.map((sample) => ({ referenceTimeMs: sample.referenceTimeMs, targetTimeMs: sample.targetTimeMs })))
-      } catch {
-        drift = undefined
+      if (!interpolateTarget) {
+        try {
+          drift = estimateClockDrift(samples.map((sample) => ({ referenceTimeMs: sample.referenceTimeMs, targetTimeMs: sample.targetTimeMs })))
+        } catch {
+          drift = undefined
+        }
       }
       return {
         samples,
@@ -103,8 +110,8 @@ export function ComparisonPanel({ datasets, activeId, workspace, onWorkspaceChan
             <Metric label="mean along-track" value={result.meanAlongTrack === undefined ? 'n/a' : `${format(result.meanAlongTrack)} m`} />
             <Metric label="mean cross-track" value={result.meanCrossTrack === undefined ? 'n/a' : `${format(result.meanCrossTrack)} m`} />
             <Metric label="max |cross-track|" value={result.maxCrossTrack === undefined ? 'n/a' : `${format(result.maxCrossTrack)} m`} />
-            <Metric label="estimated clock offset" value={result.drift === undefined ? 'n/a' : `${format(result.drift.offsetMs)} ms`} />
-            <Metric label="estimated clock drift" value={result.drift === undefined ? 'n/a' : `${format(result.drift.driftRatePerMs * 1_000_000)} ppm`} />
+            <Metric label="estimated clock offset" value={interpolateTarget ? 'n/a — not meaningful with interpolation enabled' : result.drift === undefined ? 'n/a' : `${format(result.drift.offsetMs)} ms`} />
+            <Metric label="estimated clock drift" value={interpolateTarget ? 'n/a — not meaningful with interpolation enabled' : result.drift === undefined ? 'n/a' : `${format(result.drift.driftRatePerMs * 1_000_000)} ppm`} />
           </div>
           <button type="button" onClick={() => downloadComparison(result.samples, referenceId, targetId)}>Export comparison CSV</button>
           {result.closest && <div className="analysis-summary mono">Closest approach at reference index {result.closest.referenceIndex}, target index {result.closest.targetIndex}: bearing {format(result.closest.bearingDeg)}°, Δt {format(result.closest.deltaTimeMs)} ms, vertical separation {format(result.closest.relativeUpM)} m.</div>}
