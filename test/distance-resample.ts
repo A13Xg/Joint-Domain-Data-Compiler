@@ -106,5 +106,69 @@ function makeDataset(points: Dataset['points']): Dataset {
   check('Scoped execution is rejected', threw)
 }
 
+// --- Time, name/desc, and non-numeric ext carry ------------------------------------------------------------
+{
+  // Straight line with monotone time-vs-distance: time should be interpolated,
+  // not dropped.
+  const points: Dataset['points'] = [
+    { lat: 0, lon: 0, time: 0 },
+    { lat: 0, lon: 0.001, time: 10_000 },
+    { lat: 0, lon: 0.002, time: 20_000 },
+  ]
+  const dataset = makeDataset(points)
+  const params = distanceResampleMonotoneOperation.validateParams({ intervalMeters: 20 })
+  const result = distanceResampleMonotoneOperation.execute({ dataset, params })
+  check('Time is populated on every output point when source time is monotone', result.dataset.points.every((p) => p.time !== undefined))
+  check('First output point time matches the start time', result.dataset.points[0]!.time === 0)
+  check('Last output point time matches the end time', Math.abs(result.dataset.points.at(-1)!.time! - 20_000) < 1e-6)
+  const times = result.dataset.points.map((p) => p.time!)
+  check('Interpolated time is non-decreasing across output points', times.every((t, i) => i === 0 || t >= times[i - 1]!))
+}
+{
+  // Name/desc are carried from the nearest source point rather than dropped.
+  const points: Dataset['points'] = [
+    { lat: 0, lon: 0, name: 'start', desc: 'origin' },
+    { lat: 0, lon: 0.001, name: 'mid', desc: 'midpoint' },
+    { lat: 0, lon: 0.002, name: 'end', desc: 'terminus' },
+  ]
+  const dataset = makeDataset(points)
+  const params = distanceResampleMonotoneOperation.validateParams({ intervalMeters: 20 })
+  const result = distanceResampleMonotoneOperation.execute({ dataset, params })
+  check('Every output point carries a name from the nearest source point', result.dataset.points.every((p) => p.name !== undefined))
+  check('First output point carries the start name/desc', result.dataset.points[0]!.name === 'start' && result.dataset.points[0]!.desc === 'origin')
+  check('Last output point carries the end name/desc', result.dataset.points.at(-1)!.name === 'end' && result.dataset.points.at(-1)!.desc === 'terminus')
+}
+{
+  // A non-numeric (string) ext channel is carried from the nearest source
+  // point rather than being dropped entirely, and a partially-numeric
+  // channel is treated the same way (not interpolated).
+  const points: Dataset['points'] = [
+    { lat: 0, lon: 0, ext: { mode: 'cruise', mixed: 1 } },
+    { lat: 0, lon: 0.001, ext: { mode: 'climb', mixed: 'n/a' } },
+    { lat: 0, lon: 0.002, ext: { mode: 'descent', mixed: 3 } },
+  ]
+  const dataset = makeDataset(points)
+  const params = distanceResampleMonotoneOperation.validateParams({ intervalMeters: 20 })
+  const result = distanceResampleMonotoneOperation.execute({ dataset, params })
+  check('String ext channel survives via nearest-carry', result.dataset.points.some((p) => p.ext?.mode !== undefined))
+  check('First output point carries the start mode', result.dataset.points[0]!.ext?.mode === 'cruise')
+  check('Last output point carries the end mode', result.dataset.points.at(-1)!.ext?.mode === 'descent')
+  check('Partially-numeric ext channel is carried, not interpolated', result.dataset.points.some((p) => p.ext?.mixed === 'n/a' || p.ext?.mixed === 1 || p.ext?.mixed === 3))
+}
+{
+  // Non-monotone time (a GPS glitch/loop) must not be silently interpolated
+  // into a fabricated monotone sequence.
+  const points: Dataset['points'] = [
+    { lat: 0, lon: 0, time: 0 },
+    { lat: 0, lon: 0.001, time: 20_000 },
+    { lat: 0, lon: 0.002, time: 10_000 }, // time goes backward while distance keeps increasing
+  ]
+  const dataset = makeDataset(points)
+  const params = distanceResampleMonotoneOperation.validateParams({ intervalMeters: 20 })
+  const result = distanceResampleMonotoneOperation.execute({ dataset, params })
+  check('Non-monotone time is dropped rather than interpolated', result.dataset.points.every((p) => p.time === undefined))
+  check('Non-monotone time produces a warning', (result.warnings ?? []).some((w) => w.includes('not monotone')), JSON.stringify(result.warnings))
+}
+
 console.log(`\n${failures === 0 ? 'ALL DISTANCE RESAMPLE CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)

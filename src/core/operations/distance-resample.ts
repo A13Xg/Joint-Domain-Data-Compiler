@@ -13,6 +13,12 @@ export interface DistanceResampleParams {
  * interpolation parameter, so this also works on untimed tracks. Because
  * the interpolant is monotone-limited, it cannot overshoot/undershoot past
  * its two neighboring samples the way a naive/natural cubic spline can.
+ *
+ * Timestamps are interpolated the same way when every source point has one
+ * and time is monotone non-decreasing with distance; otherwise time is
+ * dropped with a warning rather than fabricated. Name/description and any
+ * non-fully-numeric extension channel are carried from the nearest source
+ * point (step-carry) rather than silently discarded.
  */
 export const distanceResampleMonotoneOperation: OperationDefinition<DistanceResampleParams> = {
   id: 'resample-distance-monotone-cubic',
@@ -66,19 +72,37 @@ function execute(context: OperationExecutionContext<DistanceResampleParams>): Op
   const hasEle = kept.every((p) => p.ele !== undefined)
   const eles = hasEle ? monotoneCubicInterpolate(distances, kept.map((p) => p.ele!), queryDistances) : null
 
-  const extChannels = collectChannels(kept).filter((channel) => kept.every((p) => typeof p.ext?.[channel] === 'number'))
-  const extValues = new Map(
-    extChannels.map((channel) => [channel, monotoneCubicInterpolate(distances, kept.map((p) => p.ext![channel] as number), queryDistances)]),
+  // Time is only interpolated when every kept point has one AND it is
+  // monotone non-decreasing in the (distance-sorted) kept order; distance,
+  // not time, is the resampling parameter, so unlike fixed-rate resampling
+  // there is no guarantee of that unless checked explicitly.
+  const hasAllTime = kept.every((p) => p.time !== undefined)
+  const timeMonotone = hasAllTime && isNonDecreasing(kept.map((p) => p.time!))
+  const times = hasAllTime && timeMonotone ? monotoneCubicInterpolate(distances, kept.map((p) => p.time!), queryDistances) : null
+
+  const numericChannels = collectChannels(kept).filter((channel) => kept.every((p) => typeof p.ext?.[channel] === 'number'))
+  const carryChannels = collectChannels(kept).filter((channel) => !numericChannels.includes(channel))
+  const numericExtValues = new Map(
+    numericChannels.map((channel) => [channel, monotoneCubicInterpolate(distances, kept.map((p) => p.ext![channel] as number), queryDistances)]),
   )
+  // Used for name/desc carry as well as non-numeric ext carry, so always computed.
+  const nearest = nearestSourceIndices(distances, queryDistances)
 
   const output: TrackPoint[] = queryDistances.map((_, i) => {
-    const ext: Record<string, number | string | boolean> | undefined = extChannels.length > 0
-      ? Object.fromEntries(extChannels.map((channel) => [channel, extValues.get(channel)![i]!]))
+    const nearestPoint = kept[nearest[i]!]!
+    const ext: Record<string, number | string | boolean> | undefined = numericChannels.length > 0 || carryChannels.length > 0
+      ? {
+          ...Object.fromEntries(numericChannels.map((channel) => [channel, numericExtValues.get(channel)![i]!])),
+          ...Object.fromEntries(carryChannels.flatMap((channel) => nearestPoint.ext?.[channel] === undefined ? [] : [[channel, nearestPoint.ext[channel]]])),
+        }
       : undefined
     return {
       lat: lats[i]!,
       lon: wrapLongitude(lons[i]!),
       ele: hasEle ? eles![i] : undefined,
+      time: times ? times[i] : undefined,
+      name: nearestPoint.name,
+      desc: nearestPoint.desc,
       ext,
       provenance: { qualityFlags: ['interpolated', 'monotone_cubic'] },
     }
@@ -94,11 +118,43 @@ function execute(context: OperationExecutionContext<DistanceResampleParams>): Op
       : undefined,
   }
   const droppedCoincident = source.length - kept.length
+  const warnings: string[] = []
+  if (droppedCoincident > 0) warnings.push(`Dropped ${droppedCoincident.toLocaleString()} coincident point(s) before fitting`)
+  if (hasAllTime && !timeMonotone) warnings.push('Source time is not monotone with cumulative distance; time was dropped from the resampled output')
   return {
     dataset,
     summary: `Resampled ${kept.length.toLocaleString()} points to ${output.length.toLocaleString()} points every ${intervalMeters} m (monotone cubic)`,
-    warnings: droppedCoincident > 0 ? [`Dropped ${droppedCoincident.toLocaleString()} coincident point(s) before fitting`] : [],
+    warnings,
   }
+}
+
+function isNonDecreasing(values: number[]): boolean {
+  for (let i = 1; i < values.length; i++) {
+    if (values[i]! < values[i - 1]!) return false
+  }
+  return true
+}
+
+/**
+ * For each ascending query distance, finds the index of the nearest source
+ * (kept) distance via a single forward two-pointer scan over both sorted
+ * arrays — O(n) total rather than a per-query search, since kept/query can
+ * both be in the millions of points.
+ */
+function nearestSourceIndices(distances: number[], queryDistances: number[]): number[] {
+  const result: number[] = []
+  let cursor = 0
+  for (const query of queryDistances) {
+    while (cursor < distances.length - 1 && distances[cursor + 1]! <= query) cursor++
+    if (cursor < distances.length - 1) {
+      const left = distances[cursor]!
+      const right = distances[cursor + 1]!
+      result.push(query - left <= right - query ? cursor : cursor + 1)
+    } else {
+      result.push(cursor)
+    }
+  }
+  return result
 }
 
 function unwrapLongitudes(lons: number[]): number[] {
