@@ -5,16 +5,22 @@ import {
   listKmlLibrary,
   readKmlLibraryText,
   removeKmlLibraryFile,
+  reseedKmlLibrary,
   revealKmlLibrary,
   saveKmlLibraryFile,
 } from '../desktop/kmlLibrary'
 import type { KmlLibraryEntry } from '../types/desktop'
 import {
   BUNDLED_KML_SEED_NAMES,
+  MAX_OVERLAY_COUNT,
+  MAX_OVERLAY_NAME_LENGTH,
+  MAX_OVERLAY_SOURCE_KEY_LENGTH,
+  checkOverlayCreation,
   reconcileMapOverlays,
   type MapOverlay,
   type MapOverlaySourceKind,
   type MapOverlayState,
+  type OverlayCreationRejectionReason,
 } from '../state/mapOverlays'
 
 interface Props {
@@ -48,6 +54,12 @@ function statusFor(overlay: MapOverlay): StatusLine {
   return { icon: '✓', text: 'Ready', tone: 'ok' }
 }
 
+function overlayCreationRejectionMessage(reason: OverlayCreationRejectionReason, name: string): string {
+  if (reason === 'name-too-long') return `"${name}" is too long to show as a map overlay (overlay names are limited to ${MAX_OVERLAY_NAME_LENGTH} characters). Rename the file and re-upload it.`
+  if (reason === 'source-key-too-long') return `"${name}" exceeds the ${MAX_OVERLAY_SOURCE_KEY_LENGTH}-character source filename limit and cannot be shown as a map overlay.`
+  return `Cannot show "${name}" on the map: the ${MAX_OVERLAY_COUNT}-overlay limit has been reached. Remove another overlay first.`
+}
+
 function nextZIndex(overlays: MapOverlay[]): number {
   return overlays.reduce((max, overlay) => Math.max(max, overlay.zIndex), -1) + 1
 }
@@ -79,24 +91,32 @@ export function MapOverlayPanel({ overlayState, onOverlayStateChange, onImportAs
     onOverlayStateChangeRef.current = onOverlayStateChange
   })
 
+  // Shared list+reconcile logic with no busy-state management of its own, so
+  // callers that need to bracket a *sequence* of async operations (e.g.
+  // `resetBundledSeed`, which reseeds and then reloads) can wrap the whole
+  // sequence in a single busy toggle instead of nesting one from `refresh`.
+  const loadLibrary = useCallback(async () => {
+    const loaded = await listKmlLibrary()
+    setEntries(loaded)
+    const availableKeys = new Set(loaded.map((entry) => entry.name))
+    const reconciled = reconcileMapOverlays(overlayStateRef.current, availableKeys)
+    if (reconciled !== overlayStateRef.current) onOverlayStateChangeRef.current(reconciled)
+    return loaded
+  }, [])
+
   const refresh = useCallback(async () => {
     if (!available) return
     setBusy(true)
     setError(null)
     try {
-      const loaded = await listKmlLibrary()
-      setEntries(loaded)
-      const availableKeys = new Set(loaded.map((entry) => entry.name))
-      const reconciled = reconcileMapOverlays(overlayStateRef.current, availableKeys)
-      if (reconciled !== overlayStateRef.current) onOverlayStateChangeRef.current(reconciled)
-      return loaded
+      return await loadLibrary()
     } catch (cause) {
       setError(message(cause))
       return null
     } finally {
       setBusy(false)
     }
-  }, [available])
+  }, [available, loadLibrary])
 
   // Mount-time load: fetch the persistent library and reconcile overlay
   // status without calling setState synchronously in the effect body itself
@@ -141,12 +161,21 @@ export function MapOverlayPanel({ overlayState, onOverlayStateChange, onImportAs
     }
   }
 
+  // Explicitly reseeds the persistent library via a dedicated IPC call, then
+  // reloads the entries in the same busy-state bracket (a single setBusy
+  // true/false pair rather than nesting `refresh`'s own toggle inside this
+  // one, which previously flipped `busy` off and back on within a single
+  // click).
   const resetBundledSeed = async () => {
+    if (!available) return
     setBusy(true)
     setError(null)
     try {
-      await refresh()
-      setStatus('Bundled seed files were restored into the library folder (existing files were not overwritten).')
+      const seeded = await reseedKmlLibrary()
+      await loadLibrary()
+      setStatus(seeded.length > 0
+        ? `Restored ${seeded.length} bundled seed file${seeded.length === 1 ? '' : 's'} into the library folder (existing files were not overwritten).`
+        : 'Bundled seed files are already present in the library folder (existing files were not overwritten).')
     } catch (cause) {
       setError(message(cause))
     } finally {
@@ -157,6 +186,19 @@ export function MapOverlayPanel({ overlayState, onOverlayStateChange, onImportAs
   const showOnMap = (entry: KmlLibraryEntry) => {
     const sourceKind = sourceKindFor(entry.name)
     const id = `overlay:${entry.name}`
+    // Enforce, at creation time, the same caps `mapOverlays.ts` applies at
+    // project load time (`normalizeMapOverlayState`/`normalizeOverlay`).
+    // Without this, an overlay minted from an over-long library filename, or
+    // added past the overlay-count cap, would be accepted into in-session
+    // state fine but then fail `validateProjectManifest`/`validateView` on
+    // the next save/load, discarding overlay state or rejecting the whole
+    // project file.
+    const overlayCheck = checkOverlayCreation(overlayStateRef.current.overlays, id, entry.name, entry.name)
+    if (!overlayCheck.ok) {
+      setError(overlayCreationRejectionMessage(overlayCheck.reason!, entry.name))
+      return
+    }
+    setError(null)
     updateOverlays((overlays) => {
       if (overlays.some((overlay) => overlay.id === id)) {
         return overlays.map((overlay) => overlay.id === id ? { ...overlay, visible: true, status: 'ready' } : overlay)

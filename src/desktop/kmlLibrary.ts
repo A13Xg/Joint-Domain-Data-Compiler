@@ -24,6 +24,11 @@ export async function removeKmlLibraryFile(name: string): Promise<boolean> {
   return api.remove(name)
 }
 
+export async function reseedKmlLibrary(): Promise<string[]> {
+  const api = requireKmlLibrary()
+  return api.reseed()
+}
+
 export async function revealKmlLibrary(): Promise<string> {
   const api = requireKmlLibrary()
   return api.reveal()

@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('jointDomainCompiler', {
     save: (name, bytes) => ipcRenderer.invoke(IPC_CHANNELS.save, name, bytes),
     readText: (name) => ipcRenderer.invoke(IPC_CHANNELS.readText, name),
     remove: (name) => ipcRenderer.invoke(IPC_CHANNELS.remove, name),
+    reseed: () => ipcRenderer.invoke(IPC_CHANNELS.reseed),
     reveal: () => ipcRenderer.invoke(IPC_CHANNELS.reveal),
   },
   diagnostics: {
