@@ -419,5 +419,49 @@ check(
     && !JSON.stringify(smuggledPreferencesParsed.view.workspace?.reportPreferences).includes('"points"'),
 )
 
+// --- Tier-2 fix: validateProjectManifest must not mutate its input --------
+// It used to normalize view.workspace.reportPreferences in place; it now
+// returns a normalized manifest instead, leaving the caller's object alone.
+
+const preMutationSnapshot = JSON.parse(JSON.stringify({
+  ...manifest,
+  view: {
+    ...manifest.view,
+    workspace: {
+      ...DEFAULT_WORKSPACE_STATE,
+      reportPreferences: { title: 12345, includeWarnings: 'yes', includeComparison: true, bogusField: 'ignored' },
+    },
+  },
+}))
+const inputWithMalformedPreferences = JSON.parse(JSON.stringify(preMutationSnapshot))
+const returnedFromValidate = validateProjectManifest(inputWithMalformedPreferences)
+check(
+  'validateProjectManifest does not mutate its input argument',
+  JSON.stringify(inputWithMalformedPreferences) === JSON.stringify(preMutationSnapshot),
+)
+check(
+  'validateProjectManifest still returns a manifest with malformed reportPreferences normalized',
+  returnedFromValidate.view.workspace?.reportPreferences?.title === DEFAULT_REPORT_OPTIONS.title
+    && returnedFromValidate.view.workspace?.reportPreferences?.includeComparison === true,
+)
+check(
+  'validateProjectManifest returns a different reportPreferences object than the (untouched) input',
+  returnedFromValidate.view.workspace?.reportPreferences !== (inputWithMalformedPreferences as ProjectManifest).view.workspace?.reportPreferences,
+)
+
+// Same guarantee via parseProjectManifest's JSON round trip, and confirming
+// valid reportPreferences are preserved exactly (not just normalized away).
+const validPreferencesSnapshotSource = JSON.parse(JSON.stringify(manifestWithRememberedPreferences))
+const validPreferencesJson = JSON.stringify(manifestWithRememberedPreferences)
+const parsedValidPreferences = parseProjectManifest(validPreferencesJson)
+check(
+  'parseProjectManifest does not mutate the object backing its JSON input',
+  JSON.stringify(validPreferencesSnapshotSource) === JSON.stringify(manifestWithRememberedPreferences),
+)
+check(
+  'parseProjectManifest preserves valid reportPreferences exactly in its returned manifest',
+  JSON.stringify(parsedValidPreferences.view.workspace?.reportPreferences) === JSON.stringify(rememberedOptions),
+)
+
 console.log(`\n${failures === 0 ? 'ALL PROJECT MANIFEST CHECKS PASSED' : `${failures} PROJECT MANIFEST CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)

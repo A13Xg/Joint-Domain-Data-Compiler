@@ -314,4 +314,36 @@ const smuggledReportPreferencesParsed = parseProjectArchive(JSON.stringify(smugg
 const smuggledPreferencesJson = JSON.stringify(smuggledReportPreferencesParsed.manifest.view.workspace?.reportPreferences)
 assert.ok(!/"points"|"embeddedDataset"/.test(smuggledPreferencesJson ?? ''), 'reportPreferences never retains smuggled raw dataset/point data after normalization')
 
+// --- Tier-2 fix: validateProjectArchive/validateProjectManifest must not
+// mutate their input. Confirm the archive object (and its manifest) fed
+// into createProjectArchive is untouched, while the archive that comes back
+// out still has report preferences normalized/round-tripped correctly.
+
+const preValidationManifestSnapshot = JSON.parse(JSON.stringify(manifestWithReportPreferences))
+const rebuiltArchiveInput = {
+  manifest: manifestWithReportPreferences,
+  datasets: [dataset],
+  histories: { [dataset.id]: { past: [], future: [] } },
+}
+const rebuiltArchive = createProjectArchive(rebuiltArchiveInput)
+assert.deepEqual(
+  manifestWithReportPreferences,
+  preValidationManifestSnapshot,
+  'createProjectArchive does not mutate the manifest object passed into it',
+)
+assert.deepEqual(
+  rebuiltArchive.manifest.view.workspace?.reportPreferences,
+  rememberedReportOptions,
+  'the archive returned from createProjectArchive still carries the (unmutated-source) report preferences correctly',
+)
+
+const preValidateCallSnapshot = JSON.parse(JSON.stringify(rebuiltArchive))
+const revalidated = validateProjectArchive(rebuiltArchive)
+assert.deepEqual(rebuiltArchive, preValidateCallSnapshot, 'validateProjectArchive does not mutate its input argument')
+assert.deepEqual(
+  revalidated.manifest.view.workspace?.reportPreferences,
+  rememberedReportOptions,
+  'validateProjectArchive returns a manifest with report preferences intact',
+)
+
 console.log('project archive tests passed')
