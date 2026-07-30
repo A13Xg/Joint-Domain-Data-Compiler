@@ -117,7 +117,7 @@ const comparisonMissingDataHtml = buildHtmlAnalysisReport({
   title: 'Comparison missing data', generatedAt: 2_000, applicationVersion: '0.1.0', datasets: [dataset], bookmarks: [], operationRecords: {},
   options: { includeComparison: true },
 })
-check('Comparison section reports missing data truthfully when enabled without data', comparisonMissingDataHtml.includes('no comparison data was supplied'))
+check('Comparison section reports missing data truthfully when enabled without data', comparisonMissingDataHtml.includes('not yet captured in report export') && !comparisonMissingDataHtml.includes('no comparison data was supplied'))
 
 const fusionHtml = buildHtmlAnalysisReport({
   title: 'Fusion', generatedAt: 2_000, applicationVersion: '0.1.0', datasets: [dataset], bookmarks: [], operationRecords: {},

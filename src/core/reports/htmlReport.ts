@@ -248,7 +248,7 @@ ${row('Bounds', boundsText)}
 function buildComparisonSection(options: ReportOptions, comparison: ReportComparisonSummary | undefined): string {
   if (!options.includeComparison) return ''
   if (!comparison) {
-    return sectionWrapper('Cross-dataset comparison', `<p class="empty">Comparison was enabled, but no comparison data was supplied for this report.</p>`)
+    return sectionWrapper('Cross-dataset comparison', `<p class="empty">Comparison analysis may exist for this project, but comparison results are computed live in the Comparison tab and are not yet captured in report export.</p>`)
   }
   if (comparison.error) {
     return sectionWrapper('Cross-dataset comparison', `<p class="empty">${escapeHtml(comparison.referenceDatasetName)} vs ${escapeHtml(comparison.targetDatasetName)}: ${escapeHtml(comparison.error)}</p>`)

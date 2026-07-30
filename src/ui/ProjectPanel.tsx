@@ -104,6 +104,13 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
   const defaultReportFilename = safeName(`${manifest.name}-report`)
 
   const confirmExportReport = ({ options, filename, remember }: { options: ReportOptions; filename: string; remember: boolean }) => {
+    // Only the most recently created fusion artifact's already-built report
+    // is surfaced (buildFusionSection renders a single report, not a
+    // multi-run aggregate). If the user has run fusion more than once, only
+    // the latest run appears here.
+    const latestFusionReport = fusionArtifacts.length > 0
+      ? [...fusionArtifacts].sort((a, b) => b.createdAt - a.createdAt)[0]!.report
+      : undefined
     const html = buildHtmlAnalysisReport({
       title: options.title,
       generatedAt: Date.now(),
@@ -111,6 +118,8 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
       datasets,
       bookmarks,
       operationRecords,
+      overlays: workspace.mapOverlays.overlays.map((overlay) => ({ id: overlay.id, name: overlay.name, sourceKind: overlay.sourceKind, visible: overlay.visible })),
+      fusion: latestFusionReport,
       options,
     })
     downloadBlob(new Blob([html], { type: 'text/html' }), `${sanitizeFilename(filename)}.html`)
