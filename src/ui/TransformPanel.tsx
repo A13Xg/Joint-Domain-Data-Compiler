@@ -167,6 +167,10 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
 
   const points = dataset.points
   const scoped = scopeToSelection && indexRange !== null
+  // 'drop'/'average' change point count, which applyTransformToRange rejects
+  // outright — block Apply (with a visible reason, not a silent log line)
+  // whenever scoping to a selection makes the current policy unusable.
+  const dejitterPolicyLocked = scoped && dejitterPolicy !== 'nudge'
 
   return (
     <div className="transform-panel">
@@ -206,10 +210,11 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
         <Op title="Median filter (elevation)" desc="Rolling median; robust to spikes without dropping points. Supports selected-range scope."><NumField label="window" value={medianWindow} onChange={setMedianWindow} min={3} step={2} /><button type="button" onClick={() => runScoped((selected) => medianFilterElevation(selected, medianWindow))}>Apply{scoped ? ' to range' : ''}</button></Op>
         <Op title="EMA filter (elevation)" desc="Causal exponential smoothing; alpha controls response to new samples. Supports selected-range scope."><NumField label="alpha" value={emaAlpha} onChange={setEmaAlpha} min={0.01} step={0.05} /><button type="button" onClick={() => runScoped((selected) => exponentialMovingAverageElevation(selected, emaAlpha))}>Apply{scoped ? ' to range' : ''}</button></Op>
         <Op title="Hampel filter (elevation)" desc="Replaces local outliers with the rolling median instead of removing points. Supports selected-range scope."><NumField label="window" value={hampelWindow} onChange={setHampelWindow} min={5} step={2} /><NumField label="σ threshold" value={hampelSigma} onChange={setHampelSigma} min={1} step={0.5} /><button type="button" onClick={() => runScoped((selected) => hampelFilterElevation(selected, hampelSigma, hampelWindow))}>Apply{scoped ? ' to range' : ''}</button></Op>
-        <Op title="De-jitter timestamps" desc="Enforce strictly-increasing timestamps; resolves duplicate/backward-drift timestamps by nudge, drop, or average. Supports selected-range scope.">
-          <label className="num-field"><span>duplicate policy</span><select value={dejitterPolicy} onChange={(event) => setDejitterPolicy(event.target.value as DuplicateTimestampPolicy)}><option value="nudge">nudge (+ε)</option><option value="drop">drop</option><option value="average">average / merge</option></select></label>
+        <Op title="De-jitter timestamps" desc="Enforce strictly-increasing timestamps; resolves duplicate/backward-drift timestamps by nudge, drop, or average. Supports selected-range scope (nudge only — drop/average change point count).">
+          <label className="num-field"><span>duplicate policy</span><select value={dejitterPolicy} onChange={(event) => setDejitterPolicy(event.target.value as DuplicateTimestampPolicy)}><option value="nudge">nudge (+ε)</option><option value="drop" disabled={scoped}>drop{scoped ? ' (full dataset only)' : ''}</option><option value="average" disabled={scoped}>average / merge{scoped ? ' (full dataset only)' : ''}</option></select></label>
+          {scoped && <p className="muted small">drop/average change point count and cannot be scoped to a selection — full dataset only.</p>}
           <NumField label="ε (ms)" value={dejitterEpsilonMs} onChange={setDejitterEpsilonMs} min={0.001} step={1} />
-          <button type="button" onClick={() => runScoped((selected) => dejitterTimestamps(selected, { duplicatePolicy: dejitterPolicy, epsilonMs: dejitterEpsilonMs }))}>Apply{scoped ? ' to range' : ''}</button>
+          <button type="button" disabled={dejitterPolicyLocked} onClick={() => runScoped((selected) => dejitterTimestamps(selected, { duplicatePolicy: dejitterPolicy, epsilonMs: dejitterEpsilonMs }))}>Apply{scoped ? ' to range' : ''}</button>
         </Op>
         <Op title="Resample by distance (monotone cubic)" desc="Fixed-distance resampling using Fritsch-Carlson monotone cubic interpolation; unlike a naive spline it cannot overshoot past neighboring samples. Full dataset only.">
           <NumField label="interval (m)" value={distanceIntervalMeters} onChange={setDistanceIntervalMeters} min={0.001} step={1} />
