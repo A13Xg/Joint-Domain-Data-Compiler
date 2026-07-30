@@ -14,6 +14,20 @@ import { ComputeClient, type ComputeRunHandle, type ComputeRunOptions } from './
 export const GPX_EXPORT_TASK = 'gpx-export'
 export const GPX_EXPORT_TASK_VERSION = 1
 
+// Sync GPX export (buildGpx, src/core/exporters/gpx.ts) is a single uninterruptible
+// pass over the dataset. Per docs/performance-baseline.md, it stays comfortably
+// fast (185ms) at 100k points but grows into hundreds of ms to multiple seconds
+// beyond that (783ms at 500k, ~1.6-1.7s+ at 1M), which is enough to visibly stall
+// the renderer thread. Route anything above this threshold through the chunked
+// Worker task instead; below it, the sync path avoids the fixed cost of spinning
+// up a Worker for an export that already completes in well under 100ms.
+export const GPX_EXPORT_WORKER_THRESHOLD = 50_000
+
+/** Whether a GPX export of this many points should run on the compute Worker instead of synchronously on the main thread. */
+export function shouldUseGpxExportWorker(pointCount: number, threshold: number = GPX_EXPORT_WORKER_THRESHOLD): boolean {
+  return pointCount > threshold
+}
+
 export interface GpxExportRequestPayload {
   points: TrackPoint[]
   datasetName?: string

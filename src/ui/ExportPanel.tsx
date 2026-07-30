@@ -1,12 +1,15 @@
 // Export surface: choose a target format, tune options, preview the serialized
 // head, and download. GPX exposes the compatibility-critical knobs (sort, BOM,
 // precision, extensions). GPB is offered for lossless binary round-tripping.
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Dataset } from '../core/model'
 import { EXPORTERS, exportDataset, type ExportFormat } from '../core/exporters'
 import { buildGpb } from '../core/parsers/gpb'
 import { collectChannels } from '../core/model'
 import { logger } from '../core/logger'
+import { ComputeClient, type ComputeRunHandle } from '../compute/client'
+import { createGpxExportWorker, runGpxExport, shouldUseGpxExportWorker } from '../compute/gpxExportClient'
+import type { GpxBuildResult } from '../core/exporters/gpx'
 
 type Target = ExportFormat | 'gpb'
 
@@ -29,6 +32,11 @@ export function ExportPanel({ dataset }: { dataset: Dataset }) {
   const notionalCount = useMemo(() => dataset.points.filter((p) => p.ext?.notional === true).length, [dataset.points])
   const exportBlocked = notionalCount > 0 && !acknowledgedNotional
 
+  const computeClientRef = useRef<ComputeClient | null>(null)
+  const activeGpxExportRef = useRef<ComputeRunHandle<GpxBuildResult> | null>(null)
+  const [gpxExportProgress, setGpxExportProgress] = useState<string | null>(null)
+  useEffect(() => () => computeClientRef.current?.dispose(), [])
+
   const preview = useMemo(() => {
     if (target === 'gpb') {
       const buf = buildGpb(trackName, dataset.points, collectChannels(dataset.points))
@@ -46,8 +54,60 @@ export function ExportPanel({ dataset }: { dataset: Dataset }) {
 
   const descriptor = EXPORTERS.find((e) => e.id === target)
 
+  const saveBlob = (blob: Blob, fileName: string, format: Target, pointCount: number, warnings: string[] = []) => {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = fileName
+    a.click()
+    URL.revokeObjectURL(url)
+    for (const w of warnings) logger.warn('export', w)
+    logger.success('export', `Exported ${pointCount.toLocaleString()} points to ${fileName}`, {
+      format,
+      bytes: blob.size,
+    })
+  }
+
+  // Large GPX exports run on the shared compute Worker (chunked, cancellable,
+  // byte-identical to the synchronous buildGpx) instead of blocking the
+  // renderer thread. Mirrors TransformPanel's runResample wiring.
+  const downloadGpxViaWorker = async () => {
+    try {
+      if (!computeClientRef.current) {
+        computeClientRef.current = new ComputeClient(createGpxExportWorker())
+      }
+      setGpxExportProgress('Starting GPX export worker')
+      const handle = runGpxExport(
+        computeClientRef.current,
+        {
+          points: dataset.points,
+          datasetName: dataset.name,
+          options: { sortByTime, bom, includeExtensions, coordinatePrecision: precision, trackName },
+        },
+        { onProgress: (progress) => setGpxExportProgress(progress.message ?? `${progress.completed}/${progress.total ?? '?'}`) },
+      )
+      activeGpxExportRef.current = handle
+      const result = await handle.promise
+      const warnings: string[] = []
+      if (result.skippedMissing) warnings.push(`${result.skippedMissing} points skipped (missing coordinates)`)
+      if (result.skippedOutOfRange) warnings.push(`${result.skippedOutOfRange} points skipped (out of range)`)
+      const blob = new Blob([result.xml], { type: 'application/gpx+xml;charset=utf-8' })
+      saveBlob(blob, `${trackName || 'track'}.gpx`, 'gpx', result.pointCount, warnings)
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') logger.warn('export', 'GPX export cancelled')
+      else logger.error('export', `Export failed: ${(err as Error).message}`)
+    } finally {
+      activeGpxExportRef.current = null
+      setGpxExportProgress(null)
+    }
+  }
+
   const download = () => {
     if (exportBlocked) return
+    if (target === 'gpx' && shouldUseGpxExportWorker(dataset.points.length)) {
+      void downloadGpxViaWorker()
+      return
+    }
     try {
       let blob: Blob
       let ext: string
@@ -63,16 +123,7 @@ export function ExportPanel({ dataset }: { dataset: Dataset }) {
         ext = result.extension
       }
       const fileName = `${trackName || 'track'}.${ext}`
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = fileName
-      a.click()
-      URL.revokeObjectURL(url)
-      logger.success('export', `Exported ${preview.pointCount.toLocaleString()} points to ${fileName}`, {
-        format: target,
-        bytes: blob.size,
-      })
+      saveBlob(blob, fileName, target, preview.pointCount)
     } catch (err) {
       logger.error('export', `Export failed: ${(err as Error).message}`)
     }
@@ -129,9 +180,16 @@ export function ExportPanel({ dataset }: { dataset: Dataset }) {
             </div>
           )}
 
-          <button type="button" className="export-btn" onClick={download} disabled={dataset.points.length === 0 || exportBlocked} title={exportBlocked ? 'Acknowledge the notional-sample notice above to export' : undefined}>
-            Export {preview.pointCount.toLocaleString()} points
-          </button>
+          {gpxExportProgress ? (
+            <div className="export-progress">
+              <span className="muted small">{gpxExportProgress}</span>
+              <button type="button" onClick={() => activeGpxExportRef.current?.cancel()}>Cancel</button>
+            </div>
+          ) : (
+            <button type="button" className="export-btn" onClick={download} disabled={dataset.points.length === 0 || exportBlocked} title={exportBlocked ? 'Acknowledge the notional-sample notice above to export' : undefined}>
+              Export {preview.pointCount.toLocaleString()} points
+            </button>
+          )}
         </div>
       </div>
 
