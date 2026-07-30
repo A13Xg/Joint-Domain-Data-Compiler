@@ -90,6 +90,26 @@ function isStrictlyIncreasing(points: TrackPoint[]): boolean {
   check('Timed duplicate after an untimed point is still corrected', result.points[2]?.time === 101)
 }
 
+// --- Average policy must not merge into an untimed predecessor --------------
+{
+  // [{t:100}, {untimed}, {t:100}] — the untimed point is pushed through
+  // unconditionally, so the third point's merge target must skip past it and
+  // land on the first point (the last point with a *defined* time), not
+  // silently merge into the untimed point and lose the real timestamp.
+  const points: TrackPoint[] = [
+    { lat: 10, lon: 10, time: 100 },
+    { lat: 20, lon: 20 },
+    { lat: 30, lon: 30, time: 100 },
+  ]
+  const result = dejitterTimestamps(points, { duplicatePolicy: 'average' })
+  check('Average merge skips untimed predecessor: two points remain', result.points.length === 2)
+  check('Average merge skips untimed predecessor: untimed point still present and untouched', result.points.some((p) => p.time === undefined && p.lat === 20 && p.lon === 20))
+  const merged = result.points.find((p) => p.time !== undefined)
+  check('Average merge skips untimed predecessor: real timestamp preserved', merged?.time === 100)
+  check('Average merge skips untimed predecessor: merge blended the two timed points, not the untimed one', merged?.lat === 20 && merged?.lon === 20)
+  check('Average merge skips untimed predecessor: merged point is flagged', merged?.provenance?.qualityFlags?.includes('time_dejittered') === true)
+}
+
 // --- Invalid epsilon ---------------------------------------------------------
 {
   let threw = false

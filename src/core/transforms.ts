@@ -297,6 +297,17 @@ export interface DejitterTimestampsOptions {
  * check. Default policy is `'nudge'` — see `DejitterTimestampsOptions` for
  * the full policy contract. Corrected/merged points are flagged with
  * `time_dejittered` provenance so the correction is traceable.
+ *
+ * Known limitation: when this runs over a sub-range of a larger dataset (see
+ * `applyTransformToRange`), the `'nudge'` policy only sees timestamps inside
+ * the slice it was given. A run of nudges near the end of the range can in
+ * principle push a corrected timestamp past the original timestamp of the
+ * first point after the range, locally breaking the global
+ * strictly-increasing guarantee this function otherwise provides. There is
+ * no cheap fix within this function (it would require passing the next
+ * out-of-range timestamp in as a ceiling), so range-scoped nudges on data
+ * with heavy jitter right at a range boundary should be treated as a known
+ * edge case rather than a guarantee.
  */
 export function dejitterTimestamps(points: TrackPoint[], options: DejitterTimestampsOptions = {}): TransformResult {
   const duplicatePolicy = options.duplicatePolicy ?? 'nudge'
@@ -307,6 +318,7 @@ export function dejitterTimestamps(points: TrackPoint[], options: DejitterTimest
   const cloned = clone(points)
   const out: TrackPoint[] = []
   let lastOutTime: number | undefined
+  let lastTimedOutIndex: number | undefined
   let corrected = 0
   let dropped = 0
 
@@ -316,6 +328,7 @@ export function dejitterTimestamps(points: TrackPoint[], options: DejitterTimest
     if (lastOutTime === undefined || point.time > lastOutTime) {
       out.push(point)
       lastOutTime = point.time
+      lastTimedOutIndex = out.length - 1
       continue
     }
 
@@ -326,9 +339,18 @@ export function dejitterTimestamps(points: TrackPoint[], options: DejitterTimest
       continue
     }
     if (duplicatePolicy === 'average') {
-      const previous = out[out.length - 1]!
-      out[out.length - 1] = mergeAveraged(previous, point)
-      addFlag(out[out.length - 1]!, 'time_dejittered')
+      // Merge into the last output point that actually has a defined time —
+      // not simply the last-pushed point, which may be an untimed point that
+      // was pushed through unconditionally above. Merging into an untimed
+      // point would spread `time: undefined` over the merged result and
+      // silently discard this point's real timestamp. lastTimedOutIndex is
+      // guaranteed to be defined here because lastOutTime is defined (the
+      // `lastOutTime === undefined` branch above is the only path that
+      // leaves it unset, and that branch always short-circuits first).
+      const targetIndex = lastTimedOutIndex!
+      const previous = out[targetIndex]!
+      out[targetIndex] = mergeAveraged(previous, point)
+      addFlag(out[targetIndex]!, 'time_dejittered')
       continue
     }
     // 'nudge'
@@ -337,6 +359,7 @@ export function dejitterTimestamps(points: TrackPoint[], options: DejitterTimest
     addFlag(point, 'time_dejittered')
     out.push(point)
     lastOutTime = newTime
+    lastTimedOutIndex = out.length - 1
   }
 
   const detail = duplicatePolicy === 'drop'
