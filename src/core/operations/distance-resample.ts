@@ -1,4 +1,4 @@
-import { collectChannels, haversineMeters, inferChannelDefinitions, type Dataset, type TrackPoint } from '../model'
+import { collectChannels, haversineMeters, inferChannelDefinitions, type ChannelDefinition, type Dataset, type TrackPoint } from '../model'
 import type { OperationDefinition, OperationExecutionContext, OperationExecutionResult } from '../recipes/model'
 import { monotoneCubicInterpolate } from './monotone-interpolation'
 
@@ -18,7 +18,11 @@ export interface DistanceResampleParams {
  * and time is monotone non-decreasing with distance; otherwise time is
  * dropped with a warning rather than fabricated. Name/description and any
  * non-fully-numeric extension channel are carried from the nearest source
- * point (step-carry) rather than silently discarded.
+ * point (step-carry) rather than silently discarded. Angular extension
+ * channels (heading/bearing/course, by declared channel semanticType or
+ * name) are unwrapped across the 0/360 seam before interpolating and
+ * re-wrapped after, the same way longitude is, so they don't swing the long
+ * way around when crossing 0/360.
  */
 export const distanceResampleMonotoneOperation: OperationDefinition<DistanceResampleParams> = {
   id: 'resample-distance-monotone-cubic',
@@ -82,9 +86,19 @@ function execute(context: OperationExecutionContext<DistanceResampleParams>): Op
 
   const numericChannels = collectChannels(kept).filter((channel) => kept.every((p) => typeof p.ext?.[channel] === 'number'))
   const carryChannels = collectChannels(kept).filter((channel) => !numericChannels.includes(channel))
-  const numericExtValues = new Map(
-    numericChannels.map((channel) => [channel, monotoneCubicInterpolate(distances, kept.map((p) => p.ext![channel] as number), queryDistances)]),
-  )
+  // Angular channels (heading/bearing/course) wrap at 0/360 rather than
+  // being a continuous linear quantity like most ext channels — naively
+  // monotone-cubic-interpolating raw degree values would treat e.g. 359deg
+  // -> 1deg as a ~358deg swing through 180 instead of the true ~2deg
+  // crossing through 0/360, the same class of bug longitude already guards
+  // against via unwrapLongitudes/wrapLongitude above.
+  const angularChannels = numericChannels.filter((channel) => isAngularChannel(channel, context.dataset.metadata?.channels))
+  const numericExtValues = new Map(numericChannels.map((channel) => [
+    channel,
+    angularChannels.includes(channel)
+      ? monotoneCubicInterpolate(distances, unwrapDegrees(kept.map((p) => p.ext![channel] as number)), queryDistances).map(wrapDegrees)
+      : monotoneCubicInterpolate(distances, kept.map((p) => p.ext![channel] as number), queryDistances),
+  ]))
   // Used for name/desc carry as well as non-numeric ext carry, so always computed.
   const nearest = nearestSourceIndices(distances, queryDistances)
 
@@ -170,6 +184,32 @@ function unwrapLongitudes(lons: number[]): number[] {
 
 function wrapLongitude(value: number): number {
   return ((value + 540) % 360) - 180
+}
+
+function isAngularChannel(channel: string, metadataChannels: readonly ChannelDefinition[] | undefined): boolean {
+  const declared = metadataChannels?.find((definition) => definition.id === channel)
+  if (declared?.semanticType === 'heading' || declared?.semanticType === 'bearing') return true
+  // Fall back to a name heuristic for datasets without declared channel
+  // metadata (e.g. imported CSV extension columns).
+  return /^(heading|bearing|course|track)(_|$)/i.test(channel)
+}
+
+// Same unwrap/wrap-at-the-seam approach as unwrapLongitudes/wrapLongitude
+// above, generalized to a 0-360 domain (headings/bearings) instead of
+// longitude's -180..180 domain.
+function unwrapDegrees(values: number[]): number[] {
+  const out: number[] = [values[0]!]
+  for (let i = 1; i < values.length; i++) {
+    let delta = values[i]! - values[i - 1]!
+    if (delta > 180) delta -= 360
+    if (delta < -180) delta += 360
+    out.push(out[i - 1]! + delta)
+  }
+  return out
+}
+
+function wrapDegrees(value: number): number {
+  return ((value % 360) + 360) % 360
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -1,6 +1,9 @@
 // Task 5.2: distance-based resampling using monotone cubic interpolation.
 import type { Dataset } from '../src/core/model.ts'
 import { distanceResampleMonotoneOperation } from '../src/core/operations/distance-resample.ts'
+import { ensureBuiltinOperationsRegistered } from '../src/core/operations/basic.ts'
+import { getOperation } from '../src/core/recipes/registry.ts'
+import { executeOperation } from '../src/core/recipes/executor.ts'
 
 let failures = 0
 function check(name: string, condition: boolean, detail = ''): void {
@@ -168,6 +171,60 @@ function makeDataset(points: Dataset['points']): Dataset {
   const result = distanceResampleMonotoneOperation.execute({ dataset, params })
   check('Non-monotone time is dropped rather than interpolated', result.dataset.points.every((p) => p.time === undefined))
   check('Non-monotone time produces a warning', (result.warnings ?? []).some((w) => w.includes('not monotone')), JSON.stringify(result.warnings))
+}
+
+// --- Registered as a replayable operation (Tier-3 fix) -----------------------------------------
+{
+  ensureBuiltinOperationsRegistered()
+  check('distanceResampleMonotoneOperation is registered in the recipe/operation registry', getOperation('resample-distance-monotone-cubic') === distanceResampleMonotoneOperation)
+
+  const points: Dataset['points'] = [
+    { lat: 0, lon: 0 },
+    { lat: 0, lon: 0.001 },
+    { lat: 0, lon: 0.002 },
+  ]
+  const dataset = makeDataset(points)
+  const execution = executeOperation(dataset, 'resample-distance-monotone-cubic', { intervalMeters: 20 })
+  check('Replayed via executeOperation produces an OperationRecord', execution.record.operationId === 'resample-distance-monotone-cubic')
+  check('Replayed dataset has more than one point', execution.dataset.points.length > 1)
+}
+
+// --- Angular ext channels wrap at 0/360 instead of interpolating the long way around -----------
+{
+  // A heading sweeping from 350deg to 10deg (through the 0/360 seam) must
+  // not be treated as a ~340deg journey through 180deg.
+  const points: Dataset['points'] = [
+    { lat: 0, lon: 0, ext: { heading_deg: 350 } },
+    { lat: 0, lon: 0.001, ext: { heading_deg: 0 } },
+    { lat: 0, lon: 0.002, ext: { heading_deg: 10 } },
+  ]
+  const dataset = makeDataset(points)
+  const params = distanceResampleMonotoneOperation.validateParams({ intervalMeters: 20 })
+  const result = distanceResampleMonotoneOperation.execute({ dataset, params })
+  const headings = result.dataset.points.map((p) => Number(p.ext?.heading_deg))
+  check('Every output point has a heading value', headings.every((h) => Number.isFinite(h)))
+  check('Output heading values stay within [0, 360)', headings.every((h) => h >= 0 && h < 360))
+  check(
+    'Heading never swings implausibly far (stays near the 350/0/10 crossing, not through ~180)',
+    headings.every((h) => h <= 60 || h >= 300),
+    JSON.stringify(headings.map((h) => Math.round(h))),
+  )
+  check('First output point carries the start heading', Math.abs(headings[0]! - 350) < 1e-6)
+  check('Last output point carries the end heading', Math.abs(headings.at(-1)! - 10) < 1e-6)
+}
+{
+  // A non-angular channel with a similarly large jump must still be
+  // interpolated linearly (i.e. not wrapped) — confirms the angular
+  // detection is name/semanticType-scoped, not applied to every channel.
+  const points: Dataset['points'] = [
+    { lat: 0, lon: 0, ext: { altitude_band: 0 } },
+    { lat: 0, lon: 0.001, ext: { altitude_band: 350 } },
+  ]
+  const dataset = makeDataset(points)
+  const params = distanceResampleMonotoneOperation.validateParams({ intervalMeters: 500 })
+  const result = distanceResampleMonotoneOperation.execute({ dataset, params })
+  const values = result.dataset.points.map((p) => Number(p.ext?.altitude_band))
+  check('Non-angular channel is not wrapped at 0/360', values.every((v) => v >= 0 && v <= 350), JSON.stringify(values))
 }
 
 console.log(`\n${failures === 0 ? 'ALL DISTANCE RESAMPLE CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`)

@@ -6,7 +6,6 @@ import {
 } from '../core/transforms'
 
 import { fixedRateResampleOperation, type InterpolationMode, type ResampleParams } from '../core/operations/resample'
-import { distanceResampleMonotoneOperation } from '../core/operations/distance-resample'
 import { applyTransformToRange } from '../core/rangeTransform'
 import { computeOperationPreview, describeOperationPreview } from '../core/recipes/preview'
 import type { OperationRecord, Recipe } from '../core/recipes/model'
@@ -157,14 +156,6 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
     }
   }
 
-  const runDistanceResample = () => {
-    run(() => {
-      const params = distanceResampleMonotoneOperation.validateParams({ intervalMeters: distanceIntervalMeters })
-      const result = distanceResampleMonotoneOperation.execute({ dataset, params })
-      return { points: result.dataset.points, summary: result.summary, warnings: result.warnings }
-    }, false)
-  }
-
   const points = dataset.points
   const scoped = scopeToSelection && indexRange !== null
   // 'drop'/'average' change point count, which applyTransformToRange rejects
@@ -216,9 +207,9 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
           <NumField label="ε (ms)" value={dejitterEpsilonMs} onChange={setDejitterEpsilonMs} min={0.001} step={1} />
           <button type="button" disabled={dejitterPolicyLocked} onClick={() => runScoped((selected) => dejitterTimestamps(selected, { duplicatePolicy: dejitterPolicy, epsilonMs: dejitterEpsilonMs }))}>Apply{scoped ? ' to range' : ''}</button>
         </Op>
-        <Op title="Resample by distance (monotone cubic)" desc="Fixed-distance resampling using Fritsch-Carlson monotone cubic interpolation; unlike a naive spline it cannot overshoot past neighboring samples. Full dataset only.">
+        <Op title="Resample by distance (monotone cubic)" desc="Fixed-distance resampling using Fritsch-Carlson monotone cubic interpolation; unlike a naive spline it cannot overshoot past neighboring samples. Full dataset operation with replayable parameters.">
           <NumField label="interval (m)" value={distanceIntervalMeters} onChange={setDistanceIntervalMeters} min={0.001} step={1} />
-          <button type="button" onClick={runDistanceResample}>Apply</button>
+          <button type="button" onClick={() => runReplayable('resample-distance-monotone-cubic', { intervalMeters: distanceIntervalMeters })}>Apply</button>
         </Op>
       </div>
     </div>

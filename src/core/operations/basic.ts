@@ -1,6 +1,7 @@
 import { ensureBuiltinDerivationsRegistered } from '../analytics/bootstrap'
 import { runDerivation } from '../analytics/registry'
 import { offsetElevation, shiftTime, withPoints } from '../transforms'
+import { distanceResampleMonotoneOperation } from './distance-resample'
 import type { OperationDefinition } from '../recipes/model'
 import { getOperation, registerOperation } from '../recipes/registry'
 
@@ -48,6 +49,7 @@ export function ensureBuiltinOperationsRegistered(): void {
   if (!getOperation(offsetElevationOperation.id)) registerOperation(offsetElevationOperation)
   if (!getOperation(shiftTimeOperation.id)) registerOperation(shiftTimeOperation)
   if (!getOperation(standardKinematicsOperation.id)) registerOperation(standardKinematicsOperation)
+  if (!getOperation(distanceResampleMonotoneOperation.id)) registerOperation(distanceResampleMonotoneOperation)
 }
 
 function validateMeters(value: unknown): OffsetElevationParams {
