@@ -46,6 +46,10 @@ export function normalizeCsvAnalysisResult(value: unknown): CsvAnalysisResult {
     : []
   const inferenceRaw = raw.headerInference && typeof raw.headerInference === 'object' ? raw.headerInference as Record<string, unknown> : {}
   const confidence = inferenceRaw.confidence === 'high' || inferenceRaw.confidence === 'medium' || inferenceRaw.confidence === 'low' ? inferenceRaw.confidence : 'low'
+  const rowOneRaw = raw.rowOneInference && typeof raw.rowOneInference === 'object' ? raw.rowOneInference as Record<string, unknown> : {}
+  const rowOneConfidence = ['high', 'medium', 'low', 'ambiguous'].includes(rowOneRaw.confidence as string)
+    ? rowOneRaw.confidence as 'high' | 'medium' | 'low' | 'ambiguous'
+    : 'ambiguous'
   return {
     delimiter: typeof raw.delimiter === 'string' ? raw.delimiter : ',',
     rowCountSampled: typeof raw.rowCountSampled === 'number' && Number.isFinite(raw.rowCountSampled) ? raw.rowCountSampled : sampleRows.length,
@@ -53,6 +57,11 @@ export function normalizeCsvAnalysisResult(value: unknown): CsvAnalysisResult {
     sampleRows,
     rawPreviewRows,
     headerInference: { confidence, reason: typeof inferenceRaw.reason === 'string' ? inferenceRaw.reason : 'Header inference details unavailable.' },
+    rowOneInference: {
+      inferred: rowOneRaw.inferred === true,
+      confidence: rowOneConfidence,
+      reasons: stringArray(rowOneRaw.reasons),
+    },
     columns,
   }
 }
