@@ -13,6 +13,7 @@ import {
 } from '../types/converter'
 import {
   detectDataStartRow,
+  inferHeaderRowFromRows,
   MAX_HEADER_ROWS,
   parseDateLike,
   parseNumber,
@@ -355,6 +356,13 @@ export function analyzeRawRows(
   const columns = buildColumns(rawRows, dataStartRow)
   const dataRows = rawRows.slice(dataStartRow)
 
+  // Independent, bounded row-1-only signal from csvPreview.ts (the module
+  // built specifically to explain "does row 1 look like a header?" with
+  // confidence + reasons). Computed alongside the header-BLOCK sizing above
+  // rather than replacing it — the two heuristics answer related but
+  // distinct questions (block size vs. row-1 verdict) and can disagree.
+  const rowOneInference = inferHeaderRowFromRows(rawRows)
+
   return {
     delimiter,
     rowCountSampled: dataRows.length,
@@ -367,6 +375,7 @@ export function analyzeRawRows(
         ? 'Leading rows look data-like, so no header row was inferred.'
         : `${dataStartRow} leading row${dataStartRow === 1 ? '' : 's'} looked less numeric than the sampled data rows.`,
     },
+    rowOneInference,
     columns,
   }
 }

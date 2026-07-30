@@ -82,6 +82,18 @@ export function MappingPanel({ analysis, mapping, onChange, additionalHeaders, o
         <input type="number" min={0} max={Math.max(0, analysis.rowCountSampled - 1)} value={dataStartRow} onChange={(event) => onDataStartRowChange(Math.max(0, Number(event.target.value) || 0))} />
         <span className="muted small">— this override is used for the full import.</span>
       </label>
+      <details className="csv-preview">
+        <summary>
+          Why row 1{analysis.rowOneInference.inferred ? ' looks like a header' : ' does not look like a header'} ({analysis.rowOneInference.confidence} confidence)
+        </summary>
+        <p className="muted small">
+          A separate, bounded check of only the first {analysis.rawPreviewRows.length} physical rows — independent of
+          the header-block sizing above, so it can disagree with it. Use it as corroborating evidence, not a verdict.
+        </p>
+        <ul className="muted small">
+          {analysis.rowOneInference.reasons.map((reason, index) => <li key={index}>{reason}</li>)}
+        </ul>
+      </details>
 
       {suggestSwap && (
         <div className="swap-hint">
