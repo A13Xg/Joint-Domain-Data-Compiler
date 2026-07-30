@@ -74,13 +74,12 @@ export function createProjectArchive(input: {
     datasets: input.datasets,
     histories: input.histories,
   }
-  validateProjectArchive(archive)
-  return archive
+  return validateProjectArchive(archive)
 }
 
 export function serializeProjectArchive(archive: ProjectArchive): string {
-  validateProjectArchive(archive)
-  const persisted = { ...archive, histories: persistedHistories(archive) }
+  const validated = validateProjectArchive(archive)
+  const persisted = { ...validated, histories: persistedHistories(validated) }
   validatePersistedArchive(persisted)
   return JSON.stringify(persisted)
 }
@@ -159,11 +158,17 @@ export async function readStreamWithLimit(stream: ReadableStream<Uint8Array>, li
   return output
 }
 
-export function validateProjectArchive(value: unknown): asserts value is ProjectArchive {
+/**
+ * Validates an untrusted value as a `ProjectArchive`. Throws on structural
+ * errors. Does not mutate `value`: the manifest's normalized form (from
+ * `validateProjectManifest`, itself non-mutating) is folded into a freshly
+ * returned archive object rather than written back into the input.
+ */
+export function validateProjectArchive(value: unknown): ProjectArchive {
   if (!isRecord(value)) throw new Error('Project archive must be an object')
   if (value.schema !== 'jddc-project-archive') throw new Error('Unsupported project archive schema')
   if (value.schemaVersion !== 2) throw new Error(`Unsupported project archive version: ${String(value.schemaVersion)}`)
-  validateProjectManifest(value.manifest)
+  const manifest = validateProjectManifest(value.manifest)
   if (!Array.isArray(value.datasets)) throw new Error('Project archive datasets must be an array')
   if (value.datasets.length > MAX_DATASETS) throw new Error(`Project archive exceeds ${MAX_DATASETS} datasets`)
   if (!isRecord(value.histories)) throw new Error('Project archive histories must be an object')
@@ -178,16 +183,16 @@ export function validateProjectArchive(value: unknown): asserts value is Project
     if (totalPoints > MAX_TOTAL_POINTS) throw new Error(`Project archive exceeds ${MAX_TOTAL_POINTS.toLocaleString()} embedded points`)
   }
 
-  for (const entry of value.manifest.datasets) {
+  for (const entry of manifest.datasets) {
     const dataset = value.datasets.find((candidate) => candidate.id === entry.id)
     if (!dataset) throw new Error(`Manifest dataset ${entry.id} has no embedded payload`)
     const fingerprint = fingerprintDataset(dataset)
     if (fingerprint !== entry.sourceHash) throw new Error(`Embedded dataset ${entry.id} fingerprint does not match the manifest`)
   }
-  if (value.datasets.length !== value.manifest.datasets.length) {
+  if (value.datasets.length !== manifest.datasets.length) {
     throw new Error('Manifest and embedded dataset counts do not match')
   }
-  for (const artifact of value.manifest.fusionArtifacts) {
+  for (const artifact of manifest.fusionArtifacts) {
     if (artifact.fusedDatasetHash === undefined) continue
     const fused = value.datasets.find((dataset) => dataset.id === artifact.fusedDatasetId)
     if (!fused || fingerprintDataset(fused) !== artifact.fusedDatasetHash) throw new Error(`Fusion artifact ${artifact.id} fused dataset binding does not match`)
@@ -201,6 +206,8 @@ export function validateProjectArchive(value: unknown): asserts value is Project
     if (!datasetIds.has(datasetId)) throw new Error(`History references missing dataset ${datasetId}`)
     validateHistory(history, datasetId)
   }
+
+  return { ...value, manifest, schemaVersion: 2 } as ProjectArchive
 }
 
 export function buildProjectManifest(input: {
@@ -368,8 +375,7 @@ function materializePersistedArchive(value: Record<string, unknown>): ProjectArc
     histories[datasetId] = { past, future }
   }
   const archive = { ...value, schemaVersion: 2, datasets, histories } as ProjectArchive
-  validateProjectArchive(archive)
-  return archive
+  return validateProjectArchive(archive)
 }
 
 function replayDelta(base: Dataset, delta: PersistedDelta, datasetId: string): Dataset {
@@ -420,6 +426,9 @@ function applyPatches(base: Dataset, patches: PersistedDelta['patches'], dataset
 function validatePersistedArchive(value: unknown): asserts value is Record<string, unknown> {
   if (!isRecord(value)) throw new Error('Project archive must be an object')
   if (value.schema !== 'jddc-project-archive' || value.schemaVersion !== 2) throw new Error(`Unsupported project archive version: ${String(value.schemaVersion)}`)
+  // Validated for its structural checks (throws on error); the persisted
+  // payload itself is re-validated (and its manifest re-normalized) later by
+  // `materializePersistedArchive`, which is what actually gets returned.
   validateProjectManifest(value.manifest)
   if (!Array.isArray(value.datasets) || !isRecord(value.histories)) throw new Error('Project archive payload is malformed')
   const runtime = { ...value, histories: {} }
@@ -451,8 +460,7 @@ function migrateLegacyArchive(value: Record<string, unknown>): ProjectArchive {
   if (!Array.isArray(legacy.datasets) || !isRecord(legacy.histories)) throw new Error('Legacy project archive payload is malformed')
   for (const [datasetId, history] of Object.entries(legacy.histories)) validateHistory(history, datasetId)
   const migrated = { ...legacy, schemaVersion: 2 } as ProjectArchive
-  validateProjectArchive(migrated)
-  return migrated
+  return validateProjectArchive(migrated)
 }
 
 function validateDataset(value: unknown): asserts value is Dataset {

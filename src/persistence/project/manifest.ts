@@ -5,7 +5,6 @@ import { isValidWorkspaceDisplay, type WorkspaceDisplay } from '../../state/work
 import { migrateToVersion, PROJECT_MANIFEST_MIGRATORS } from './migrations'
 import type { FusionArtifact } from '../../core/fusion/artifact'
 import { validateFusionArtifact } from '../../core/fusion/artifact'
-import { normalizeReportOptions } from '../../core/reports/options'
 
 const CURRENT_MANIFEST_SCHEMA_VERSION = 2
 
@@ -66,8 +65,8 @@ export interface ProjectManifestV2 extends Omit<ProjectManifestV1, 'schemaVersio
 export type ProjectManifest = ProjectManifestV2
 
 export function serializeProjectManifest(manifest: ProjectManifest): string {
-  validateProjectManifest(manifest)
-  return JSON.stringify(manifest, null, 2)
+  const validated = validateProjectManifest(manifest)
+  return JSON.stringify(validated, null, 2)
 }
 
 export function parseProjectManifest(text: string): ProjectManifest {
@@ -78,11 +77,18 @@ export function parseProjectManifest(text: string): ProjectManifest {
     throw new Error(`Project manifest is not valid JSON: ${errorMessage(error)}`, { cause: error })
   }
   const migrated = migrateToVersion(value, CURRENT_MANIFEST_SCHEMA_VERSION, PROJECT_MANIFEST_MIGRATORS)
-  validateProjectManifest(migrated)
-  return migrated
+  return validateProjectManifest(migrated)
 }
 
-export function validateProjectManifest(value: unknown): asserts value is ProjectManifest {
+/**
+ * Validates an untrusted value as a `ProjectManifest`. Throws on structural
+ * errors. Never mutates `value`: `view.workspace.reportPreferences` (the one
+ * field that is normalized rather than rejected — see `validateView`) is
+ * normalized into a freshly-built manifest that is returned to the caller,
+ * so a caller that reuses the same object elsewhere is never surprised by
+ * an in-place write.
+ */
+export function validateProjectManifest(value: unknown): ProjectManifest {
   if (!isRecord(value)) throw new Error('Project manifest must be an object')
   if (value.schema !== 'jddc-project') throw new Error('Unsupported project manifest schema')
   if (value.schemaVersion !== 2) throw new Error(`Unsupported project manifest version: ${String(value.schemaVersion)}`)
@@ -133,26 +139,32 @@ export function validateProjectManifest(value: unknown): asserts value is Projec
     }
   }
 
-  validateView(value.view, datasetIds)
+  const normalizedWorkspace = validateView(value.view, datasetIds)
   validateBookmarks(value.bookmarks, datasetIds)
-  normalizeManifestReportPreferences(value)
+  return withNormalizedReportPreferences(value as unknown as ProjectManifest, normalizedWorkspace)
 }
 
 /**
- * Normalizes `view.workspace.reportPreferences` in place, after structural
- * validation has passed. Malformed or stale persisted values (wrong types,
- * unknown extra fields, a value left over from an older/foreign build) fall
- * back field-by-field to safe defaults via `normalizeReportOptions` instead
- * of throwing — this field is optional report-generation UI state, not
- * something other parts of the project depend on, so a bad value should
- * degrade gracefully rather than block the whole project from loading.
+ * Builds the manifest to return to the caller, substituting the normalized
+ * `reportPreferences` computed by `validateView` (via `normalizeWorkspaceState`)
+ * in place of whatever malformed/stale value was persisted. Returns the
+ * original `value` unchanged (same reference) when there is nothing to
+ * normalize, and otherwise builds a shallow clone rather than writing
+ * through to the input — the input manifest is never mutated.
  */
-function normalizeManifestReportPreferences(value: Record<string, unknown>): void {
-  const view = value.view
-  if (!isRecord(view)) return
-  const workspace = view.workspace
-  if (!isRecord(workspace) || workspace.reportPreferences === undefined) return
-  workspace.reportPreferences = normalizeReportOptions(workspace.reportPreferences).options
+function withNormalizedReportPreferences(value: ProjectManifest, normalizedWorkspace: WorkspaceState | undefined): ProjectManifest {
+  if (normalizedWorkspace === undefined || normalizedWorkspace.reportPreferences === undefined) return value
+  // Every field of `normalizedWorkspace` other than reportPreferences has
+  // already been checked structurally equal to `value.view.workspace` by
+  // validateView's equality check, so it is safe to use wholesale here
+  // rather than re-spreading the (possibly-undefined-typed) original.
+  return {
+    ...value,
+    view: {
+      ...value.view,
+      workspace: normalizedWorkspace,
+    },
+  }
 }
 
 export function operationRecordsFromManifest(manifest: ProjectManifest): Record<string, OperationRecord[]> {
@@ -235,7 +247,15 @@ function validateRange(value: unknown, field: string): void {
   requireFiniteNumber(value.end, `${field}.end`)
 }
 
-function validateView(value: Record<string, unknown>, datasetIds: Set<string>): void {
+/**
+ * Validates `view`, throwing on any structurally invalid or stale field.
+ * Returns the normalized workspace state (computed once here, via
+ * `normalizeWorkspaceState`) so `validateProjectManifest` can reuse its
+ * already-normalized `reportPreferences` instead of recomputing it — the
+ * caller decides what, if anything, to do with the normalized value, so
+ * this function does not itself write anywhere.
+ */
+function validateView(value: Record<string, unknown>, datasetIds: Set<string>): WorkspaceState | undefined {
   if (value.activeDatasetId !== null && typeof value.activeDatasetId !== 'string') {
     throw new Error('view.activeDatasetId must be a string or null')
   }
@@ -246,20 +266,25 @@ function validateView(value: Record<string, unknown>, datasetIds: Set<string>): 
   if (!Array.isArray(value.chartLayoutIds) || !value.chartLayoutIds.every((id) => typeof id === 'string')) {
     throw new Error('view.chartLayoutIds must be a string array')
   }
+  let normalizedWorkspace: WorkspaceState | undefined
   if (value.workspace !== undefined) {
     if (!isRecord(value.workspace)) throw new Error('view.workspace contains invalid or stale state')
     const normalized = normalizeWorkspaceState(value.workspace, datasetIds)
     // reportPreferences is intentionally excluded from this structural
-    // equality check: it is normalized (not rejected) below in
-    // normalizeManifestReportPreferences, so a malformed/stale persisted
-    // value there must not fail the whole manifest's structural check.
+    // equality check: `normalized.reportPreferences` is normalized (not
+    // rejected) rather than compared for equality, so a malformed/stale
+    // persisted value there must not fail the whole manifest's structural
+    // check. The normalized value is still returned above for the caller
+    // to fold into the manifest it hands back.
     if (JSON.stringify(omitReportPreferences(normalized as unknown as Record<string, unknown>)) !== JSON.stringify(omitReportPreferences(value.workspace))) {
       throw new Error('view.workspace contains invalid or stale state')
     }
+    normalizedWorkspace = normalized
   }
   if (value.datasetDisplay !== undefined && !isValidWorkspaceDisplay(value.datasetDisplay, datasetIds)) {
     throw new Error('view.datasetDisplay contains invalid or stale settings')
   }
+  return normalizedWorkspace
 }
 
 function validateBookmarks(bookmarks: unknown[], datasetIds: Set<string>): void {
