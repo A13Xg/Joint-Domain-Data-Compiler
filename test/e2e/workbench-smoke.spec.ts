@@ -207,6 +207,10 @@ test('primary local-first workflow: import, inspect, transform, save/open, and e
   expect(cancelDownloadFired).toBe(false)
   page.off('download', onCancelDownload)
 
+  // Closing the dialog restores focus to the button that opened it, rather
+  // than dropping focus to <body>.
+  await expect(page.getByRole('button', { name: 'Export HTML report' })).toBeFocused()
+
   await page.getByRole('button', { name: 'Export HTML report' }).click()
   const reopenedDialog = page.getByRole('dialog', { name: 'Export HTML report' })
   await reopenedDialog.locator('.dialog-checklist summary').click()
@@ -257,6 +261,14 @@ test('primary local-first workflow: import, inspect, transform, save/open, and e
   await fourthDialog.locator('.dialog-checklist summary').click()
   await expect(fourthDialog.getByLabel('Import/parser warnings')).not.toBeChecked()
   await expect(fourthDialog.getByLabel('Remember these settings for this project')).not.toBeChecked()
+
+  // "Reset to defaults" also resets the remember checkbox, not just the
+  // checklist/title/filename.
+  await fourthDialog.getByLabel('Remember these settings for this project').check()
+  await fourthDialog.getByRole('button', { name: 'Reset to defaults' }).click()
+  await expect(fourthDialog.getByLabel('Import/parser warnings')).toBeChecked()
+  await expect(fourthDialog.getByLabel('Remember these settings for this project')).not.toBeChecked()
+
   await fourthDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
 
   await page.getByRole('button', { name: 'Sources', exact: true }).click()

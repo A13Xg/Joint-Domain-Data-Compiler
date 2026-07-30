@@ -53,7 +53,13 @@ export function ReportExportDialog({ suggestedTitle, suggestedFilename, persiste
   const titleInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
     titleInputRef.current?.focus()
+    return () => {
+      // Restore focus to whatever invoked the dialog (e.g. the "Export HTML
+      // report" button) on close, rather than dropping it to <body>.
+      previouslyFocused?.focus()
+    }
   }, [])
 
   useEffect(() => {
@@ -76,6 +82,7 @@ export function ReportExportDialog({ suggestedTitle, suggestedFilename, persiste
     setTitle(suggestedTitle)
     setFilename(sanitizeFilename(suggestedFilename))
     setSections(sectionStateFromOptions(DEFAULT_REPORT_OPTIONS))
+    setRemember(false)
   }
 
   const toggleSection = (key: string) => {
