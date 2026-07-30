@@ -4,6 +4,7 @@
 // checkpoints, and cancellation actually stops work partway through instead of
 // letting the synchronous build run to completion.
 
+import { trimNumber } from '../src/core/format.ts'
 import { ComputeTaskHost } from '../src/compute/host.ts'
 import { gpxExportTask } from '../src/compute/tasks.ts'
 import type { ComputeOutboundMessage } from '../src/compute/protocol.ts'
@@ -67,6 +68,40 @@ host.register(gpxExportTask)
     (message) => versionMismatch.push(message),
   )
   check('Version mismatch is rejected', versionMismatch[0]?.type === 'failure' && versionMismatch[0].error.code === 'TASK_VERSION_MISMATCH')
+
+  // Number.prototype.toFixed throws a RangeError outside [0, 100]; the
+  // validator must reject an out-of-bounds coordinatePrecision itself
+  // rather than let that RangeError surface from deep inside GPX building.
+  const outOfBounds: ComputeOutboundMessage[] = []
+  await host.handle(
+    { type: 'request', requestId: 'gpx-precision', task: 'gpx-export', taskVersion: 1, payload: { points: makePoints(2), options: { coordinatePrecision: 101 } } },
+    (message) => outOfBounds.push(message),
+  )
+  check('Out-of-bounds coordinatePrecision is rejected before execution', outOfBounds[0]?.type === 'failure' && outOfBounds[0].error.code === 'INVALID_PAYLOAD')
+
+  const negativePrecision: ComputeOutboundMessage[] = []
+  await host.handle(
+    { type: 'request', requestId: 'gpx-precision-neg', task: 'gpx-export', taskVersion: 1, payload: { points: makePoints(2), options: { coordinatePrecision: -1 } } },
+    (message) => negativePrecision.push(message),
+  )
+  check('Negative coordinatePrecision is rejected', negativePrecision[0]?.type === 'failure' && negativePrecision[0].error.code === 'INVALID_PAYLOAD')
+
+  const validPrecision: ComputeOutboundMessage[] = []
+  await host.handle(
+    { type: 'request', requestId: 'gpx-precision-ok', task: 'gpx-export', taskVersion: 1, payload: { points: makePoints(2), options: { coordinatePrecision: 15 } } },
+    (message) => validPrecision.push(message),
+  )
+  check('coordinatePrecision at the boundary (15) is accepted', validPrecision.some((m) => m.type === 'success'))
+}
+
+// --- trimNumber itself must never throw regardless of caller-supplied precision (defense in depth) ---
+{
+  let threw = false
+  try { trimNumber(1.23456, 1000) } catch { threw = true }
+  check('trimNumber clamps an absurdly large precision instead of throwing', !threw)
+  threw = false
+  try { trimNumber(1.23456, -5) } catch { threw = true }
+  check('trimNumber clamps a negative precision instead of throwing', !threw)
 }
 
 // --- Cancellation genuinely interrupts a large, chunked export mid-flight ---

@@ -133,9 +133,12 @@ function positiveInteger(value: unknown, field: string): number {
   return result
 }
 
-function nonNegativeInteger(value: unknown, field: string): number {
+// Number.prototype.toFixed (used to render coordinates) throws a RangeError
+// for values outside [0, 100]; 15 is already far beyond any meaningful
+// coordinate precision, so it's used as a generous but safe ceiling.
+function boundedInteger(value: unknown, field: string, min: number, max: number): number {
   const result = integer(value, field)
-  if (result < 0) throw new Error(`${field} must not be negative`)
+  if (result < min || result > max) throw new Error(`${field} must be between ${min} and ${max}`)
   return result
 }
 
@@ -151,7 +154,7 @@ function gpxOptions(value: unknown): GpxExportOptions {
   if (raw.trackName !== undefined) options.trackName = nonEmptyString(raw.trackName, 'options.trackName')
   if (raw.includeExtensions !== undefined) options.includeExtensions = boolean(raw.includeExtensions, 'options.includeExtensions')
   if (raw.sortByTime !== undefined) options.sortByTime = boolean(raw.sortByTime, 'options.sortByTime')
-  if (raw.coordinatePrecision !== undefined) options.coordinatePrecision = nonNegativeInteger(raw.coordinatePrecision, 'options.coordinatePrecision')
+  if (raw.coordinatePrecision !== undefined) options.coordinatePrecision = boundedInteger(raw.coordinatePrecision, 'options.coordinatePrecision', 0, 15)
   if (raw.bom !== undefined) options.bom = boolean(raw.bom, 'options.bom')
   return options
 }
