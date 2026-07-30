@@ -110,10 +110,10 @@ export function ComparisonPanel({ datasets, activeId, workspace, onWorkspaceChan
             <Metric label="mean along-track" value={result.meanAlongTrack === undefined ? 'n/a' : `${format(result.meanAlongTrack)} m`} />
             <Metric label="mean cross-track" value={result.meanCrossTrack === undefined ? 'n/a' : `${format(result.meanCrossTrack)} m`} />
             <Metric label="max |cross-track|" value={result.maxCrossTrack === undefined ? 'n/a' : `${format(result.maxCrossTrack)} m`} />
-            <Metric label="estimated clock offset" value={interpolateTarget ? 'n/a — not meaningful with interpolation enabled' : result.drift === undefined ? 'n/a' : `${format(result.drift.offsetMs)} ms`} />
-            <Metric label="estimated clock drift" value={interpolateTarget ? 'n/a — not meaningful with interpolation enabled' : result.drift === undefined ? 'n/a' : `${format(result.drift.driftRatePerMs * 1_000_000)} ppm`} />
+            <Metric label="estimated clock offset" value={interpolateTarget ? 'n/a — not meaningful with interpolation enabled' : result.drift === undefined ? 'n/a' : `${format(result.drift.offsetMs)} ms (n=${result.drift.sampleCount})`} title={result.drift === undefined ? undefined : `Offset valid at reference epoch ${new Date(result.drift.referenceEpochMs).toISOString()} (${result.drift.referenceEpochMs} ms); drift rate extrapolates away from this epoch.`} />
+            <Metric label="estimated clock drift" value={interpolateTarget ? 'n/a — not meaningful with interpolation enabled' : result.drift === undefined ? 'n/a' : `${format(result.drift.driftRatePerMs * 1_000_000)} ppm (n=${result.drift.sampleCount})`} title={result.drift === undefined ? undefined : `Offset valid at reference epoch ${new Date(result.drift.referenceEpochMs).toISOString()} (${result.drift.referenceEpochMs} ms); drift rate extrapolates away from this epoch.`} />
           </div>
-          <button type="button" onClick={() => downloadComparison(result.samples, referenceId, targetId)}>Export comparison CSV</button>
+          <button type="button" onClick={() => downloadComparison(result.samples, referenceId, targetId, result.drift)}>Export comparison CSV</button>
           {result.closest && <div className="analysis-summary mono">Closest approach at reference index {result.closest.referenceIndex}, target index {result.closest.targetIndex}: bearing {format(result.closest.bearingDeg)}°, Δt {format(result.closest.deltaTimeMs)} ms, vertical separation {format(result.closest.relativeUpM)} m.</div>}
           <div className="compact-table"><table><thead><tr><th>Ref</th><th>Target</th><th>Kind</th><th>Δt ms</th><th>Slant m</th><th>Horizontal m</th><th>Bearing°</th><th>Up m</th><th>Closure m/s</th></tr></thead><tbody>{result.samples.slice(0, 250).map((sample) => <tr key={`${sample.referenceIndex}-${sample.targetIndex}`}><td><button type="button" className="link-button" aria-label={`Select reference point ${sample.referenceIndex}`} onClick={() => onSelectReferenceSample(referenceId, sample.referenceIndex)}>{sample.referenceIndex}</button></td><td>{sample.targetIndex}</td><td>{sample.derived ? 'interpolated' : 'observed'}</td><td>{format(sample.deltaTimeMs)}</td><td>{format(sample.slantRangeM)}</td><td>{format(sample.horizontalRangeM)}</td><td>{format(sample.bearingDeg)}</td><td>{format(sample.relativeUpM)}</td><td>{sample.closureRateMps === undefined ? '' : format(sample.closureRateMps)}</td></tr>)}</tbody></table></div>
           {result.samples.length > 250 && <div className="muted small">Showing the first 250 aligned samples.</div>}
@@ -131,10 +131,10 @@ function NumberField({ label, value, min, onChange }: { label: string; value: nu
   return <label className="num-field"><span>{label}</span><input type="number" min={min} value={value} onChange={(event) => onChange(Number(event.target.value))} /></label>
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
-  return <div className="metric-card"><span className="metric-label">{label}</span><strong className="mono">{value}</strong></div>
+function Metric({ label, value, title }: { label: string; value: string; title?: string }) {
+  return <div className="metric-card" title={title}><span className="metric-label">{label}</span><strong className="mono">{value}</strong></div>
 }
 
 function mean(values: number[]): number { return values.reduce((sum, value) => sum + value, 0) / values.length }
 function format(value: number | undefined): string { if (value === undefined) return 'n/a'; if (Math.abs(value) >= 1000) return value.toFixed(0); if (Math.abs(value) >= 10) return value.toFixed(1); return value.toFixed(2) }
-function downloadComparison(samples: readonly RelativePointSample[], referenceId: string, targetId: string): void { const url = URL.createObjectURL(new Blob([buildComparisonCsv(samples)], { type: 'text/csv;charset=utf-8' })); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `jddc-comparison-${referenceId.slice(0, 8)}-${targetId.slice(0, 8)}.csv`; anchor.click(); URL.revokeObjectURL(url) }
+function downloadComparison(samples: readonly RelativePointSample[], referenceId: string, targetId: string, drift: ClockDriftEstimate | undefined): void { const url = URL.createObjectURL(new Blob([buildComparisonCsv(samples, drift)], { type: 'text/csv;charset=utf-8' })); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `jddc-comparison-${referenceId.slice(0, 8)}-${targetId.slice(0, 8)}.csv`; anchor.click(); URL.revokeObjectURL(url) }
