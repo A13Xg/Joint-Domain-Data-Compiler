@@ -127,6 +127,18 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', warnBeforeUnload)
   }, [projectDirty])
 
+  // Signature of only the source-identity fields (id/sourceKind/sourceKey/status)
+  // of the fetchable overlay set. Opacity/visibility/zIndex changes (fired on
+  // every slider/checkbox interaction in MapOverlayPanel) must not appear in
+  // this signature — they're applied purely downstream in otherTracks/MapView
+  // and re-fetching+re-parsing the source file for them would freeze the
+  // renderer on a large overlay.
+  const overlaySignature = useMemo(() => workspace.mapOverlays.overlays
+    .filter((overlay) => (overlay.sourceKind === 'library' || overlay.sourceKind === 'bundled') && overlay.status !== 'missing')
+    .sort((a, b) => a.zIndex - b.zIndex)
+    .map((overlay) => `${overlay.id}|${overlay.sourceKind}|${overlay.sourceKey}|${overlay.status ?? 'ready'}`)
+    .join(','), [workspace.mapOverlays])
+
   useEffect(() => {
     if (!isDesktopKmlLibraryAvailable()) return
     let cancelled = false
@@ -156,7 +168,8 @@ export default function App() {
       }
     })
     return () => { cancelled = true }
-  }, [workspace.mapOverlays])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on overlaySignature (source identity only) by design; see comment above
+  }, [overlaySignature])
 
   const flashToast = useCallback((message: string) => {
     setToast(message)
