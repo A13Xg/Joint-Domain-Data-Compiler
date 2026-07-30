@@ -24,7 +24,7 @@ function rejects(fn: () => unknown): boolean {
 }
 
 check('IPC channel names are unique', new Set(Object.values(IPC_CHANNELS)).size === Object.keys(IPC_CHANNELS).length)
-check('IPC surface exposes only the expected six operations', Object.keys(IPC_CHANNELS).sort().join(',') === 'list,readText,remove,reveal,save,saveDiagnostics')
+check('IPC surface exposes only the expected seven operations', Object.keys(IPC_CHANNELS).sort().join(',') === 'list,readText,remove,reseed,reveal,save,saveDiagnostics')
 check('Exact development origin is allowed', isAllowedAppUrl(DEV_ORIGIN, true))
 check('Development origin paths are allowed', isAllowedAppUrl(`${DEV_ORIGIN}/index.html`, true))
 check('Lookalike development origins are blocked', !isAllowedAppUrl(`${DEV_ORIGIN}.attacker.invalid`, true))
@@ -44,6 +44,7 @@ check('Sibling path prefix traversal is reduced into the library', resolveLibrar
 const mainProcessSource = readFileSync(resolve(process.cwd(), 'electron/main.cjs'), 'utf8')
 check('Desktop app removes Electron default menu bar', /Menu\.setApplicationMenu\(null\)/.test(mainProcessSource))
 check('KMZ decompression has a bounded output limit', mainProcessSource.includes('inflateRawSync(payload, { maxOutputLength: MAX_KML_LIBRARY_BYTES })'))
+check('Bundled seed reset has an explicit IPC handler', mainProcessSource.includes('IPC_CHANNELS.reseed') && mainProcessSource.includes('seedKmlLibrary(kmlSeedDirectory(), dir)'))
 
 check('ArrayBuffer IPC payload is accepted', ipcBytes(new Uint8Array([1, 2, 3]).buffer).equals(Buffer.from([1, 2, 3])))
 check('Typed-array view bounds are preserved', ipcBytes(new Uint8Array([9, 1, 2, 8]).subarray(1, 3)).equals(Buffer.from([1, 2])))

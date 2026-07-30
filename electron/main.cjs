@@ -65,13 +65,16 @@ function kmlLibraryDir() {
   return path.join(app.getPath('userData'), 'KML-KMZ')
 }
 
+function kmlSeedDirectory() {
+  return isDev
+    ? path.resolve(process.cwd(), 'KML-KMZ')
+    : path.join(process.resourcesPath, 'kml-seed')
+}
+
 function ensureKmlLibraryDir() {
   const dir = kmlLibraryDir()
   fs.mkdirSync(dir, { recursive: true })
-  const seedDirectory = isDev
-    ? path.resolve(process.cwd(), 'KML-KMZ')
-    : path.join(process.resourcesPath, 'kml-seed')
-  seedKmlLibrary(seedDirectory, dir)
+  seedKmlLibrary(kmlSeedDirectory(), dir)
   return dir
 }
 
@@ -168,6 +171,20 @@ function registerKmlLibraryIpc() {
   ipcMain.handle(IPC_CHANNELS.remove, async (_event, name) => {
     fs.rmSync(libraryPath(name), { force: true })
     return true
+  })
+
+  // Explicit "Reset bundled seed" action. Copies any bundled KML/KMZ seed
+  // files that are missing from the library folder back in, without
+  // overwriting user files (see `kml-seed.cjs`). This is idempotent and
+  // returns the filenames it actually restored, if any. Previously this
+  // button relied only on the side effect of `ensureKmlLibraryDir` running
+  // inside the `list` handler above; that coupling still exists (every
+  // handler in this file re-seeds via `ensureKmlLibraryDir`/`libraryPath`),
+  // but this channel makes reseeding an explicit, directly callable action.
+  ipcMain.handle(IPC_CHANNELS.reseed, async () => {
+    const dir = kmlLibraryDir()
+    fs.mkdirSync(dir, { recursive: true })
+    return seedKmlLibrary(kmlSeedDirectory(), dir)
   })
 
   ipcMain.handle(IPC_CHANNELS.reveal, async () => {
