@@ -65,6 +65,8 @@ export interface SelectedPointOverride {
 
 export interface FusedPointDecision {
   groupId: string
+  /** Representative group time retained for durable timeline evidence. */
+  groupTimeMs?: number
   chosenSourceId: string
   chosenSourceIndex: number
   skippedSourceIds: string[]
@@ -163,12 +165,16 @@ export function validateCandidateGroup(input: { id: unknown; entityId: unknown; 
 
 export function validateFusedPointDecision(input: {
   groupId: unknown
+  groupTimeMs?: unknown
   chosenSourceId: unknown
   chosenSourceIndex: unknown
   skippedSourceIds: unknown
   reason: unknown
   confidence: unknown
 }): FusedPointDecision {
+  if (input.groupTimeMs !== undefined && (typeof input.groupTimeMs !== 'number' || !Number.isFinite(input.groupTimeMs))) {
+    throw new FusionValidationError('FusedPointDecision.groupTimeMs must be a finite number when present')
+  }
   if (typeof input.chosenSourceIndex !== 'number' || !Number.isInteger(input.chosenSourceIndex) || input.chosenSourceIndex < 0) {
     throw new FusionValidationError('FusedPointDecision.chosenSourceIndex must be a non-negative integer')
   }
@@ -180,10 +186,33 @@ export function validateFusedPointDecision(input: {
   }
   return {
     groupId: requireString(input.groupId, 'FusedPointDecision.groupId'),
+    ...(input.groupTimeMs === undefined ? {} : { groupTimeMs: input.groupTimeMs }),
     chosenSourceId: requireString(input.chosenSourceId, 'FusedPointDecision.chosenSourceId'),
     chosenSourceIndex: input.chosenSourceIndex,
     skippedSourceIds: [...input.skippedSourceIds],
     reason: requireString(input.reason, 'FusedPointDecision.reason'),
     confidence: input.confidence,
+  }
+}
+
+/** Validate operator overrides against the groups and sources for this run. */
+export function validateFusionOverrides(
+  options: { pointOverrides?: readonly SelectedPointOverride[]; intervalOverrides?: readonly SelectedIntervalOverride[] },
+  groups: readonly CandidateGroup[],
+  sources: readonly SourceRegistration[],
+): void {
+  const sourceIds = new Set(sources.map((source) => source.id))
+  const groupById = new Map(groups.map((group) => [group.id, group]))
+  for (const override of options.pointOverrides ?? []) {
+    if (override.entityId !== (groups[0]?.entityId ?? override.entityId)) throw new FusionValidationError(`Point override ${override.groupId} has a mismatched entity`)
+    const group = groupById.get(override.groupId)
+    if (!group) throw new FusionValidationError(`Point override references unknown group "${override.groupId}"`)
+    if (!sourceIds.has(override.sourceId)) throw new FusionValidationError(`Point override references unknown source "${override.sourceId}"`)
+    if (!group.candidates.some((candidate) => candidate.sourceId === override.sourceId)) throw new FusionValidationError(`Point override source "${override.sourceId}" is not present in group "${override.groupId}"`)
+  }
+  for (const override of options.intervalOverrides ?? []) {
+    if (override.entityId !== (groups[0]?.entityId ?? override.entityId)) throw new FusionValidationError(`Interval override has a mismatched entity`)
+    if (!sourceIds.has(override.sourceId)) throw new FusionValidationError(`Interval override references unknown source "${override.sourceId}"`)
+    if (!Number.isFinite(override.startMs) || !Number.isFinite(override.endMs) || override.startMs > override.endMs) throw new FusionValidationError('Interval override range must have finite times with start at or before end')
   }
 }

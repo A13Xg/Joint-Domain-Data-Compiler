@@ -21,6 +21,7 @@ export interface OperationRecord<TParams = unknown> {
 
 export interface Recipe {
   schemaVersion: 1
+  kind?: 'named' | 'operation-history'
   id: string
   name: string
   createdAt: number

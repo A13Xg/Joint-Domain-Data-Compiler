@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 const {
@@ -23,11 +24,13 @@ function rejects(fn: () => unknown): boolean {
 }
 
 check('IPC channel names are unique', new Set(Object.values(IPC_CHANNELS)).size === Object.keys(IPC_CHANNELS).length)
-check('IPC surface exposes only the expected six operations', Object.keys(IPC_CHANNELS).sort().join(',') === 'list,readText,remove,reveal,save,saveDiagnostics')
+check('IPC surface exposes only the expected seven operations', Object.keys(IPC_CHANNELS).sort().join(',') === 'list,readText,remove,reseed,reveal,save,saveDiagnostics')
 check('Exact development origin is allowed', isAllowedAppUrl(DEV_ORIGIN, true))
 check('Development origin paths are allowed', isAllowedAppUrl(`${DEV_ORIGIN}/index.html`, true))
 check('Lookalike development origins are blocked', !isAllowedAppUrl(`${DEV_ORIGIN}.attacker.invalid`, true))
-check('Packaged file URLs are allowed', isAllowedAppUrl('file:///opt/jddc/dist/index.html', false))
+const packagedRendererUrl = 'file:///opt/jddc/dist/index.html'
+check('Packaged renderer URL is allowed', isAllowedAppUrl(packagedRendererUrl, false, packagedRendererUrl))
+check('Other packaged file URLs are blocked', !isAllowedAppUrl('file:///tmp/attacker.html', false, packagedRendererUrl))
 check('Packaged web navigation is blocked', !isAllowedAppUrl('https://example.test', false))
 
 check('Valid KML filename is preserved', safeLibraryName('Track 1.kml') === 'Track 1.kml')
@@ -37,6 +40,11 @@ check('Non-string library filename is rejected', rejects(() => safeLibraryName({
 const libraryDirectory = resolve(process.cwd(), '.test-build', 'jddc-library')
 check('Resolved library path remains inside its directory', resolveLibraryPath(libraryDirectory, '../track.kml') === join(libraryDirectory, 'track.kml'))
 check('Sibling path prefix traversal is reduced into the library', resolveLibraryPath(libraryDirectory, '../jddc-library-escape/track.kml') === join(libraryDirectory, 'track.kml'))
+
+const mainProcessSource = readFileSync(resolve(process.cwd(), 'electron/main.cjs'), 'utf8')
+check('Desktop app removes Electron default menu bar', /Menu\.setApplicationMenu\(null\)/.test(mainProcessSource))
+check('KMZ decompression has a bounded output limit', mainProcessSource.includes('inflateRawSync(payload, { maxOutputLength: MAX_KML_LIBRARY_BYTES })'))
+check('Bundled seed reset has an explicit IPC handler', mainProcessSource.includes('IPC_CHANNELS.reseed') && mainProcessSource.includes('seedKmlLibrary(kmlSeedDirectory(), dir)'))
 
 check('ArrayBuffer IPC payload is accepted', ipcBytes(new Uint8Array([1, 2, 3]).buffer).equals(Buffer.from([1, 2, 3])))
 check('Typed-array view bounds are preserved', ipcBytes(new Uint8Array([9, 1, 2, 8]).subarray(1, 3)).equals(Buffer.from([1, 2])))

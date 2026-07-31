@@ -8,14 +8,15 @@ const IPC_CHANNELS = Object.freeze({
   save: 'kml-library:save',
   readText: 'kml-library:read-text',
   remove: 'kml-library:remove',
+  reseed: 'kml-library:reseed',
   reveal: 'kml-library:reveal',
   saveDiagnostics: 'diagnostics:save',
 })
 
-function isAllowedAppUrl(url, isDev) {
+function isAllowedAppUrl(url, isDev, packagedRendererUrl) {
   if (typeof url !== 'string') return false
   if (isDev) return url === DEV_ORIGIN || url.startsWith(`${DEV_ORIGIN}/`)
-  return url.startsWith('file://')
+  return typeof packagedRendererUrl === 'string' && url === packagedRendererUrl
 }
 
 function safeLibraryName(name) {

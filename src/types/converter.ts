@@ -48,10 +48,33 @@ export interface DetectedColumn {
 
 export type CsvSampleRow = Record<string, string>
 
+export interface CsvHeaderInference {
+  confidence: 'high' | 'medium' | 'low'
+  reason: string
+}
+
+/** Mirrors core/parsers/csvPreview.ts's HeaderInferenceResult, duplicated here
+ *  (rather than imported) so this module stays free of a dependency on the
+ *  parsers subtree; csvAnalysis.ts is responsible for keeping the shapes in
+ *  sync. */
+export interface CsvRowOneInference {
+  inferred: boolean
+  confidence: 'high' | 'medium' | 'low' | 'ambiguous'
+  reasons: string[]
+}
+
 export interface CsvAnalysisResult {
   delimiter: string
   rowCountSampled: number
   dataStartRow: number
   sampleRows: CsvSampleRow[]
+  rawPreviewRows: string[][]
+  headerInference: CsvHeaderInference
+  /** Independent, bounded row-1-only verdict from csvPreview's
+   *  inferHeaderRowFromRows, sampled over the same rawPreviewRows. Additive
+   *  evidence alongside `headerInference` — the two can legitimately
+   *  disagree (they use different heuristics/scopes), so both are surfaced
+   *  to the user rather than one silently overriding the other. */
+  rowOneInference: CsvRowOneInference
   columns: DetectedColumn[]
 }

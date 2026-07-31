@@ -19,6 +19,7 @@ export interface JointDomainCompilerDesktopApi {
     save: (name: string, bytes: ArrayBuffer) => Promise<KmlLibraryEntry>
     readText: (name: string) => Promise<KmlTextResult>
     remove: (name: string) => Promise<boolean>
+    reseed: () => Promise<string[]>
     reveal: () => Promise<string>
   }
   diagnostics?: {

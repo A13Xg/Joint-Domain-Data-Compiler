@@ -54,10 +54,23 @@ automates that distinction.
 
 ## Current constraints and manual gates
 
-Native packaged launch tests are defined for Linux, Windows, and macOS. Linux is locally proven;
-Windows/macOS still require a successful native Actions run, currently prevented by the
-repository payment/spending-limit state. macOS signing/notarization remains manual and requires
-owner-provided credentials. Windows signing is opportunistic: repository credentials are used
-when available, while their absence produces a verified unsigned build. Tagged releases receive
-GitHub/Sigstore build-provenance attestations. Record every manual result or omission in the
-release notes, and never convert an omitted or runner-blocked gate into a pass.
+Native packaged launch tests are defined for Linux, Windows, and macOS. The following local
+Windows evidence was refreshed on 2026-07-28:
+
+- `npm run build:desktop:win` produced one NSIS installer and one portable x64 executable.
+- `npm run check:desktop:win` confirmed the packaged renderer mounted the JDDC workbench, not
+  merely a native window.
+- A local `npm sbom --sbom-format=cyclonedx` Windows SBOM was generated and validated as a
+  CycloneDX document.
+- Browser E2E verifies the browser build explicitly discloses that persistent KML/KMZ library
+  storage and map overlays are desktop-only; Electron IPC and overlay-state harnesses cover the
+  corresponding desktop contract.
+
+These results do **not** constitute a complete release bundle: Linux/macOS artifacts, their SBOMs,
+the aggregate `SHA256SUMS.txt`, and GitHub provenance attestation can only be verified after the
+matrix workflow runs. That workflow is currently blocked by the repository payment/spending-limit
+state. macOS signing/notarization also remains manual and requires owner-provided credentials.
+Windows signing is opportunistic: repository credentials are used when available, while their
+absence produces a verified unsigned build. Tagged releases receive GitHub/Sigstore
+build-provenance attestations. Record every manual result or omission in the release notes, and
+never convert an omitted or runner-blocked gate into a pass.

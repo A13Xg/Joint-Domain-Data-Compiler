@@ -176,7 +176,11 @@ export function escapeXml(input: string): string {
 /** Trim trailing zeros from a fixed-precision number to keep files compact. */
 export function trimNumber(value: number, maxDecimals: number): string {
   if (!Number.isFinite(value)) return '0'
-  const fixed = value.toFixed(maxDecimals)
+  // toFixed throws a RangeError outside [0, 100]; clamp defensively so a
+  // caller-supplied precision (e.g. GPX export coordinate precision) can
+  // never crash formatting even if it bypasses upstream validation.
+  const decimals = Math.min(100, Math.max(0, Math.trunc(maxDecimals)))
+  const fixed = value.toFixed(decimals)
   return fixed.includes('.') ? fixed.replace(/\.?0+$/, '') : fixed
 }
 

@@ -53,7 +53,9 @@ export function computeStats(dataset: Dataset): DatasetStats {
   let prevEle: number | null = null
   let prev: TrackPoint | null = null
 
-  const speeds: number[] = []
+  let speedCount = 0
+  let speedSum = 0
+  let speedMax = -Infinity
 
   for (const p of points) {
     const coordOk = isValidLat(p.lat) && isValidLon(p.lon)
@@ -86,7 +88,12 @@ export function computeStats(dataset: Dataset): DatasetStats {
       if (d === 0) duplicateCoords++
       if (p.time !== undefined && prev.time !== undefined) {
         const dt = (p.time - prev.time) / 1000
-        if (dt > 0) speeds.push(d / dt)
+        if (dt > 0) {
+          const speed = d / dt
+          speedCount++
+          speedSum += speed
+          speedMax = Math.max(speedMax, speed)
+        }
       }
     }
     if (coordOk) prev = p
@@ -97,10 +104,10 @@ export function computeStats(dataset: Dataset): DatasetStats {
     durationMs && durationMs > 0 && withTime > 1 ? (withTime - 1) / (durationMs / 1000) : null
 
   const speedStats =
-    speeds.length > 0
+    speedCount > 0
       ? {
-          maxMps: Math.max(...speeds),
-          meanMps: speeds.reduce((a, b) => a + b, 0) / speeds.length,
+          maxMps: speedMax,
+          meanMps: speedSum / speedCount,
         }
       : null
 

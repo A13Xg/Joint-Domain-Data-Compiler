@@ -1,6 +1,6 @@
 // Tranche 6 Task 6.3 (core layer): Auto-Combine and the audit report.
 import type { CandidateGroup, SourceRegistration } from '../src/core/fusion/model.ts'
-import { validateCandidateGroup } from '../src/core/fusion/model.ts'
+import { FusionValidationError, validateCandidateGroup, validateFusionOverrides } from '../src/core/fusion/model.ts'
 import { autoCombine } from '../src/core/fusion/autoCombine.ts'
 import { buildFusionReport, fusionDecisionsToCsv, fusionReportToMarkdown, serializeFusionReportJson } from '../src/core/fusion/report.ts'
 
@@ -32,6 +32,20 @@ function group(id: string, groupTimeMs: number, candidates: Array<{ sourceId: st
   check('Fused point records its source in ext', result.points[0]?.ext?.fused_source === 'gps')
 }
 
+// --- Override validation ---------------------------------------------------
+{
+  const groups = [group('g0', 1000, [{ sourceId: 'gps', time: 1000 }, { sourceId: 'ins', time: 1000 }])]
+  let rejected = false
+  try { validateFusionOverrides({ pointOverrides: [{ entityId: 'e1', groupId: 'g0', sourceId: 'missing' }] }, groups, sources) } catch (error) { rejected = error instanceof FusionValidationError }
+  check('Override validation rejects an unknown source', rejected)
+  rejected = false
+  try { validateFusionOverrides({ intervalOverrides: [{ entityId: 'e1', sourceId: 'gps', startMs: 2000, endMs: 1000 }] }, groups, sources) } catch (error) { rejected = error instanceof FusionValidationError }
+  check('Override validation rejects a reversed interval range', rejected)
+  rejected = false
+  try { autoCombine(groups, sources, { pointOverrides: [{ entityId: 'e1', groupId: 'missing', sourceId: 'gps' }] }) } catch (error) { rejected = error instanceof FusionValidationError }
+  check('Auto-Combine validates override groups before producing output', rejected)
+}
+
 // --- Single-candidate group: maximal confidence, nothing skipped -----------
 {
   const groups = [group('g0', 1000, [{ sourceId: 'ins', time: 1000 }])]
@@ -51,8 +65,9 @@ function group(id: string, groupTimeMs: number, candidates: Array<{ sourceId: st
 {
   // Override references a source not present in this particular group — falls back to scoring.
   const groups = [group('g0', 1000, [{ sourceId: 'gps', time: 1000 }])]
-  const result = autoCombine(groups, sources, { pointOverrides: [{ entityId: 'e1', groupId: 'g0', sourceId: 'missing-source' }] })
-  check('An override for an absent source falls back to normal scoring', result.decisions[0]?.chosenSourceId === 'gps' && !/manual/.test(result.decisions[0]?.reason ?? ''))
+  let rejected = false
+  try { autoCombine(groups, sources, { pointOverrides: [{ entityId: 'e1', groupId: 'g0', sourceId: 'ins' }] }) } catch { rejected = true }
+  check('An override for an absent source is rejected', rejected)
 }
 
 // --- Interval override applies to every group within its time window -------

@@ -1,0 +1,67 @@
+import type { FusedPointDecision, SelectedIntervalOverride, SelectedPointOverride, SourceRegistration } from './model'
+import type { FusionReport } from './report'
+import type { FusionCompatibility } from '../metadataCompatibility'
+
+/** Durable, manifest-serializable provenance for one fusion run. */
+export interface FusionArtifact {
+  id: string
+  entityId: string
+  fusedDatasetId: string
+  /** Deterministic bindings captured at fusion time; absent only on legacy archives. */
+  sourceDatasetHashes?: Record<string, string>
+  fusedDatasetHash?: string
+  sourceRegistrations: SourceRegistration[]
+  timeToleranceMs: number
+  pointOverrides: SelectedPointOverride[]
+  intervalOverrides: SelectedIntervalOverride[]
+  decisions: FusedPointDecision[]
+  report: FusionReport
+  createdAt: number
+  /** Compatibility evidence captured before auto-combine (optional for legacy artifacts). */
+  compatibility?: FusionCompatibility
+}
+
+export function validateFusionArtifact(value: unknown): asserts value is FusionArtifact {
+  if (!isRecord(value)) throw new Error('Fusion artifact must be an object')
+  requireText(value.id, 'fusion artifact id')
+  requireText(value.entityId, 'fusion artifact entity id')
+  requireText(value.fusedDatasetId, 'fusion artifact fused dataset id')
+  if (!Array.isArray(value.sourceRegistrations) || value.sourceRegistrations.length < 2) throw new Error('Fusion artifact requires at least two source registrations')
+  if (!Array.isArray(value.decisions)) throw new Error('Fusion artifact decisions must be an array')
+  if (value.pointOverrides !== undefined && !Array.isArray(value.pointOverrides)) throw new Error('Fusion artifact point overrides must be an array')
+  if (value.intervalOverrides !== undefined && !Array.isArray(value.intervalOverrides)) throw new Error('Fusion artifact interval overrides must be an array')
+  const timeToleranceMs = value.timeToleranceMs
+  if (typeof timeToleranceMs !== 'number' || !Number.isFinite(timeToleranceMs) || timeToleranceMs < 1 || timeToleranceMs > 86_400_000) throw new Error('Fusion artifact time tolerance must be between 1 and 86400000 ms')
+  if (!Number.isFinite(value.createdAt)) throw new Error('Fusion artifact createdAt must be finite')
+  if ((value.sourceDatasetHashes === undefined) !== (value.fusedDatasetHash === undefined)) throw new Error('Fusion artifact dataset bindings must be complete')
+  if (value.sourceDatasetHashes !== undefined && (!isRecord(value.sourceDatasetHashes) || typeof value.fusedDatasetHash !== 'string' || !value.fusedDatasetHash.trim() || !Object.values(value.sourceDatasetHashes).every((hash) => typeof hash === 'string' && hash.trim()))) throw new Error('Fusion artifact dataset bindings are invalid')
+  if (!isRecord(value.report) || value.report.totalGroups !== value.decisions.length) throw new Error('Fusion artifact report totalGroups must match decisions')
+  const sourceIds = new Set<string>()
+  const datasetIds = new Set<string>()
+  for (const source of value.sourceRegistrations) {
+    if (!isRecord(source)) throw new Error('Fusion artifact source registration must be an object')
+    requireText(source.id, 'fusion source id'); requireText(source.datasetId, 'fusion source dataset id')
+    if (sourceIds.has(source.id) || datasetIds.has(source.datasetId)) throw new Error('Fusion artifact source registrations must be unique')
+    sourceIds.add(source.id); datasetIds.add(source.datasetId)
+    if (value.sourceDatasetHashes !== undefined && typeof value.sourceDatasetHashes[source.id] !== 'string') throw new Error('Fusion artifact is missing a source dataset binding')
+  }
+  for (const override of [...(value.pointOverrides ?? []), ...(value.intervalOverrides ?? [])]) {
+    if (!isRecord(override) || typeof override.entityId !== 'string' || override.entityId !== value.entityId || typeof override.sourceId !== 'string' || !sourceIds.has(override.sourceId)) throw new Error('Fusion artifact override references an invalid source or entity')
+  }
+  for (const override of value.pointOverrides ?? []) {
+    if (typeof override.groupId !== 'string' || !override.groupId.trim()) throw new Error('Fusion artifact point override groupId is required')
+  }
+  for (const override of value.intervalOverrides ?? []) {
+    if (!Number.isFinite(override.startMs) || !Number.isFinite(override.endMs) || override.startMs > override.endMs) throw new Error('Fusion artifact interval override range is invalid')
+  }
+  for (const decision of value.decisions) {
+    if (!isRecord(decision) || typeof decision.chosenSourceId !== 'string' || !sourceIds.has(decision.chosenSourceId)) throw new Error('Fusion artifact decision references an unknown source')
+    if (decision.groupTimeMs !== undefined && (typeof decision.groupTimeMs !== 'number' || !Number.isFinite(decision.groupTimeMs))) throw new Error('Fusion artifact decision group time must be finite')
+    if (!Array.isArray(decision.skippedSourceIds) || !decision.skippedSourceIds.every((sourceId) => typeof sourceId === 'string' && sourceIds.has(sourceId))) {
+      throw new Error('Fusion artifact decision skips an unknown source')
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value) }
+function requireText(value: unknown, label: string): asserts value is string { if (typeof value !== 'string' || !value.trim()) throw new Error(`${label} is required`) }

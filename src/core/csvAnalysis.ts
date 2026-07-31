@@ -11,54 +11,20 @@ import {
   type DetectedColumn,
   type KnownField,
 } from '../types/converter'
+import {
+  detectDataStartRow,
+  inferHeaderRowFromRows,
+  MAX_HEADER_ROWS,
+  parseDateLike,
+  parseNumber,
+} from './parsers/csvPreview'
 
-export const MAX_HEADER_ROWS = 5
-
-/** Lenient numeric test used for header/data discrimination and stats.
- *  Intentionally simpler than format.parseNumber (no DMS) so header words
- *  never read as numbers. */
-function parseNumber(value: string | undefined): number | null {
-  if (!value) {
-    return null
-  }
-
-  const trimmed = value.trim()
-  if (!trimmed) {
-    return null
-  }
-
-  const normalized = /^-?\d+,\d+$/.test(trimmed)
-    ? trimmed.replace(',', '.')
-    : trimmed.replaceAll(',', '')
-  const parsed = Number(normalized)
-  return Number.isFinite(parsed) ? parsed : null
-}
-
-function parseDateLike(value: string): number | null {
-  const direct = new Date(value)
-  if (!Number.isNaN(direct.valueOf())) {
-    return direct.valueOf()
-  }
-
-  const numeric = Number(value)
-  if (!Number.isFinite(numeric)) {
-    return null
-  }
-
-  if (numeric > 1000000000000 && numeric < 9000000000000) {
-    return numeric
-  }
-
-  if (numeric > 1000000000 && numeric < 9000000000) {
-    return numeric * 1000
-  }
-
-  if (numeric > 25569 && numeric < 70000) {
-    return (numeric - 25569) * 86400 * 1000
-  }
-
-  return null
-}
+// Header-row-count detection (detectDataStartRow) and its numeric-ratio
+// primitives (parseNumber, parseDateLike, MAX_HEADER_ROWS) now live in
+// ./parsers/csvPreview.ts, which also exposes the plan-specified bounded
+// `inferHeaderRow`/`inferHeaderRowFromRows` preview API. Re-exported here so
+// existing call sites that import them from csvAnalysis keep working.
+export { detectDataStartRow, MAX_HEADER_ROWS }
 
 function detectPatterns(values: string[], header: string): string[] {
   const patterns = new Set<string>()
@@ -270,46 +236,6 @@ function scoreByValues(values: string[], field: KnownField): number {
   return descriptive / nonEmpty.length
 }
 
-function rowNumericRatio(row: string[]): number | null {
-  const nonEmpty = row.filter((cell) => cell.trim().length > 0)
-  if (nonEmpty.length === 0) return null
-  return nonEmpty.filter((cell) => parseNumber(cell) !== null).length / nonEmpty.length
-}
-
-/** Numericness typical of this file's data rows, sampled well clear of any
- *  plausible header block. Null when the file is too short to judge. */
-function dataNumericBaseline(rawRows: string[][]): number | null {
-  const start = MAX_HEADER_ROWS
-  const ratios: number[] = []
-  for (let i = start; i < Math.min(rawRows.length, start + 50); i++) {
-    const r = rowNumericRatio(rawRows[i])
-    if (r !== null) ratios.push(r)
-  }
-  if (ratios.length < 3) return null
-  ratios.sort((a, b) => a - b)
-  return ratios[Math.floor(ratios.length / 2)]
-}
-
-/** Walk up to MAX_HEADER_ROWS leading rows; count how many look like headers.
- *
- *  Row 0 only needs to be mostly non-numeric (mirrors the classic
- *  one-header-row assumption; returns 0 for headerless all-numeric files).
- *  Rows 1+ must ALSO be markedly less numeric than the file's data baseline,
- *  so text-heavy datasets (names, remarks) don't get leading data rows
- *  swallowed as extra header rows. */
-export function detectDataStartRow(rawRows: string[][]): number {
-  const limit = Math.min(MAX_HEADER_ROWS, rawRows.length)
-  const baseline = dataNumericBaseline(rawRows)
-  let count = 0
-  for (let i = 0; i < limit; i++) {
-    const ratio = rowNumericRatio(rawRows[i])
-    if (ratio === null || ratio >= 0.5) break // blank or data-like: header block ends
-    if (i > 0 && baseline !== null && baseline - ratio < 0.3) break
-    count++
-  }
-  return count
-}
-
 function buildHeaderCandidatesForColumn(
   rawRows: string[][],
   colIndex: number,
@@ -430,11 +356,26 @@ export function analyzeRawRows(
   const columns = buildColumns(rawRows, dataStartRow)
   const dataRows = rawRows.slice(dataStartRow)
 
+  // Independent, bounded row-1-only signal from csvPreview.ts (the module
+  // built specifically to explain "does row 1 look like a header?" with
+  // confidence + reasons). Computed alongside the header-BLOCK sizing above
+  // rather than replacing it — the two heuristics answer related but
+  // distinct questions (block size vs. row-1 verdict) and can disagree.
+  const rowOneInference = inferHeaderRowFromRows(rawRows)
+
   return {
     delimiter,
     rowCountSampled: dataRows.length,
     dataStartRow,
     sampleRows: normalizeRows(dataRows, columns),
+    rawPreviewRows: rawRows.slice(0, 20).map((row) => [...row]),
+    headerInference: {
+      confidence: rawRows.length < 3 ? 'low' : dataStartRow === 0 ? 'medium' : 'high',
+      reason: dataStartRow === 0
+        ? 'Leading rows look data-like, so no header row was inferred.'
+        : `${dataStartRow} leading row${dataStartRow === 1 ? '' : 's'} looked less numeric than the sampled data rows.`,
+    },
+    rowOneInference,
     columns,
   }
 }

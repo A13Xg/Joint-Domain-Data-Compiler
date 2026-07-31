@@ -7,6 +7,8 @@ import { epochMsToIso } from '../core/format'
 import { DEFAULT_QUALITY_EVENT_CONFIG, detectQualityEvents } from '../core/quality/events'
 import { usePointSelection } from '../state/pointSelection'
 import type { WorkspaceState } from '../state/workspace'
+import type { MapOverlayState } from '../state/mapOverlays'
+import { MapOverlayPanel } from './MapOverlayPanel'
 
 type DisplayMode = 'both' | 'path' | 'points'
 type BasemapMode = 'osm' | 'none'
@@ -18,6 +20,8 @@ export interface OtherTrack {
   name: string
   color: string
   points: TrackPoint[]
+  /** Line opacity override, used by KML/KMZ map overlays (Task 1.4); other visible datasets keep the default. */
+  opacity?: number
 }
 
 function FitBounds({ positions, request }: { positions: LatLngTuple[]; request: number }) {
@@ -42,7 +46,9 @@ function gradientColor(value: number): string {
 
 function downsample<T>(values: T[], maxPoints: number): T[] {
   if (values.length <= maxPoints) return values
-  const step = Math.ceil(values.length / maxPoints)
+  // Reserve one slot for the final point so the render budget is a strict
+  // maximum rather than maxPoints plus a trailing endpoint.
+  const step = Math.ceil((values.length - 1) / (maxPoints - 1))
   const sampled = values.filter((_, index) => index % step === 0)
   if (sampled[sampled.length - 1] !== values[values.length - 1]) sampled.push(values[values.length - 1]!)
   return sampled
@@ -50,7 +56,16 @@ function downsample<T>(values: T[], maxPoints: number): T[] {
 
 type BasemapStatus = 'unknown' | 'loaded' | 'error'
 
-export function MapView({ points, channels, workspace, onWorkspaceChange, otherTracks = [] }: { points: TrackPoint[]; channels: string[]; workspace: WorkspaceState['map']; onWorkspaceChange: (next: WorkspaceState['map']) => void; otherTracks?: OtherTrack[] }) {
+export function MapView({ points, channels, workspace, onWorkspaceChange, otherTracks = [], overlayState, onOverlayStateChange, onImportOverlayAsTrack }: {
+  points: TrackPoint[]
+  channels: string[]
+  workspace: WorkspaceState['map']
+  onWorkspaceChange: (next: WorkspaceState['map']) => void
+  otherTracks?: OtherTrack[]
+  overlayState: MapOverlayState
+  onOverlayStateChange: (next: MapOverlayState) => void
+  onImportOverlayAsTrack: (name: string, text: string, sourceBytes?: number) => void
+}) {
   const { displayMode: mode, colorBy, basemap, maxGapMinutes } = workspace
   const [fitRequest, setFitRequest] = useState(0)
   const [fitSelection, setFitSelection] = useState(false)
@@ -91,8 +106,9 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
   const otherTrackLayers = useMemo(() => otherTracks.map((track) => {
     const validPoints = track.points.filter((point) => isValidLat(point.lat) && isValidLon(point.lon))
     const sampled = downsample(validPoints, MAX_RENDER_POINTS)
-    return { id: track.id, name: track.name, color: track.color, positions: sampled.map((point): LatLngTuple => [point.lat, point.lon]) }
+    return { id: track.id, name: track.name, color: track.color, opacity: track.opacity, positions: sampled.map((point): LatLngTuple => [point.lat, point.lon]) }
   }), [otherTracks])
+  const mapPositions = positions.length > 0 ? positions : otherTrackLayers.flatMap((track) => track.positions)
 
   const fitPositions = fitSelection && selectionPositions.length > 0
     ? selectionPositions
@@ -106,10 +122,20 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
     return values.length > 0 ? { min: Math.min(...values), max: Math.max(...values) } : null
   }, [rendered, colorBy])
 
-  if (valid.length === 0) return <div className="map-empty">No valid coordinates to display.</div>
+  const overlayPanel = <MapOverlayPanel overlayState={overlayState} onOverlayStateChange={onOverlayStateChange} onImportAsTrack={onImportOverlayAsTrack} />
+
+  if (mapPositions.length === 0) {
+    return (
+      <div className="map-view">
+        {overlayPanel}
+        <div className="map-empty">No valid coordinates to display.</div>
+      </div>
+    )
+  }
 
   return (
     <div className="map-view">
+      {overlayPanel}
       <div className="map-toolbar">
         <label>display<select value={mode} onChange={(event) => onWorkspaceChange({ ...workspace, displayMode: event.target.value as DisplayMode })}><option value="both">Path + Points</option><option value="path">Path only</option><option value="points">Points only</option></select></label>
         <label>basemap<select value={basemap} onChange={(event) => onWorkspaceChange({ ...workspace, basemap: event.target.value as BasemapMode })}><option value="osm">OpenStreetMap</option><option value="none">offline grid</option></select></label>
@@ -127,9 +153,9 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
         {otherTrackLayers.length > 0 && <span className="map-legend map-other-tracks">other visible:{otherTrackLayers.map((track) => <span key={track.id} className="map-other-track-chip"><span className="chip-dot" style={{ background: track.color }} />{track.name}</span>)}</span>}
       </div>
       <div className="map-canvas-wrap">
-        <MapContainer center={positions[0]} zoom={10} className="map-canvas" scrollWheelZoom>
+        <MapContainer center={mapPositions[0]} zoom={10} className="map-canvas" scrollWheelZoom>
           {basemap === 'osm' && <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" eventHandlers={{ tileerror: () => setBasemapStatus('error'), tileload: () => setBasemapStatus('loaded') }} />}
-          {otherTrackLayers.map((track) => track.positions.length > 1 && <Polyline key={track.id} positions={track.positions} pathOptions={{ color: track.color, weight: 2, opacity: 0.6, dashArray: '1 4' }}><Tooltip>{track.name}</Tooltip></Polyline>)}
+          {otherTrackLayers.map((track) => track.positions.length > 1 && <Polyline key={track.id} positions={track.positions} pathOptions={{ color: track.color, weight: 2, opacity: track.opacity ?? 0.6, dashArray: '1 4' }}><Tooltip>{track.name}</Tooltip></Polyline>)}
           {mode !== 'points' && pathSegments.map((segment, index) => <Polyline key={index} positions={segment} pathOptions={{ color: indexRange ? '#64748b' : '#ea4f2f', weight: 2.5, opacity: indexRange ? 0.45 : 0.85 }} />)}
           {mode !== 'points' && selectionPositions.length > 1 && <Polyline positions={selectionPositions} pathOptions={{ color: '#facc15', weight: 5, opacity: 0.95 }} />}
           {qualityMarkers.map((event) => { const point = points[event.endIndex]!; const jump = event.kind === 'coordinate-jump'; return <CircleMarker key={event.id} center={[point.lat, point.lon]} radius={jump ? 7 : 5} pathOptions={{ color: jump ? '#ef4444' : '#f59e0b', fillColor: jump ? '#ef4444' : '#f59e0b', fillOpacity: 0.25, weight: 2, dashArray: jump ? '3 2' : undefined }}><Tooltip><strong>{event.kind === 'gap' ? 'Data gap' : 'Coordinate jump'}</strong><div>{event.explanation}</div></Tooltip></CircleMarker> })}

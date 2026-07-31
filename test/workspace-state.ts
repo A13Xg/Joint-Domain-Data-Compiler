@@ -19,6 +19,8 @@ const afterRemovingReference = normalizeWorkspaceState(beforeRemoval, new Set(['
 assert.equal(afterRemovingReference.comparison.referenceDatasetId, null, 'reference selector must clear when its dataset is removed')
 assert.equal(afterRemovingReference.comparison.targetDatasetId, 'b', 'an unaffected selector must survive reconciliation')
 assert.equal(afterRemovingReference.comparison.toleranceMs, 2000, 'unrelated settings must survive reconciliation unchanged')
+assert.equal(normalizeWorkspaceState({ comparison: { interpolateTarget: true } }, datasetIds).comparison.interpolateTarget, true, 'interpolation mode must persist')
+assert.equal(normalizeWorkspaceState({ comparison: {} }, datasetIds).comparison.interpolateTarget, false, 'legacy workspaces default to observed samples')
 const afterRemovingBoth = normalizeWorkspaceState(beforeRemoval, new Set())
 assert.equal(afterRemovingBoth.comparison.referenceDatasetId, null)
 assert.equal(afterRemovingBoth.comparison.targetDatasetId, null)

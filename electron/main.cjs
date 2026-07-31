@@ -1,6 +1,7 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require('electron')
 const fs = require('fs')
 const path = require('path')
+const { pathToFileURL } = require('url')
 const zlib = require('zlib')
 const { seedKmlLibrary } = require('./kml-seed.cjs')
 const {
@@ -14,6 +15,7 @@ const {
 } = require('./security.cjs')
 
 const isDev = !app.isPackaged
+const packagedRendererUrl = pathToFileURL(path.join(__dirname, '../dist/index.html')).href
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -38,7 +40,7 @@ function createWindow() {
   })
 
   window.webContents.on('will-navigate', (event, url) => {
-    if (!isAllowedAppUrl(url, isDev)) {
+    if (!isAllowedAppUrl(url, isDev, packagedRendererUrl)) {
       event.preventDefault()
       if (url.startsWith('https://')) void shell.openExternal(url)
     }
@@ -63,13 +65,16 @@ function kmlLibraryDir() {
   return path.join(app.getPath('userData'), 'KML-KMZ')
 }
 
+function kmlSeedDirectory() {
+  return isDev
+    ? path.resolve(process.cwd(), 'KML-KMZ')
+    : path.join(process.resourcesPath, 'kml-seed')
+}
+
 function ensureKmlLibraryDir() {
   const dir = kmlLibraryDir()
   fs.mkdirSync(dir, { recursive: true })
-  const seedDirectory = isDev
-    ? path.resolve(process.cwd(), 'KML-KMZ')
-    : path.join(process.resourcesPath, 'kml-seed')
-  seedKmlLibrary(seedDirectory, dir)
+  seedKmlLibrary(kmlSeedDirectory(), dir)
   return dir
 }
 
@@ -113,9 +118,17 @@ function firstKmlFromKmz(bytes) {
         const localNameLen = bytes.readUInt16LE(localOffset + 26)
         const localExtraLen = bytes.readUInt16LE(localOffset + 28)
         const start = localOffset + 30 + localNameLen + localExtraLen
+        if (start > bytes.length || compressedSize > bytes.length - start) throw new Error('KMZ compressed entry is truncated')
         const payload = bytes.subarray(start, start + compressedSize)
-        const content = method === 0 ? payload : method === 8 ? zlib.inflateRawSync(payload) : null
+        const content = method === 0
+          ? payload
+          : method === 8
+            ? zlib.inflateRawSync(payload, { maxOutputLength: MAX_KML_LIBRARY_BYTES })
+            : null
         if (!content) throw new Error(`Unsupported KMZ compression method ${method}`)
+        if (content.length > MAX_KML_LIBRARY_BYTES || content.length !== uncompressedSize) {
+          throw new Error('KMZ embedded KML size is invalid or exceeds safety limit')
+        }
         return { text: content.toString('utf8'), entryName, modifiedAt: dosDateTimeToMs(modifiedDate, modifiedTime) }
       }
       cursor += 46 + nameLen + extraLen + commentLen
@@ -160,6 +173,20 @@ function registerKmlLibraryIpc() {
     return true
   })
 
+  // Explicit "Reset bundled seed" action. Copies any bundled KML/KMZ seed
+  // files that are missing from the library folder back in, without
+  // overwriting user files (see `kml-seed.cjs`). This is idempotent and
+  // returns the filenames it actually restored, if any. Previously this
+  // button relied only on the side effect of `ensureKmlLibraryDir` running
+  // inside the `list` handler above; that coupling still exists (every
+  // handler in this file re-seeds via `ensureKmlLibraryDir`/`libraryPath`),
+  // but this channel makes reseeding an explicit, directly callable action.
+  ipcMain.handle(IPC_CHANNELS.reseed, async () => {
+    const dir = kmlLibraryDir()
+    fs.mkdirSync(dir, { recursive: true })
+    return seedKmlLibrary(kmlSeedDirectory(), dir)
+  })
+
   ipcMain.handle(IPC_CHANNELS.reveal, async () => {
     const dir = ensureKmlLibraryDir()
     await shell.openPath(dir)
@@ -182,6 +209,9 @@ function registerDiagnosticIpc() {
 }
 
 app.whenReady().then(() => {
+  // The workbench owns its visible navigation and commands. Remove Electron's
+  // default File/Edit/View/Window menu in both development and packaged builds.
+  Menu.setApplicationMenu(null)
   registerKmlLibraryIpc()
   registerDiagnosticIpc()
   createWindow()

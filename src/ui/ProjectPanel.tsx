@@ -3,12 +3,17 @@ import type { Dataset } from '../core/model'
 import { EMPTY_WORKSPACE_SELECTION } from '../core/selection'
 import { usePointSelection } from '../state/pointSelection'
 import type { WorkspaceState } from '../state/workspace'
+import { createReportOptions } from '../core/reports/options'
 import type { WorkspaceDisplay } from '../state/workspaceDisplay'
 import type { ProjectBookmark } from '../persistence/project/manifest'
 import { buildDiagnosticBundle, serializeDiagnosticBundle } from '../core/diagnostics/bundle'
 import { logger } from '../core/logger'
 import { buildHtmlAnalysisReport } from '../core/reports/htmlReport'
-import type { OperationRecord } from '../core/recipes/model'
+import type { ReportOptions } from '../core/reports/options'
+import { deriveDefaultReportTitle, sanitizeFilename } from '../core/reports/exportNaming'
+import { ReportExportDialog } from './ReportExportDialog'
+import type { OperationRecord, Recipe } from '../core/recipes/model'
+import type { FusionArtifact } from '../core/fusion/artifact'
 import {
   archiveSummary,
   buildProjectManifest,
@@ -29,19 +34,25 @@ interface Props {
   datasetDisplay: WorkspaceDisplay
   bookmarks: ProjectBookmark[]
   operationRecords: Record<string, OperationRecord[]>
+  namedRecipes: Record<string, Recipe[]>
+  fusionArtifacts: FusionArtifact[]
   projectName: string
+  projectNotes: string
   projectDirty: boolean
+  onWorkspaceChange: (workspace: WorkspaceState) => void
   onProjectNameChange: (name: string) => void
+  onProjectNotesChange: (notes: string) => void
   onProjectSaved: () => void
   onRestoreProject: (archive: ProjectArchive) => void
 }
 
-export function ProjectPanel({ datasets, histories, activeId, activeTab, workspace, datasetDisplay, bookmarks, operationRecords, projectName, projectDirty, onProjectNameChange, onProjectSaved, onRestoreProject }: Props) {
+export function ProjectPanel({ datasets, histories, activeId, activeTab, workspace, datasetDisplay, bookmarks, operationRecords, namedRecipes, fusionArtifacts, projectName, projectNotes, projectDirty, onWorkspaceChange, onProjectNameChange, onProjectNotesChange, onProjectSaved, onRestoreProject }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [diagnosticNote, setDiagnosticNote] = useState('')
+  const [reportDialogOpen, setReportDialogOpen] = useState(false)
   const activeDataset = datasets.find((dataset) => dataset.id === activeId) ?? null
   const activeSelection = usePointSelection(activeDataset?.points ?? EMPTY_POINTS)
 
@@ -59,9 +70,12 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
     datasetDisplay,
     bookmarks,
     operationRecords,
+    namedRecipes,
+    fusionArtifacts,
     projectName: projectName.trim() || undefined,
+    notes: projectNotes,
     applicationVersion: '0.1.0',
-  }), [datasets, activeId, activeTab, activeSelection.pointIndex, activeSelection.indexRange, projectName, workspace, datasetDisplay, bookmarks, operationRecords])
+  }), [datasets, activeId, activeTab, activeSelection.pointIndex, activeSelection.indexRange, projectName, projectNotes, workspace, datasetDisplay, bookmarks, operationRecords, namedRecipes, fusionArtifacts])
 
   const archive = useMemo(() => createProjectArchive({ manifest, datasets, histories }), [manifest, datasets, histories])
   const summary = useMemo(() => archiveSummary(archive), [archive])
@@ -86,17 +100,41 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
     setStatus('Exported the human-readable project manifest without embedded data.')
   }
 
-  const exportReport = () => {
+  const defaultReportTitle = deriveDefaultReportTitle(manifest.name)
+  const defaultReportFilename = safeName(`${manifest.name}-report`)
+
+  const confirmExportReport = ({ options, filename, remember }: { options: ReportOptions; filename: string; remember: boolean }) => {
+    // Only the most recently created fusion artifact's already-built report
+    // is surfaced (buildFusionSection renders a single report, not a
+    // multi-run aggregate). If the user has run fusion more than once, only
+    // the latest run appears here.
+    const latestFusionReport = fusionArtifacts.length > 0
+      ? [...fusionArtifacts].sort((a, b) => b.createdAt - a.createdAt)[0]!.report
+      : undefined
     const html = buildHtmlAnalysisReport({
-      title: `${manifest.name} — Analysis Report`,
+      title: options.title,
       generatedAt: Date.now(),
       applicationVersion: '0.1.0',
       datasets,
       bookmarks,
       operationRecords,
+      overlays: workspace.mapOverlays.overlays.map((overlay) => ({ id: overlay.id, name: overlay.name, sourceKind: overlay.sourceKind, visible: overlay.visible })),
+      fusion: latestFusionReport,
+      options,
     })
-    downloadBlob(new Blob([html], { type: 'text/html' }), `${safeName(manifest.name)}-report.html`)
-    setStatus('Exported a self-contained HTML analysis report. Open it in a browser to print or save as PDF.')
+    downloadBlob(new Blob([html], { type: 'text/html' }), `${sanitizeFilename(filename)}.html`)
+    // Task 3.3: only persist the chosen report options when the user
+    // explicitly checked "Remember these settings for this project" in the
+    // dialog. `createReportOptions` re-normalizes so only the narrow
+    // ReportOptions shape (never raw dataset/point data) is ever written
+    // into workspace/project persistence.
+    if (remember) {
+      onWorkspaceChange({ ...workspace, reportPreferences: createReportOptions(options) })
+    }
+    setReportDialogOpen(false)
+    setStatus(remember
+      ? 'Exported a self-contained HTML analysis report and remembered these settings for this project.'
+      : 'Exported a self-contained HTML analysis report. Open it in a browser to print or save as PDF.')
   }
 
   const exportDiagnostics = async () => {
@@ -158,10 +196,20 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
         <button type="button" className="export-btn" disabled={datasets.length === 0 || busy} onClick={() => void saveProject()}>{busy ? 'Working…' : 'Save complete project'}</button>
         <button type="button" disabled={busy} onClick={() => inputRef.current?.click()}>Open project</button>
         <button type="button" disabled={datasets.length === 0 || busy} onClick={exportManifest}>Export manifest only</button>
-        <button type="button" disabled={datasets.length === 0 || busy} onClick={exportReport}>Export HTML report</button>
+        <button type="button" disabled={datasets.length === 0 || busy} onClick={() => setReportDialogOpen(true)}>Export HTML report</button>
         <input ref={inputRef} className="hidden-input" type="file" accept=".jddc-project,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void openProject(file); event.target.value = '' }} />
       </div>
       <p className="muted small">A <code>.jddc-project</code> file is a self-contained, gzip-compressed workspace archive. It embeds current datasets, semantic metadata, undo/redo snapshots, the active dataset and tab, and point/range selection. The manifest remains versioned and fingerprint-verified during restore.</p>
+      <label className="field"><span>Project notes</span><textarea rows={3} value={projectNotes} placeholder="Purpose, assumptions, provenance, or handoff notes." onChange={(event) => onProjectNotesChange(event.target.value)} /></label>
+      {reportDialogOpen && (
+        <ReportExportDialog
+          suggestedTitle={defaultReportTitle}
+          suggestedFilename={defaultReportFilename}
+          persistedOptions={workspace.reportPreferences}
+          onCancel={() => setReportDialogOpen(false)}
+          onConfirm={confirmExportReport}
+        />
+      )}
       <div className="metric-grid">
         <Metric label="loaded datasets" value={summary.datasets.toLocaleString()} />
         <Metric label="current points" value={summary.currentPoints.toLocaleString()} />

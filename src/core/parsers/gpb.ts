@@ -34,7 +34,7 @@ export function looksLikeGpb(bytes: Uint8Array): boolean {
   )
 }
 
-export function parseGpb(buffer: ArrayBuffer): ParseResult {
+export function parseGpb(buffer: ArrayBuffer, maxPoints = Number.MAX_SAFE_INTEGER): ParseResult {
   const bytes = new Uint8Array(buffer)
   if (!looksLikeGpb(bytes)) {
     throw new Error(
@@ -46,25 +46,40 @@ export function parseGpb(buffer: ArrayBuffer): ParseResult {
 
   const view = new DataView(buffer)
   let offset = 4
+  const requireBytes = (length: number, field: string) => {
+    if (length < 0 || offset + length > bytes.byteLength) throw new Error(`Truncated GPB container while reading ${field}.`)
+  }
+  requireBytes(2, 'version and flags')
   const version = view.getUint8(offset); offset += 1
   if (version !== 1) throw new Error(`Unsupported GPB version ${version}.`)
   const flags = view.getUint8(offset); offset += 1
   const hasTime = (flags & FLAG_TIME) !== 0
   const hasEle = (flags & FLAG_ELE) !== 0
 
+  requireBytes(2, 'track name length')
   const nameLen = view.getUint16(offset, true); offset += 2
+  requireBytes(nameLen, 'track name')
   const name = new TextDecoder().decode(bytes.subarray(offset, offset + nameLen))
   offset += nameLen
 
+  requireBytes(2, 'channel count')
   const channelCount = view.getUint16(offset, true); offset += 2
   const channels: string[] = []
   for (let i = 0; i < channelCount; i++) {
+    requireBytes(1, 'channel key length')
     const keyLen = view.getUint8(offset); offset += 1
+    requireBytes(keyLen, 'channel key')
     channels.push(new TextDecoder().decode(bytes.subarray(offset, offset + keyLen)))
     offset += keyLen
   }
 
+  requireBytes(4, 'point count')
   const pointCount = view.getUint32(offset, true); offset += 4
+  if (pointCount > maxPoints) {
+    throw new Error(`GPB source declares ${pointCount.toLocaleString()} points, over the ${maxPoints.toLocaleString()} point import limit. Split the file or decimate before import.`)
+  }
+  const bytesPerPoint = 16 + (hasEle ? 4 : 0) + (hasTime ? 8 : 0) + channelCount * 4
+  requireBytes(pointCount * bytesPerPoint, 'point payload')
   const points: TrackPoint[] = []
   for (let i = 0; i < pointCount; i++) {
     const lat = view.getFloat64(offset, true); offset += 8

@@ -24,8 +24,10 @@ export interface SyntheticTrackOptions {
 
 /** A deterministic, GPS-track-shaped synthetic dataset: a slow spiral climb with jittered elevation and a few extension channels. */
 export function generateSyntheticTrack(pointCount: number, options: SyntheticTrackOptions = {}): TrackPoint[] {
-  const random = mulberry32(options.seed ?? 42)
+  if (!Number.isSafeInteger(pointCount) || pointCount < 0) throw new Error('pointCount must be a non-negative safe integer')
   const gapFraction = options.gapFraction ?? 0.001
+  if (!Number.isFinite(gapFraction) || gapFraction < 0 || gapFraction > 1) throw new Error('gapFraction must be between 0 and 1')
+  const random = mulberry32(options.seed ?? 42)
   const points: TrackPoint[] = []
   const startTime = 1_700_000_000_000
   let timeMs = startTime

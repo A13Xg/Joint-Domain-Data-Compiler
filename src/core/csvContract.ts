@@ -41,11 +41,27 @@ export function normalizeCsvAnalysisResult(value: unknown): CsvAnalysisResult {
   const sampleRows = Array.isArray(raw.sampleRows)
     ? raw.sampleRows.filter((row): row is CsvSampleRow => !!row && typeof row === 'object' && !Array.isArray(row))
     : []
+  const rawPreviewRows = Array.isArray(raw.rawPreviewRows)
+    ? raw.rawPreviewRows.filter(Array.isArray).map((row) => row.map((cell) => typeof cell === 'string' ? cell : String(cell ?? ''))).slice(0, 20)
+    : []
+  const inferenceRaw = raw.headerInference && typeof raw.headerInference === 'object' ? raw.headerInference as Record<string, unknown> : {}
+  const confidence = inferenceRaw.confidence === 'high' || inferenceRaw.confidence === 'medium' || inferenceRaw.confidence === 'low' ? inferenceRaw.confidence : 'low'
+  const rowOneRaw = raw.rowOneInference && typeof raw.rowOneInference === 'object' ? raw.rowOneInference as Record<string, unknown> : {}
+  const rowOneConfidence = ['high', 'medium', 'low', 'ambiguous'].includes(rowOneRaw.confidence as string)
+    ? rowOneRaw.confidence as 'high' | 'medium' | 'low' | 'ambiguous'
+    : 'ambiguous'
   return {
     delimiter: typeof raw.delimiter === 'string' ? raw.delimiter : ',',
     rowCountSampled: typeof raw.rowCountSampled === 'number' && Number.isFinite(raw.rowCountSampled) ? raw.rowCountSampled : sampleRows.length,
     dataStartRow: typeof raw.dataStartRow === 'number' && Number.isInteger(raw.dataStartRow) ? Math.max(0, raw.dataStartRow) : 1,
     sampleRows,
+    rawPreviewRows,
+    headerInference: { confidence, reason: typeof inferenceRaw.reason === 'string' ? inferenceRaw.reason : 'Header inference details unavailable.' },
+    rowOneInference: {
+      inferred: rowOneRaw.inferred === true,
+      confidence: rowOneConfidence,
+      reasons: stringArray(rowOneRaw.reasons),
+    },
     columns,
   }
 }

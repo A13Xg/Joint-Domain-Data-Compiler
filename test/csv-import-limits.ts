@@ -11,6 +11,7 @@ import {
   type CsvMapping,
 } from '../src/core/parsers/csv.ts'
 import { FormatBudgetExceededError } from '../src/core/parsers/limits.ts'
+import { inferHeaderRowFromRows } from '../src/core/parsers/csvPreview.ts'
 
 let failures = 0
 function check(name: string, condition: boolean, detail = ''): void {
@@ -107,6 +108,68 @@ await checkAsync('A cancellation flag that never trips completes normally', asyn
   const file = new File([text], 'small.csv', { type: 'text/csv' })
   const result = await streamCsvFileToPoints(file, ',', columns, 1, mapping, { isCancelled: () => false })
   return result.points.length === 50
+})
+
+// --- Task 2.3: mapping-panel header override reaches the real streaming
+// import, not just the preview -----------------------------------------
+//
+// Builds a two-row-header CSV: real column labels, then a placeholder/units
+// row whose cells ("0,0,0,...") happen to parse as *valid* coordinates. The
+// bounded header-block heuristic (detectDataStartRow, what analysis.dataStartRow
+// is seeded from) only ever inspects the first MAX_HEADER_ROWS rows and can
+// legitimately settle on treating just row 0 as header here, since the
+// placeholder row's numeric ratio reads as data-like. That's exactly the
+// "ambiguous, don't auto-apply" situation the mapping panel exists to
+// surface: the user reviews the preview, recognizes row 1 is also
+// boilerplate, and overrides dataStartRow to skip both rows. This test
+// proves that override reaches the *real* streamCsvFileToPoints path — the
+// same call App.tsx's buildCsvDataset makes — and not just csvPreview's
+// on-screen sampling.
+await checkAsync('Mapping-panel header-row override changes the first point streamed by the real import path', async () => {
+  const headerRows = [
+    ['lat', 'lon', 'ele', 'time', 'note'],
+    ['0', '0', '0', '2024-01-01T00:00:00Z', 'placeholder'],
+  ]
+  const dataRows = [
+    ['40.000100', '-105.000100', '1600', '2024-01-01T00:00:00Z', 'row-0'],
+    ['40.000200', '-105.000200', '1601', '2024-01-01T00:00:01Z', 'row-1'],
+  ]
+  const allRows = [...headerRows, ...dataRows]
+  const text = allRows.map((r) => r.join(',')).join('\n')
+  const file = new File([text], 'two-row-header.csv', { type: 'text/csv' })
+
+  // What the worker's analysis step would seed dataStartRow with — only row 0
+  // is confidently header-like from bounded inspection.
+  const inference = inferHeaderRowFromRows(allRows)
+  const naiveDataStartRow = inference.inferred ? 1 : 0
+  const userOverrideDataStartRow = 2 // user reviews the preview and skips both header-like rows
+
+  const naiveResult = await streamCsvFileToPoints(file, ',', columns, naiveDataStartRow, mapping)
+  const overriddenResult = await streamCsvFileToPoints(file, ',', columns, userOverrideDataStartRow, mapping)
+
+  // Naive default treats the placeholder row's "0,0" as a genuine coordinate
+  // pair, so its first emitted point is corrupted (lat=0, lon=0) instead of
+  // the real first data row.
+  const naiveFirst = naiveResult.points[0]
+  const naiveNote = naiveFirst?.ext?.note as string | undefined
+
+  // With the user's override, the real streamed import starts exactly at
+  // physical row 2, i.e. the first genuine data row — proving dataStartRow
+  // genuinely reaches streaming import rather than being ignored in favor
+  // of whatever the preview/analysis step guessed.
+  const overriddenFirst = overriddenResult.points[0]
+  const overriddenNote = overriddenFirst?.ext?.note as string | undefined
+
+  return (
+    naiveResult.points.length === 3 &&
+    naiveFirst?.lat === 0 &&
+    naiveFirst?.lon === 0 &&
+    naiveNote === 'placeholder' &&
+    overriddenResult.points.length === 2 &&
+    overriddenFirst?.lat === 40.0001 &&
+    overriddenFirst?.lon === -105.0001 &&
+    overriddenNote === 'row-0'
+  )
 })
 
 assert.equal(failures, 0)

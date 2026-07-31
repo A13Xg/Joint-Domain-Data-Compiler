@@ -1,4 +1,8 @@
-import { parseChecksumManifest, validateReleaseFileSet } from '../scripts/verify-release-bundle.mjs'
+import { createHash } from 'node:crypto'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { parseChecksumManifest, validateReleaseFileSet, verifyReleaseBundle } from '../scripts/verify-release-bundle.mjs'
 
 let failures = 0
 function check(name: string, condition: boolean): void {
@@ -34,6 +38,26 @@ check('Checksum manifest rejects path traversal', unsafeRejected)
 let duplicateRejected = false
 try { parseChecksumManifest(`${hash}  artifact.exe\n${hash}  artifact.exe\n`) } catch { duplicateRejected = true }
 check('Checksum manifest rejects duplicate entries', duplicateRejected)
+
+const releaseWorkflow = await readFile('.github/workflows/release.yml', 'utf8')
+check('Prerelease tags are published as prereleases', releaseWorkflow.includes("prerelease: ${{ contains(github.ref_name, '-') }}"))
+check('Release publication requires runtime audit and Semgrep', releaseWorkflow.includes('needs: [browser-smoke, runtime-security, static-analysis, package]') && releaseWorkflow.includes('npm audit --omit=dev --audit-level=high') && releaseWorkflow.includes('semgrep scan --config auto --error src electron scripts'))
+
+const fixtureDirectory = await mkdtemp(join(tmpdir(), 'jddc-release-integrity-'))
+try {
+  const fixtureContents = new Map(completeBundle.map((name, index) => [name, `fixture-${index}`]))
+  for (const [name, content] of fixtureContents) await writeFile(join(fixtureDirectory, name), content)
+  const checksums = [...fixtureContents]
+    .map(([name, content]) => `${createHash('sha256').update(content).digest('hex')}  ${name}`)
+    .join('\n')
+  await writeFile(join(fixtureDirectory, 'SHA256SUMS.txt'), `${checksums}\n`)
+  check('Complete release bundle verifies checksums against files', (await verifyReleaseBundle(fixtureDirectory)).length === 0)
+
+  await writeFile(join(fixtureDirectory, completeBundle[0]!), 'tampered')
+  check('Release bundle rejects a tampered artifact', (await verifyReleaseBundle(fixtureDirectory)).some((error) => error.includes('Checksum mismatch')))
+} finally {
+  await rm(fixtureDirectory, { recursive: true, force: true })
+}
 
 console.log(`\n${failures === 0 ? 'ALL RELEASE INTEGRITY CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)

@@ -1,8 +1,7 @@
 # JDDC Performance Baseline
 
-**Established:** 2026-07-27, Tranche 8 Task 8.1.
-**Environment:** shared sandbox container, Node v24.14.0, ~7.8 GB total RAM (~1.6 GB free at
-measurement time — other processes were concurrently using the machine). Not a dedicated
+**Refreshed:** 2026-07-28, Phase 6 Task 6.1.
+**Environment:** Windows 10 development host, Node v24.13.0, with exposed GC. Not a dedicated
 benchmark machine; treat these as directional, not a certified SLA.
 
 ## What this covers
@@ -15,31 +14,67 @@ synthetic spiral-climb track:
 - `dedupe` (0 m tolerance),
 - the versioned `standard-kinematics` derivation,
 - `detectQualityEvents`,
-- GPX export.
+- chart-series preparation,
+- 3D trajectory geometry construction,
+- nearest-time alignment plus relative-position comparison,
+- project archive JSON serialization and validation-backed re-open,
+- GPX/GeoJSON/KML/GPB parsing and GPX export (DOM parsing is intentionally capped at 100k points; see below).
 
-**Not covered yet** (deferred — these need their own harnesses): CSV/GPX/KML/NMEA/GPB *parsing*
-specifically, chart-series preparation, map/3D geometry construction, dataset comparison, and
-project archive save/open. Task 8.1 explicitly calls for measuring all of these; this pass
-established the mechanism and a first slice, not the complete matrix.
+**Not covered yet** (deferred — these need their own harnesses): CSV/NMEA parsing and DOM parsing above 100k points. Task 6.1 explicitly calls for measuring all
+of these; this pass established the mechanism and a larger, but still incomplete, matrix.
 
 ## Results
 
-Each size below was run as its own process (`node --expose-gc scripts/run-benchmarks.mjs <size>`)
-rather than all three in one invocation — see "Operational note" below.
+Measurements were captured in explicit 100k and 500k/1M runs: `npm run bench -- 100000` and
+`npm run bench -- 500000 1000000`.
 
-| Points | Generate | sortByTime | dedupe | kinematics | quality-events | GPX export | Heap (post-GC) |
-|---|---|---|---|---|---|---|---|
-| 100,000 | 16 ms | 10 ms | 57 ms | 123 ms | 105 ms | 738 ms | 5 → 24 MB |
-| 500,000 | 279 ms | 717 ms | 416 ms | 1,036 ms | 77 ms | 2,505 ms | 5 → 97 MB |
-| 1,000,000 | 631 ms | 623 ms | 909 ms | 1,990 ms | 139 ms | 4,179 ms | 5 → 191 MB |
+| Points | Generate | sort | dedupe | kinematics | quality | chart | 3D geometry | comparison | archive write | archive read | archive size | GPX parse | GPX export | Heap (post-GC) |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 100,000 | 23 ms | 11 ms | 24 ms | 55 ms | 34 ms | 4 ms | 9 ms | 44 ms | 187 ms | 198 ms | 13.3 MB | 3,112 ms | 185 ms | 7 → 104 MB |
+| 500,000 | 80 ms | 64 ms | 79 ms | 220 ms | 32 ms | 25 ms | 33 ms | 232 ms | 859 ms | 975 ms | 66.6 MB | skipped >100k | 783 ms | 7 → 166 MB |
+| 1,000,000 | 101 ms | 116 ms | 289 ms | 358 ms | 52 ms | 44 ms | 49 ms | 482 ms | 1,750 ms | 1,847 ms | 133.1 MB | skipped >100k | 1,612 ms | 8 → 325 MB |
+
+### Browser map activation (offline basemap)
+
+`npm run bench:map` imports deterministic GPB tracks so this measures the map path rather than CSV preview/mapping work. The benchmark retains every raw point but asserts that the map draws no more than its 4,000-point visual budget.
+
+| Points | Map activation | Drawn points |
+|---:|---:|---:|
+| 100,000 | 987 ms | ≤4,000 |
+| 500,000 | 1,095 ms | ≤4,000 |
+
+The browser-map benchmark deliberately caps at 500k points: that is the practical ceiling for this evidence pass, and larger CSV inputs predominantly measure CSV analysis/import rather than the downsampled map view.
+
+### Parser throughput at 100k points
+
+The scale runner reserializes the deterministic source track in each supported format before parsing it. GPX and KML use the same DOM-compatible parser environment as existing parser tests; results above 100k remain deliberately out of scope because the DOM parser is already known to be memory-heavy.
+
+| Format | Parse time at 100k |
+|---|---:|
+| GPX | 3,112 ms |
+| GeoJSON | 80 ms |
+| KML | 1,760 ms |
+| GPB | 5 ms |
 
 ## Reading these numbers
 
-- **GPX export dominates at every size** (~4.2 s at 1M points, ~74% of the measured per-size
-  total) and scales roughly linearly (~4.2 µs/point). It is the first thing to profile if export
+- **GPX DOM parsing is not scale-safe in this runner.** The 100k parse took ~3.1 seconds and grew
+  post-GC heap to 90 MB; the uncapped 500k parse exhausted Node's ~4 GB heap. The benchmark now
+  refuses DOM-parser timing above 100k rather than risking an OOM. This is evidence of a parser
+  architecture limitation, not a successful 500k/1M parsing claim.
+- **GPX export dominates among the full-range operations** (~1.6 s at 1M points, ~64% of the measured per-size
+  total) and scales roughly linearly (~1.7 µs/point). It is the first thing to profile if export
   responsiveness at scale becomes a product concern — likely string-building overhead in the GPX
   writer, not investigated further here.
-- **Kinematics derivation is the second-largest cost** (~2 µs/point) and already clones the full
+- **Comparison is the second-largest measured analytical cost** (~0.8 µs/point at 1M), while
+  kinematics is ~0.3 µs/point. Both remain synchronous, so either is a candidate for a future
+  worker decision only if interaction profiling shows a real UI responsiveness problem.
+- **Project archive I/O is a measured scale limit.** At 1M points, JSON archive serialization is
+  ~1.8 s and parse/validation/reconstruction is ~1.8 s for a 133 MB uncompressed archive. These
+  are synchronous benchmark measurements; UI workflows should keep their existing save/open
+  feedback and must not imply that multi-million-point project I/O is instant.
+- **Map activation remains bounded by the visual point budget.** The map retains raw points for selection and analysis while drawing at most 4,000 valid points. A previous `maxPoints + 1` endpoint edge case was corrected; the budget is now strict.
+- **Kinematics derivation** already clones the full
   point array once; this is consistent with the roadmap's existing note that transform history
   via full dataset snapshots is memory-proportional to point count × history depth.
 - Heap growth (24 MB → 97 MB → 191 MB for 100k → 500k → 1M) is roughly linear, with no evidence of
@@ -50,18 +85,14 @@ rather than all three in one invocation — see "Operational note" below.
   even at 1M points on this shared, resource-constrained sandbox — there is no evidence yet that
   the current `TrackPoint[]` representation is a hard blocker at this scale for the operations
   measured. This does **not** by itself justify skipping Stage 10's columnar Worker architecture
-  work — chart rendering, map/3D geometry, and UI thread blocking during synchronous transforms
+  work — map rendering, archive I/O, parsing, and UI thread blocking during synchronous transforms
   are unmeasured and are the more likely real-world pain points.
 
-## Operational note: run each size as its own process
+## Operational note: safe routine sizes
 
-Running all three sizes (100k, 500k, 1M) sequentially in a single `node` process was killed by
-the environment (`SIGTERM`, exit 143) partway through the 1M step in this sandbox, even though
-each size completes cleanly as an isolated process — this reflects the shared sandbox's memory
-pressure from other concurrent processes, not a bug in the harness or the measured code (confirmed
-by running `1000000` alone multiple times without failure). `npm run bench` without arguments
-therefore defaults to the safe `10,000 / 50,000 / 100,000` sizes for routine local use; pass
-explicit sizes for the full range:
+`npm run bench` without arguments defaults to the safe `10,000 / 50,000 / 100,000` sizes for
+routine local use. The full 100k/500k/1M range completed successfully on the refreshed Windows
+host. Pass explicit sizes when collecting the full matrix:
 
 ```bash
 node --expose-gc scripts/run-benchmarks.mjs 100000
@@ -76,7 +107,7 @@ work fine; this is purely an artifact of this particular shared sandbox at measu
 
 1. Add parse-time benchmarks per format (CSV/GPX/KML/NMEA/GPB) using `benchmarks/generate.ts`
    output re-serialized to each format, per the plan's explicit ask.
-2. Add a chart-series preparation and map/3D geometry benchmark.
+2. Add bounded CSV and NMEA parser benchmarks.
 3. Add an operation-history/undo-stack memory growth benchmark (N operations × snapshot size).
 4. Only after this fuller picture exists: decide whether Stage 10's columnar Worker architecture
    is justified, and where specifically (the plan is explicit that this should be evidence-led,
