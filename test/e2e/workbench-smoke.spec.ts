@@ -108,12 +108,13 @@ test('CSV mapping workflow previews and builds an immutable dataset', async ({ p
   await expect(page.getByText(/sha256:/)).toBeVisible()
 })
 
-test('browser build discloses the desktop-only persistent KML/KMZ overlay capability', async ({ page }) => {
+test('browser build provides a separate in-memory KML/KMZ overlay workflow', async ({ page }) => {
   await page.goto('/')
   await page.locator('input[type=file][multiple]').first().setInputFiles(fixture)
   await page.getByRole('button', { name: 'Map', exact: true }).click()
-  await expect(page.getByText('Persistent KML/KMZ library storage is available in the Electron desktop app.')).toBeVisible()
-  await expect(page.getByText('import KML files directly from the Import tab.')).toBeVisible()
+  await page.getByRole('button', { name: /^Overlays/ }).click()
+  await expect(page.getByRole('button', { name: '+ Import overlay', exact: true })).toBeVisible()
+  await expect(page.getByText('Files uploaded here are separate map overlays, not TSPI datasets.')).toBeVisible()
 })
 
 test('primary local-first workflow: import, inspect, transform, save/open, and export', async ({ page }) => {

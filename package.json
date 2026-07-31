@@ -51,7 +51,8 @@
         "from": "KML-KMZ",
         "to": "kml-seed",
         "filter": [
-          "Special_Use_Airspace.kml"
+          "*.kml",
+          "*.kmz"
         ]
       }
     ],

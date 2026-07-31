@@ -36,6 +36,7 @@ import { isDesktopKmlLibraryAvailable, readKmlLibraryText, saveKmlLibraryFile } 
 import { insertDataset } from './core/ids'
 import { DEFAULT_WORKSPACE_STATE, normalizeWorkspaceState, type WorkspaceState } from './state/workspace'
 import type { MapOverlayState } from './state/mapOverlays'
+import type { KmlLibraryEntry } from './types/desktop'
 import { ensureBuiltinDerivationsRegistered } from './core/analytics/bootstrap'
 import { fingerprintDataset } from './core/recipes/hash'
 import type { OperationRecord, Recipe } from './core/recipes/model'
@@ -98,6 +99,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('import')
   const [workspace, setWorkspace] = useState<WorkspaceState>(DEFAULT_WORKSPACE_STATE)
   const [mapOverlayTracks, setMapOverlayTracks] = useState<OtherTrack[]>([])
+  const [browserOverlayFiles, setBrowserOverlayFiles] = useState<Record<string, { entry: KmlLibraryEntry; text: string }>>({})
   const [busy, setBusy] = useState<string | null>(null)
   const [progress, setProgress] = useState<number | null>(null)
   const [pendingCsv, setPendingCsv] = useState<PendingCsv | null>(null)
@@ -140,15 +142,17 @@ export default function App() {
     .join(','), [workspace.mapOverlays])
 
   useEffect(() => {
-    if (!isDesktopKmlLibraryAvailable()) return
     let cancelled = false
     const overlayRefs = workspace.mapOverlays.overlays
       .filter((overlay) => (overlay.sourceKind === 'library' || overlay.sourceKind === 'bundled') && overlay.status !== 'missing')
       .sort((a, b) => a.zIndex - b.zIndex)
     void Promise.all(overlayRefs.map(async (overlay): Promise<OtherTrack | null> => {
       try {
-        const source = await readKmlLibraryText(overlay.sourceKey)
-        return { id: overlay.id, name: overlay.name, color: '#7c3aed', opacity: overlay.opacity, points: parseKml(source.text).points }
+        const text = isDesktopKmlLibraryAvailable()
+          ? (await readKmlLibraryText(overlay.sourceKey)).text
+          : browserOverlayFiles[overlay.sourceKey]?.text
+        if (!text) return null
+        return { id: overlay.id, name: overlay.name, color: '#7c3aed', opacity: overlay.opacity, points: parseKml(text).points }
       } catch {
         return null
       }
@@ -169,7 +173,7 @@ export default function App() {
     })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on overlaySignature (source identity only) by design; see comment above
-  }, [overlaySignature])
+  }, [overlaySignature, browserOverlayFiles])
 
   const flashToast = useCallback((message: string) => {
     setToast(message)
@@ -283,6 +287,17 @@ export default function App() {
   const onMapOverlayStateChange = useCallback((next: MapOverlayState) => {
     setWorkspace((current) => ({ ...current, mapOverlays: next }))
     setProjectDirty(true)
+  }, [])
+
+  const onBrowserOverlayFile = useCallback((entry: KmlLibraryEntry, text: string | null) => {
+    setBrowserOverlayFiles((current) => {
+      if (text === null) {
+        const next = { ...current }
+        delete next[entry.name]
+        return next
+      }
+      return { ...current, [entry.name]: { entry, text } }
+    })
   }, [])
 
   const ingestFile = useCallback(async (file: File) => {
@@ -473,12 +488,12 @@ export default function App() {
             {tab === 'import' && <ImportView dragActive={dragActive} setDragActive={setDragActive} onFiles={onFiles} openPicker={() => fileInputRef.current?.click()} />}
             {tab === 'mapping' && pendingCsv && <MappingPanel analysis={pendingCsv.analysis} mapping={pendingCsv.mapping} onChange={(mapping) => setPendingCsv((current) => current ? { ...current, mapping } : current)} additionalHeaders={pendingCsv.additionalHeaders} onToggleAdditionalHeaders={(additionalHeaders) => setPendingCsv((current) => current ? { ...current, additionalHeaders } : current)} dataStartRow={pendingCsv.dataStartRow} onDataStartRowChange={(dataStartRow) => setPendingCsv((current) => current ? { ...current, dataStartRow } : current)} onBuild={buildCsvDataset} building={building} />}
             {tab === 'overview' && active && <StatsPanel dataset={active} bookmarks={bookmarks} onBookmarksChange={(next) => { setBookmarks(next); setProjectDirty(true) }} />}
-            {tab === 'map' && <MapView points={active?.points ?? []} channels={active?.channels ?? []} workspace={workspace.map} onWorkspaceChange={(map) => { setWorkspace((current) => ({ ...current, map })); setProjectDirty(true) }} otherTracks={otherTracks} overlayState={workspace.mapOverlays} onOverlayStateChange={onMapOverlayStateChange} onImportOverlayAsTrack={importKmlText} />}
+            {tab === 'map' && <MapView points={active?.points ?? []} channels={active?.channels ?? []} workspace={workspace.map} onWorkspaceChange={(map) => { setWorkspace((current) => ({ ...current, map })); setProjectDirty(true) }} otherTracks={otherTracks} overlayState={workspace.mapOverlays} onOverlayStateChange={onMapOverlayStateChange} onImportOverlayAsTrack={importKmlText} browserOverlayFiles={browserOverlayFiles} onBrowserOverlayFile={onBrowserOverlayFile} />}
             {tab === 'charts' && active && <TimeSeriesChart points={active.points} channels={active.channels} />}
             {tab === 'table' && active && <DataTable points={active.points} channels={active.channels} />}
             {tab === 'compare' && <ComparisonPanel datasets={datasets} activeId={activeId} workspace={workspace.comparison} onWorkspaceChange={(comparison) => { setWorkspace((current) => ({ ...current, comparison })); setProjectDirty(true) }} onSelectReferenceSample={(datasetId, pointIndex) => { const reference = datasets.find((dataset) => dataset.id === datasetId); if (!reference) return; restorePointSelection(reference.points, pointIndex, null); setActiveId(datasetId) }} />}
             {tab === 'scene3d' && active && <Trajectory3dPanel dataset={active} datasets={datasets} workspace={workspace.scene3d} onWorkspaceChange={(scene3d) => { setWorkspace((current) => ({ ...current, scene3d })); setProjectDirty(true) }} />}
-            {tab === 'transform' && active && <><TransformPanel dataset={active} onApply={applyTransform} onUndo={undo} onRedo={redo} canUndo={!!history && history.past.length > 0} canRedo={!!history && history.future.length > 0} operationHistory={operationRecords[active.id] ?? []} replaySource={history?.past[0]} namedRecipes={namedRecipes[active.id] ?? []} onSaveRecipe={(recipe) => { setNamedRecipes((current) => ({ ...current, [active.id]: [...(current[active.id] ?? []), recipe] })); setProjectDirty(true) }} onDeleteRecipe={(recipeId) => { setNamedRecipes((current) => ({ ...current, [active.id]: (current[active.id] ?? []).filter((recipe) => recipe.id !== recipeId) })); setProjectDirty(true) }} onReplay={applyReplay} /><NotionalSmoothingPanel dataset={active} onCreateDataset={addDataset} /></>}
+            {tab === 'transform' && active && <div className="transform-workspace"><TransformPanel dataset={active} onApply={applyTransform} onUndo={undo} onRedo={redo} canUndo={!!history && history.past.length > 0} canRedo={!!history && history.future.length > 0} operationHistory={operationRecords[active.id] ?? []} replaySource={history?.past[0]} namedRecipes={namedRecipes[active.id] ?? []} onSaveRecipe={(recipe) => { setNamedRecipes((current) => ({ ...current, [active.id]: [...(current[active.id] ?? []), recipe] })); setProjectDirty(true) }} onDeleteRecipe={(recipeId) => { setNamedRecipes((current) => ({ ...current, [active.id]: (current[active.id] ?? []).filter((recipe) => recipe.id !== recipeId) })); setProjectDirty(true) }} onReplay={applyReplay} /><NotionalSmoothingPanel dataset={active} onCreateDataset={addDataset} /></div>}
             {tab === 'project' && <ProjectPanel datasets={datasets} histories={histories} activeId={activeId} activeTab={workspace.lastWorkspaceTab} workspace={workspace} datasetDisplay={syncedDisplay} bookmarks={bookmarks} operationRecords={operationRecords} namedRecipes={namedRecipes} fusionArtifacts={fusionArtifacts} projectName={projectName} projectNotes={projectNotes} projectDirty={projectDirty} onWorkspaceChange={(next) => { setWorkspace(next); setProjectDirty(true) }} onProjectNameChange={(name) => { setProjectName(name); setProjectDirty(true) }} onProjectNotesChange={(notes) => { setProjectNotes(notes); setProjectDirty(true) }} onProjectSaved={() => setProjectDirty(false)} onRestoreProject={restoreProject} />}
 
             {tab === 'export' && active && <ExportPanel dataset={active} />}

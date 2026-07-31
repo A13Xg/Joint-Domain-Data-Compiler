@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { formatBytes } from '../core/format'
+import { parseKml } from '../core/parsers/kml'
 import {
   isDesktopKmlLibraryAvailable,
   listKmlLibrary,
@@ -29,6 +30,10 @@ interface Props {
   onOverlayStateChange: (next: MapOverlayState) => void
   /** Route a KML/KMZ library file through the ordinary parser import flow (a normal dataset, unrelated to overlay display). */
   onImportAsTrack: (name: string, text: string, sourceBytes?: number) => void
+  /** Browser-only in-memory overlay library; Electron uses its persistent KML directory instead. */
+  browserEntries: KmlLibraryEntry[]
+  browserSources: Record<string, string>
+  onBrowserFile: (entry: KmlLibraryEntry, text: string | null) => void
 }
 
 interface StatusLine { icon: string; text: string; tone: 'ok' | 'warn' | 'error' }
@@ -72,14 +77,15 @@ function nextZIndex(overlays: MapOverlay[]): number {
  * flow via `onImportAsTrack` so overlay display and dataset creation never
  * conflate (product decisions 2 and 3).
  */
-export function MapOverlayPanel({ overlayState, onOverlayStateChange, onImportAsTrack }: Props) {
+export function MapOverlayPanel({ overlayState, onOverlayStateChange, onImportAsTrack, browserEntries, browserSources, onBrowserFile }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const panelId = useId()
   const [open, setOpen] = useState(false)
-  const [entries, setEntries] = useState<KmlLibraryEntry[]>([])
+  const [entries, setEntries] = useState<KmlLibraryEntry[]>(browserEntries)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [selectedLibraryName, setSelectedLibraryName] = useState('')
   const available = isDesktopKmlLibraryAvailable()
 
   // Keep the latest props on refs so the mount-only effect below and the
@@ -97,16 +103,19 @@ export function MapOverlayPanel({ overlayState, onOverlayStateChange, onImportAs
   // `resetBundledSeed`, which reseeds and then reloads) can wrap the whole
   // sequence in a single busy toggle instead of nesting one from `refresh`.
   const loadLibrary = useCallback(async () => {
-    const loaded = await listKmlLibrary()
+    const loaded = available ? await listKmlLibrary() : browserEntries
     setEntries(loaded)
     const availableKeys = new Set(loaded.map((entry) => entry.name))
     const reconciled = reconcileMapOverlays(overlayStateRef.current, availableKeys)
     if (reconciled !== overlayStateRef.current) onOverlayStateChangeRef.current(reconciled)
     return loaded
-  }, [])
+  }, [available, browserEntries])
 
   const refresh = useCallback(async () => {
-    if (!available) return
+    if (!available) {
+      setEntries(browserEntries)
+      return browserEntries
+    }
     setBusy(true)
     setError(null)
     try {
@@ -117,15 +126,17 @@ export function MapOverlayPanel({ overlayState, onOverlayStateChange, onImportAs
     } finally {
       setBusy(false)
     }
-  }, [available, loadLibrary])
+  }, [available, browserEntries, loadLibrary])
 
   // Mount-time load: fetch the persistent library and reconcile overlay
   // status without calling setState synchronously in the effect body itself
   // (only inside the async continuation), and without depending on the
   // `refresh` identity so this runs once rather than on every prop change.
   useEffect(() => {
-    if (!available) return
     let cancelled = false
+    if (!available) {
+      return () => { cancelled = true }
+    }
     listKmlLibrary()
       .then((loaded) => {
         if (cancelled) return
@@ -136,7 +147,7 @@ export function MapOverlayPanel({ overlayState, onOverlayStateChange, onImportAs
       })
       .catch((cause: unknown) => { if (!cancelled) setError(message(cause)) })
     return () => { cancelled = true }
-  }, [available])
+  }, [available, browserEntries])
 
   const updateOverlays = useCallback((updater: (overlays: MapOverlay[]) => MapOverlay[]) => {
     onOverlayStateChangeRef.current({ overlays: updater(overlayStateRef.current.overlays) })
@@ -150,7 +161,15 @@ export function MapOverlayPanel({ overlayState, onOverlayStateChange, onImportAs
       let saved = 0
       for (const file of Array.from(files)) {
         if (!/\.km?l$/i.test(file.name)) throw new Error(`${file.name} is not a .kml or .kmz file`)
-        await saveKmlLibraryFile(file)
+        if (available) {
+          await saveKmlLibraryFile(file)
+        } else {
+          if (/\.kmz$/i.test(file.name)) throw new Error('KMZ overlay extraction requires the Electron desktop build; upload the contained KML file in the browser.')
+          const text = await file.text()
+          const parsed = parseKml(text)
+          if (parsed.points.length === 0) throw new Error(`${file.name} does not contain any usable coordinates`)
+          onBrowserFile({ name: file.name, bytes: file.size, modifiedAt: Date.now(), kind: 'kml' }, text)
+        }
         saved++
       }
       setStatus(`Saved ${saved} file${saved === 1 ? '' : 's'} to the KML/KMZ library. Use "Show on map" to display one as an overlay.`)
@@ -226,7 +245,8 @@ export function MapOverlayPanel({ overlayState, onOverlayStateChange, onImportAs
     setBusy(true)
     setError(null)
     try {
-      const result = await readKmlLibraryText(entry.name)
+      const result = available ? await readKmlLibraryText(entry.name) : { text: browserSources[entry.name] ?? '', entryName: entry.name }
+      if (!result.text) throw new Error(`No source content is available for ${entry.name}`)
       onImportAsTrack(entry.name, result.text, entry.bytes)
       setStatus(`Imported ${entry.name}${entry.kind === 'kmz' ? ` (${result.entryName})` : ''} as a normal dataset via Import.`)
     } catch (cause) {
@@ -241,7 +261,8 @@ export function MapOverlayPanel({ overlayState, onOverlayStateChange, onImportAs
     setBusy(true)
     setError(null)
     try {
-      await removeKmlLibraryFile(entry.name)
+      if (available) await removeKmlLibraryFile(entry.name)
+      else onBrowserFile(entry, null)
       updateOverlays((overlays) => overlays.filter((overlay) => overlay.sourceKey !== entry.name))
       setStatus(`Removed ${entry.name} from the KML/KMZ library.`)
       await refresh()
@@ -280,6 +301,7 @@ export function MapOverlayPanel({ overlayState, onOverlayStateChange, onImportAs
   }
 
   const sortedOverlays = [...overlayState.overlays].sort((a, b) => a.zIndex - b.zIndex)
+  const visibleEntries = available ? entries : browserEntries
 
   return (
     <div className="map-overlay-drawer">
@@ -288,19 +310,15 @@ export function MapOverlayPanel({ overlayState, onOverlayStateChange, onImportAs
       </button>
       {open && (
         <div id={panelId} className="map-overlay-panel analysis-panel" role="region" aria-label="Map overlay manager">
-          {!available && (
-            <div className="panel-empty">
-              <span aria-hidden="true">{'ℹ'}</span> Persistent KML/KMZ overlay storage is available in the Electron desktop app. In the browser build, use Import to load a KML/KMZ file as a dataset.
-            </div>
-          )}
-          {available && (
-            <>
+          <>
               <div className="analysis-toolbar">
-                <button type="button" className="primary-action" disabled={busy} onClick={() => inputRef.current?.click()}>Upload KML/KMZ</button>
+                <label className="map-overlay-picker">overlay library<select value={selectedLibraryName} onChange={(event) => setSelectedLibraryName(event.target.value)}><option value="">Select a KML/KMZ overlay…</option>{visibleEntries.map((entry) => <option key={entry.name} value={entry.name}>{entry.name}</option>)}</select></label>
+                <button type="button" className="primary-action" disabled={busy || !selectedLibraryName} onClick={() => { const entry = visibleEntries.find((candidate) => candidate.name === selectedLibraryName); if (entry) showOnMap(entry) }}>Show selected</button>
+                <button type="button" disabled={busy} onClick={() => inputRef.current?.click()}>+ Import overlay</button>
                 <button type="button" disabled={busy} onClick={() => void refresh()}>Refresh</button>
-                <button type="button" disabled={busy} onClick={() => void resetBundledSeed()}>Reset bundled seed</button>
-                <button type="button" disabled={busy} onClick={() => void revealKmlLibrary()}>Open folder</button>
-                <span className="muted small">{entries.length.toLocaleString()} stored file{entries.length === 1 ? '' : 's'}</span>
+                {available && <button type="button" disabled={busy} onClick={() => void resetBundledSeed()}>Reset bundled seed</button>}
+                {available && <button type="button" disabled={busy} onClick={() => void revealKmlLibrary()}>Open folder</button>}
+                <span className="muted small">{visibleEntries.length.toLocaleString()} stored file{visibleEntries.length === 1 ? '' : 's'}</span>
                 <input ref={inputRef} className="hidden-input" type="file" multiple accept=".kml,.kmz" onChange={(event) => { void uploadFiles(event.target.files); event.target.value = '' }} />
               </div>
               {error && <div className="error-line" role="alert"><span aria-hidden="true">{'✕'}</span> {error}</div>}
@@ -353,13 +371,13 @@ export function MapOverlayPanel({ overlayState, onOverlayStateChange, onImportAs
               )}
 
               <h4 className="map-overlay-heading">KML/KMZ library</h4>
-              <p className="muted small">Files uploaded here are copied into the persistent <code>KML-KMZ</code> library folder. "Show on map" adds a visual overlay only; "Import as track" routes the file through the ordinary Import parser and produces a normal, independent dataset.</p>
+              <p className="muted small">Files uploaded here are separate map overlays, not TSPI datasets. Electron stores them in the bundled <code>KML-KMZ</code> directory; the browser keeps uploaded KML overlays for the current session. "Import as track" remains a separate action.</p>
               <div className="compact-table kml-library-table">
                 <table>
                   <thead><tr><th>file</th><th>kind</th><th>size</th><th>modified</th><th>actions</th></tr></thead>
                   <tbody>
-                    {entries.length === 0 && <tr><td colSpan={5} className="muted">No KML/KMZ files stored yet.</td></tr>}
-                    {entries.map((entry) => (
+                    {visibleEntries.length === 0 && <tr><td colSpan={5} className="muted">No KML/KMZ files stored yet.</td></tr>}
+                    {visibleEntries.map((entry) => (
                       <tr key={entry.name}>
                         <td className="left-cell">{entry.name}{BUNDLED_KML_SEED_NAMES.has(entry.name) && <span className="badge map-overlay-badge" title="Bundled seed"> <span aria-hidden="true">{'\u{1F4E6}'}</span> bundled</span>}</td>
                         <td>{entry.kind.toUpperCase()}</td>
@@ -375,8 +393,7 @@ export function MapOverlayPanel({ overlayState, onOverlayStateChange, onImportAs
                   </tbody>
                 </table>
               </div>
-            </>
-          )}
+          </>
         </div>
       )}
     </div>

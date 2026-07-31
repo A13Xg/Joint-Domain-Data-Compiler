@@ -8,11 +8,19 @@ import { DEFAULT_QUALITY_EVENT_CONFIG, detectQualityEvents } from '../core/quali
 import { usePointSelection } from '../state/pointSelection'
 import type { WorkspaceState } from '../state/workspace'
 import type { MapOverlayState } from '../state/mapOverlays'
+import type { KmlLibraryEntry } from '../types/desktop'
 import { MapOverlayPanel } from './MapOverlayPanel'
 
 type DisplayMode = 'both' | 'path' | 'points'
-type BasemapMode = 'osm' | 'none'
+type BasemapMode = 'osm' | 'osm-dark' | 'osm-humanitarian' | 'osm-topo' | 'none'
 const MAX_RENDER_POINTS = 4000
+
+const BASEMAPS: Record<Exclude<BasemapMode, 'none'>, { label: string; url: string; attribution: string }> = {
+  osm: { label: 'OpenStreetMap', url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: '&copy; OpenStreetMap contributors' },
+  'osm-dark': { label: 'OpenStreetMap Dark', url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', attribution: '&copy; OpenStreetMap contributors &copy; CARTO' },
+  'osm-humanitarian': { label: 'OSM Humanitarian', url: 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', attribution: '&copy; OpenStreetMap contributors, Tiles style by HOT' },
+  'osm-topo': { label: 'OpenTopoMap', url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', attribution: 'Map data &copy; OpenStreetMap contributors, SRTM | Map style &copy; OpenTopoMap' },
+}
 
 /** A non-active, visible dataset rendered as a plain color-coded path (Task 5.2: multi-track map rendering). Path-only and non-interactive — active-track selection/hover/quality markers are unaffected. */
 export interface OtherTrack {
@@ -56,7 +64,7 @@ function downsample<T>(values: T[], maxPoints: number): T[] {
 
 type BasemapStatus = 'unknown' | 'loaded' | 'error'
 
-export function MapView({ points, channels, workspace, onWorkspaceChange, otherTracks = [], overlayState, onOverlayStateChange, onImportOverlayAsTrack }: {
+export function MapView({ points, channels, workspace, onWorkspaceChange, otherTracks = [], overlayState, onOverlayStateChange, onImportOverlayAsTrack, browserOverlayFiles, onBrowserOverlayFile }: {
   points: TrackPoint[]
   channels: string[]
   workspace: WorkspaceState['map']
@@ -65,6 +73,8 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
   overlayState: MapOverlayState
   onOverlayStateChange: (next: MapOverlayState) => void
   onImportOverlayAsTrack: (name: string, text: string, sourceBytes?: number) => void
+  browserOverlayFiles: Record<string, { entry: KmlLibraryEntry; text: string }>
+  onBrowserOverlayFile: (entry: KmlLibraryEntry, text: string | null) => void
 }) {
   const { displayMode: mode, colorBy, basemap, maxGapMinutes } = workspace
   const [fitRequest, setFitRequest] = useState(0)
@@ -122,7 +132,9 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
     return values.length > 0 ? { min: Math.min(...values), max: Math.max(...values) } : null
   }, [rendered, colorBy])
 
-  const overlayPanel = <MapOverlayPanel overlayState={overlayState} onOverlayStateChange={onOverlayStateChange} onImportAsTrack={onImportOverlayAsTrack} />
+  const browserEntries = Object.values(browserOverlayFiles).map(({ entry }) => entry)
+  const browserSources = Object.fromEntries(Object.entries(browserOverlayFiles).map(([name, value]) => [name, value.text]))
+  const overlayPanel = <MapOverlayPanel overlayState={overlayState} onOverlayStateChange={onOverlayStateChange} onImportAsTrack={onImportOverlayAsTrack} browserEntries={browserEntries} browserSources={browserSources} onBrowserFile={onBrowserOverlayFile} />
 
   if (mapPositions.length === 0) {
     return (
@@ -138,7 +150,7 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
       {overlayPanel}
       <div className="map-toolbar">
         <label>display<select value={mode} onChange={(event) => onWorkspaceChange({ ...workspace, displayMode: event.target.value as DisplayMode })}><option value="both">Path + Points</option><option value="path">Path only</option><option value="points">Points only</option></select></label>
-        <label>basemap<select value={basemap} onChange={(event) => onWorkspaceChange({ ...workspace, basemap: event.target.value as BasemapMode })}><option value="osm">OpenStreetMap</option><option value="none">offline grid</option></select></label>
+        <label>basemap<select value={basemap} onChange={(event) => onWorkspaceChange({ ...workspace, basemap: event.target.value as BasemapMode })}><option value="osm">OpenStreetMap</option><option value="osm-dark">OpenStreetMap Dark</option><option value="osm-humanitarian">OSM Humanitarian</option><option value="osm-topo">OpenTopoMap</option><option value="none">offline grid</option></select></label>
         <label>color by<select value={colorBy} onChange={(event) => onWorkspaceChange({ ...workspace, colorBy: event.target.value })}>{colorChannels.map((channel) => <option key={channel} value={channel}>{channel}</option>)}</select></label>
         <label>split gaps<input type="number" min={0} step={1} value={maxGapMinutes} onChange={(event) => onWorkspaceChange({ ...workspace, maxGapMinutes: Math.max(0, Number(event.target.value) || 0) })} /> min</label>
         <button type="button" onClick={() => { setFitSelection(false); setFitVisible(false); setFitRequest((value) => value + 1) }}>Fit active</button>
@@ -148,13 +160,13 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
         {pointIndex !== null && <button type="button" className="chip chip-on" onClick={clearPointSelection}>selected #{pointIndex} ×</button>}
         {indexRange && <button type="button" className="chip chip-range" onClick={clearRangeSelection}>range {indexRange.start}–{indexRange.end} ×</button>}
         {colorRange && <span className="map-legend"><span style={{ background: gradientColor(0) }} /> {fmt(colorRange.min)}<span style={{ background: gradientColor(0.5) }} /><span style={{ background: gradientColor(1) }} /> {fmt(colorRange.max)}</span>}
-        {basemap === 'osm' && basemapStatus === 'error' && <span className="map-basemap-status map-basemap-error">⚠ Basemap tiles failed to load (offline?) — track data is still fully usable. <button type="button" onClick={() => onWorkspaceChange({ ...workspace, basemap: 'none' })}>Switch to offline grid</button></span>}
-        {basemap === 'osm' && basemapStatus === 'unknown' && <span className="map-basemap-status muted small">Basemap requires network access; local track data does not.</span>}
+        {basemap !== 'none' && basemapStatus === 'error' && <span className="map-basemap-status map-basemap-error">⚠ Basemap tiles failed to load (offline?) — track data is still fully usable. <button type="button" onClick={() => onWorkspaceChange({ ...workspace, basemap: 'none' })}>Switch to offline grid</button></span>}
+        {basemap !== 'none' && basemapStatus === 'unknown' && <span className="map-basemap-status muted small">Basemap requires network access; local track data does not.</span>}
         {otherTrackLayers.length > 0 && <span className="map-legend map-other-tracks">other visible:{otherTrackLayers.map((track) => <span key={track.id} className="map-other-track-chip"><span className="chip-dot" style={{ background: track.color }} />{track.name}</span>)}</span>}
       </div>
       <div className="map-canvas-wrap">
         <MapContainer center={mapPositions[0]} zoom={10} className="map-canvas" scrollWheelZoom>
-          {basemap === 'osm' && <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" eventHandlers={{ tileerror: () => setBasemapStatus('error'), tileload: () => setBasemapStatus('loaded') }} />}
+          {basemap !== 'none' && <TileLayer attribution={BASEMAPS[basemap].attribution} url={BASEMAPS[basemap].url} eventHandlers={{ tileerror: () => setBasemapStatus('error'), tileload: () => setBasemapStatus('loaded') }} />}
           {otherTrackLayers.map((track) => track.positions.length > 1 && <Polyline key={track.id} positions={track.positions} pathOptions={{ color: track.color, weight: 2, opacity: track.opacity ?? 0.6, dashArray: '1 4' }}><Tooltip>{track.name}</Tooltip></Polyline>)}
           {mode !== 'points' && pathSegments.map((segment, index) => <Polyline key={index} positions={segment} pathOptions={{ color: indexRange ? '#64748b' : '#ea4f2f', weight: 2.5, opacity: indexRange ? 0.45 : 0.85 }} />)}
           {mode !== 'points' && selectionPositions.length > 1 && <Polyline positions={selectionPositions} pathOptions={{ color: '#facc15', weight: 5, opacity: 0.95 }} />}

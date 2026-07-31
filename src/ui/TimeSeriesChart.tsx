@@ -192,10 +192,15 @@ export function TimeSeriesChart({ points, channels }: { points: TrackPoint[]; ch
         {cursorX !== null && xDomain && <line x1={xToPx(cursorX)} x2={xToPx(cursorX)} y1={pad.top} y2={pad.top + plotH} className="chart-crosshair" />}
         {dragStart !== null && hover !== null && <rect x={Math.min(xToPx(dragStart), xToPx(hover))} y={pad.top} width={Math.abs(xToPx(hover) - xToPx(dragStart))} height={plotH} fill="rgba(59,130,246,0.14)" />}
         {selectedX !== null && xDomain && <line x1={xToPx(selectedX)} x2={xToPx(selectedX)} y1={pad.top} y2={pad.top + plotH} style={{ stroke: '#ea4f2f', strokeWidth: 2 }} />}
-        {series.filter((item) => item.values.length > 1).map((item, row) => <g key={item.key}><text x={4} y={pad.top + 4 + row * 11} className="chart-axis-label" style={{ fill: item.color }}>{fmt(item.max)}</text><text x={4} y={pad.top + plotH - row * 11} className="chart-axis-label" style={{ fill: item.color }}>{fmt(item.min)}</text></g>)}
+        {series.filter((item) => item.values.length > 1).map((item, row) => <g key={item.key}><text x={4} y={pad.top + 4 + row * 11} className="chart-axis-label" style={{ fill: item.color }}>{item.key} ({channelUnit(item.key)}) max {fmt(item.max)}</text><text x={4} y={pad.top + plotH - row * 11} className="chart-axis-label" style={{ fill: item.color }}>{item.key} ({channelUnit(item.key)}) min {fmt(item.min)}</text></g>)}
+        {effectiveDomain && <>
+          <text x={pad.left} y={height - 7} className="chart-axis-label chart-axis-label--strong" textAnchor="start">{formatX(effectiveDomain.lo, effectiveX)}</text>
+          <text x={width - pad.right} y={height - 7} className="chart-axis-label chart-axis-label--strong" textAnchor="end">{formatX(effectiveDomain.hi, effectiveX)}</text>
+        </>}
       </svg>
 
-      {cursorX !== null && <div className="chart-readout mono"><span className="chart-readout-x">{formatX(cursorX, effectiveX)}</span>{series.map((item) => { const nearest = nearestValue(item.values, cursorX); return nearest ? <span key={item.key} style={{ color: item.color }}>{item.key}: {fmt(nearest.y)}</span> : null })}</div>}
+      <div className="chart-readout chart-readout--persistent mono"><span className="chart-readout-x">{cursorX !== null ? `cursor ${formatX(cursorX, effectiveX)}` : 'Move over the plot for point details'}</span>{series.map((item) => { const nearest = cursorX === null ? null : nearestValue(item.values, cursorX); return <span key={item.key} style={{ color: item.color }}>{item.key} ({channelUnit(item.key)}): {nearest ? fmt(nearest.y) : '—'}</span> })}</div>
+      {xDomain && <div className="chart-time-range mono"><span>{effectiveX === 'time' ? 'time range' : `${effectiveX} range`}</span><strong>start {formatX(xDomain.lo, effectiveX)}</strong><strong>end {formatX(xDomain.hi, effectiveX)}</strong>{isZoomed && <span>(zoomed view shown above)</span>}</div>}
       {statistics && <div className="chart-readout mono"><strong>{statistics.pointCount.toLocaleString()} pts</strong><span>{fmt(statistics.distanceMeters)} m</span>{statistics.durationSeconds !== undefined && <span>{fmt(statistics.durationSeconds)} s</span>}{Object.entries(statistics.channels).map(([id, summary]) => <span key={id}>{id}: μ {fmt(summary.mean)} · {fmt(summary.min)}–{fmt(summary.max)}</span>)}</div>}
       {qualityEvents.length > 0 && <div className="muted small chart-event-legend">⚠ {qualityEvents.length} quality event{qualityEvents.length === 1 ? '' : 's'} detected (solid = error, dashed = warning, dotted = info) — hover a marker for details.</div>}
       <div className="muted small">Click to select a point; drag to select a range. Rendering up to {MAX_RENDERED_SAMPLES.toLocaleString()} extrema-preserving samples per channel.</div>
@@ -228,6 +233,19 @@ function formatX(value: number, axis: ChartXAxis): string {
   if (axis === 'time') return epochMsToIso(value)
   if (axis === 'distance') return `${fmt(value)} m`
   return `index ${Math.round(value)}`
+}
+
+function channelUnit(key: string): string {
+  if (key === 'elevation') return 'm'
+  if (key.endsWith('_mps')) return 'm/s'
+  if (key.endsWith('_mps2')) return 'm/s²'
+  if (key.endsWith('_deg')) return '°'
+  if (key.endsWith('_dps')) return '°/s'
+  if (key.endsWith('_m')) return 'm'
+  if (key.endsWith('_hz')) return 'Hz'
+  if (key === 'hdop' || key === 'vdop' || key === 'pdop') return 'DOP'
+  if (key === 'sat') return 'sats'
+  return 'value'
 }
 
 function fmt(value: number): string {
