@@ -46,6 +46,20 @@ check('Desktop app removes Electron default menu bar', /Menu\.setApplicationMenu
 check('KMZ decompression has a bounded output limit', mainProcessSource.includes('inflateRawSync(payload, { maxOutputLength: MAX_KML_LIBRARY_BYTES })'))
 check('Bundled seed reset has an explicit IPC handler', mainProcessSource.includes('IPC_CHANNELS.reseed') && mainProcessSource.includes('seedKmlLibrary(kmlSeedDirectory(), dir)'))
 
+// preload.cjs runs under webPreferences.sandbox: true (set in main.cjs), whose
+// restricted module loader only resolves 'electron' and Node built-ins — a
+// relative require('./security.cjs') throws "module not found" there even
+// though the identical require works in the unsandboxed main process. That
+// failure aborts the whole preload script, so window.jointDomainCompiler is
+// never exposed and the persistent KML/KMZ library silently looks
+// unavailable. Guard against reintroducing it, and against the inlined
+// channel names drifting from security.cjs's copy.
+const preloadSource = readFileSync(resolve(process.cwd(), 'electron/preload.cjs'), 'utf8')
+check('Preload script requires only electron, not local sibling files', !/require\(['"]\.\//.test(preloadSource))
+for (const [key, value] of Object.entries(IPC_CHANNELS)) {
+  check(`Preload IPC channel '${key}' matches security.cjs`, new RegExp(`${key}:\\s*'${value}'`).test(preloadSource))
+}
+
 check('ArrayBuffer IPC payload is accepted', ipcBytes(new Uint8Array([1, 2, 3]).buffer).equals(Buffer.from([1, 2, 3])))
 check('Typed-array view bounds are preserved', ipcBytes(new Uint8Array([9, 1, 2, 8]).subarray(1, 3)).equals(Buffer.from([1, 2])))
 check('Text IPC payload is rejected', rejects(() => ipcBytes('not binary')))

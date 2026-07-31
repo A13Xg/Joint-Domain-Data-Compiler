@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { LatLngBoundsExpression, LatLngTuple } from 'leaflet'
-import { CircleMarker, MapContainer, Polyline, TileLayer, Tooltip, useMap } from 'react-leaflet'
+import { CircleMarker, MapContainer, Polygon, Polyline, TileLayer, Tooltip, useMap } from 'react-leaflet'
 import type { TrackPoint } from '../core/model'
 import { isValidLat, isValidLon } from '../core/model'
 import { epochMsToIso } from '../core/format'
@@ -14,6 +14,12 @@ import { MapOverlayPanel } from './MapOverlayPanel'
 type DisplayMode = 'both' | 'path' | 'points'
 type BasemapMode = 'osm' | 'osm-dark' | 'osm-humanitarian' | 'osm-topo' | 'none'
 const MAX_RENDER_POINTS = 4000
+// A KML/KMZ overlay can hold many unrelated placemark geometries (e.g. one
+// polygon per airspace boundary). Each shape gets its own point budget, and
+// the shape count itself is capped, independently of MAX_RENDER_POINTS above
+// (which bounds a single continuous path).
+const MAX_OVERLAY_SHAPE_POINTS = 200
+const MAX_OVERLAY_SHAPES = 4000
 
 const BASEMAPS: Record<Exclude<BasemapMode, 'none'>, { label: string; url: string; attribution: string }> = {
   osm: { label: 'OpenStreetMap', url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: '&copy; OpenStreetMap contributors' },
@@ -40,6 +46,26 @@ function FitBounds({ positions, request }: { positions: LatLngTuple[]; request: 
   return null
 }
 
+// Leaflet caches its container's pixel size and only recomputes it on the
+// window's own resize event; it has no way to notice that .map-canvas-wrap
+// (a flex child) got taller or shorter, e.g. when the overlay drawer above it
+// opens/closes. Left uncorrected, every pixel-space computation afterward
+// (fitBounds, pan/zoom, hit-testing) uses the stale size — fitBounds in
+// particular collapses to a degenerate near-zero-height projection, so
+// overlay shapes and the active track alike render as single points instead
+// of paths. A ResizeObserver on the actual container catches every resize,
+// not just the overlay-drawer case.
+function InvalidateSizeOnResize() {
+  const map = useMap()
+  useEffect(() => {
+    const container = map.getContainer()
+    const observer = new ResizeObserver(() => map.invalidateSize())
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [map])
+  return null
+}
+
 function gradientColor(value: number): string {
   const stops = [[68, 1, 84], [59, 82, 139], [33, 145, 140], [94, 201, 98], [253, 231, 37]]
   const clamped = Math.max(0, Math.min(1, value))
@@ -60,6 +86,37 @@ function downsample<T>(values: T[], maxPoints: number): T[] {
   const sampled = values.filter((_, index) => index % step === 0)
   if (sampled[sampled.length - 1] !== values[values.length - 1]) sampled.push(values[values.length - 1]!)
   return sampled
+}
+
+function isClosedRing(positions: LatLngTuple[]): boolean {
+  if (positions.length < 4) return false
+  const [firstLat, firstLon] = positions[0]!
+  const [lastLat, lastLon] = positions[positions.length - 1]!
+  return Math.abs(firstLat - lastLat) < 1e-9 && Math.abs(firstLon - lastLon) < 1e-9
+}
+
+// Grouped by sourceFeatureIndex, not sourceSegment: the index is unique per
+// source geometry (so a polygon's outer ring and its inner hole — which
+// share one Placemark and therefore one sourceSegment label — still split
+// apart), while sourceSegment stays a plain, possibly-repeated display label
+// untouched by this. Formats that never set sourceFeatureIndex (every point
+// undefined) fall into a single group, i.e. one continuous path — identical
+// to this renderer's behavior before shape-grouping existed.
+function groupBySegment(points: TrackPoint[]): TrackPoint[][] {
+  const groups: TrackPoint[][] = []
+  let current: TrackPoint[] = []
+  let currentKey: number | undefined
+  for (const point of points) {
+    const key = point.provenance?.sourceFeatureIndex
+    if (current.length === 0 || key !== currentKey) {
+      if (current.length > 0) groups.push(current)
+      current = []
+      currentKey = key
+    }
+    current.push(point)
+  }
+  if (current.length > 0) groups.push(current)
+  return groups
 }
 
 type BasemapStatus = 'unknown' | 'loaded' | 'error'
@@ -113,10 +170,26 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
 
   // Other visible datasets rendered as plain, non-interactive color-coded
   // paths (Task 5.2). Downsampled the same way as the active track.
+  //
+  // A single overlay can bundle many unrelated geometries (e.g. a KML file of
+  // airspace boundary polygons, one Placemark per shape). Each parser tags
+  // its points with a provenance.sourceSegment identifying which geometry
+  // they belong to, so shapes are grouped and drawn separately here instead
+  // of as one path stitched across every geometry in document order — the
+  // "crossed lines" artifact that produces when unrelated polygons/lines get
+  // silently joined end-to-end. A closed ring (KML's own convention: last
+  // coordinate repeats the first) draws as a filled Polygon; anything else
+  // draws as an open Polyline, matching plain track/route overlays.
   const otherTrackLayers = useMemo(() => otherTracks.map((track) => {
     const validPoints = track.points.filter((point) => isValidLat(point.lat) && isValidLon(point.lon))
     const sampled = downsample(validPoints, MAX_RENDER_POINTS)
-    return { id: track.id, name: track.name, color: track.color, opacity: track.opacity, positions: sampled.map((point): LatLngTuple => [point.lat, point.lon]) }
+    const shapes = downsample(groupBySegment(validPoints), MAX_OVERLAY_SHAPES)
+      .map((group): { kind: 'polygon' | 'line'; positions: LatLngTuple[] } => {
+        const shapePositions = downsample(group, MAX_OVERLAY_SHAPE_POINTS).map((point): LatLngTuple => [point.lat, point.lon])
+        return { kind: isClosedRing(shapePositions) ? 'polygon' : 'line', positions: shapePositions }
+      })
+      .filter((shape) => shape.positions.length > 1)
+    return { id: track.id, name: track.name, color: track.color, opacity: track.opacity, positions: sampled.map((point): LatLngTuple => [point.lat, point.lon]), shapes }
   }), [otherTracks])
   const mapPositions = positions.length > 0 ? positions : otherTrackLayers.flatMap((track) => track.positions)
 
@@ -167,7 +240,9 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
       <div className="map-canvas-wrap">
         <MapContainer center={mapPositions[0]} zoom={10} className="map-canvas" scrollWheelZoom>
           {basemap !== 'none' && <TileLayer attribution={BASEMAPS[basemap].attribution} url={BASEMAPS[basemap].url} eventHandlers={{ tileerror: () => setBasemapStatus('error'), tileload: () => setBasemapStatus('loaded') }} />}
-          {otherTrackLayers.map((track) => track.positions.length > 1 && <Polyline key={track.id} positions={track.positions} pathOptions={{ color: track.color, weight: 2, opacity: track.opacity ?? 0.6, dashArray: '1 4' }}><Tooltip>{track.name}</Tooltip></Polyline>)}
+          {otherTrackLayers.flatMap((track) => track.shapes.map((shape, shapeIndex) => shape.kind === 'polygon'
+            ? <Polygon key={`${track.id}-${shapeIndex}`} positions={shape.positions} pathOptions={{ color: track.color, weight: 1.5, opacity: track.opacity ?? 0.6, fillColor: track.color, fillOpacity: (track.opacity ?? 0.6) * 0.25 }}><Tooltip>{track.name}</Tooltip></Polygon>
+            : <Polyline key={`${track.id}-${shapeIndex}`} positions={shape.positions} pathOptions={{ color: track.color, weight: 2, opacity: track.opacity ?? 0.6, dashArray: '1 4' }}><Tooltip>{track.name}</Tooltip></Polyline>))}
           {mode !== 'points' && pathSegments.map((segment, index) => <Polyline key={index} positions={segment} pathOptions={{ color: indexRange ? '#64748b' : '#ea4f2f', weight: 2.5, opacity: indexRange ? 0.45 : 0.85 }} />)}
           {mode !== 'points' && selectionPositions.length > 1 && <Polyline positions={selectionPositions} pathOptions={{ color: '#facc15', weight: 5, opacity: 0.95 }} />}
           {qualityMarkers.map((event) => { const point = points[event.endIndex]!; const jump = event.kind === 'coordinate-jump'; return <CircleMarker key={event.id} center={[point.lat, point.lon]} radius={jump ? 7 : 5} pathOptions={{ color: jump ? '#ef4444' : '#f59e0b', fillColor: jump ? '#ef4444' : '#f59e0b', fillOpacity: 0.25, weight: 2, dashArray: jump ? '3 2' : undefined }}><Tooltip><strong>{event.kind === 'gap' ? 'Data gap' : 'Coordinate jump'}</strong><div>{event.explanation}</div></Tooltip></CircleMarker> })}
@@ -196,9 +271,10 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
             )
           })}
           {hoveredPosition && <CircleMarker center={hoveredPosition} radius={7} pathOptions={{ color: '#ffffff', fillColor: '#38bdf8', fillOpacity: 0.95, weight: 2 }}><Tooltip>cursor #{hoverIndex}</Tooltip></CircleMarker>}
-          <CircleMarker center={positions[0]} radius={6} pathOptions={{ color: '#16a34a', fillColor: '#16a34a', fillOpacity: 0.9, weight: 1 }}><Tooltip>start</Tooltip></CircleMarker>
-          <CircleMarker center={positions[positions.length - 1]} radius={6} pathOptions={{ color: '#dc2626', fillColor: '#dc2626', fillOpacity: 0.9, weight: 1 }}><Tooltip>end</Tooltip></CircleMarker>
+          {positions.length > 0 && <CircleMarker center={positions[0]} radius={6} pathOptions={{ color: '#16a34a', fillColor: '#16a34a', fillOpacity: 0.9, weight: 1 }}><Tooltip>start</Tooltip></CircleMarker>}
+          {positions.length > 0 && <CircleMarker center={positions[positions.length - 1]} radius={6} pathOptions={{ color: '#dc2626', fillColor: '#dc2626', fillOpacity: 0.9, weight: 1 }}><Tooltip>end</Tooltip></CircleMarker>}
           <FitBounds positions={fitPositions} request={fitRequest} />
+          <InvalidateSizeOnResize />
         </MapContainer>
       </div>
     </div>

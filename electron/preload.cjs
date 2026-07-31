@@ -1,5 +1,21 @@
 const { contextBridge, ipcRenderer } = require('electron')
-const { IPC_CHANNELS } = require('./security.cjs')
+
+// Sandboxed preload scripts (webPreferences.sandbox: true, set in main.cjs) run
+// through Electron's restricted preload loader, which only resolves `electron`
+// and Node built-ins — requiring a sibling local file throws "module not
+// found" there even though the same require works fine in the (unsandboxed)
+// main process. These channel names are duplicated from security.cjs rather
+// than shared, so this file stays a single, self-contained module the
+// sandboxed loader can actually load. Keep in sync with IPC_CHANNELS there.
+const IPC_CHANNELS = Object.freeze({
+  list: 'kml-library:list',
+  save: 'kml-library:save',
+  readText: 'kml-library:read-text',
+  remove: 'kml-library:remove',
+  reseed: 'kml-library:reseed',
+  reveal: 'kml-library:reveal',
+  saveDiagnostics: 'diagnostics:save',
+})
 
 contextBridge.exposeInMainWorld('jointDomainCompiler', {
   platform: process.platform,

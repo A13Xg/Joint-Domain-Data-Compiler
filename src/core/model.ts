@@ -43,6 +43,17 @@ export interface PointProvenance {
   sourceRecord?: number
   /** Source-native segment, track, sentence, or feature identifier. */
   sourceSegment?: string
+  /**
+   * Zero-based index of the distinct geometry block (KML Placemark ring/line/
+   * point, ...) a point belongs to, when the source format has more than one
+   * per file. Unlike `sourceSegment` (a human-readable label that can repeat,
+   * e.g. a polygon's outer ring and its inner hole share one Placemark name),
+   * this is unique per geometry and exists purely so consumers that must not
+   * connect unrelated shapes together (e.g. the map overlay renderer) can
+   * group points correctly without depending on — or altering — the display
+   * label.
+   */
+  sourceFeatureIndex?: number
   /** Machine-readable flags describing source or transform quality concerns. */
   qualityFlags?: string[]
 }

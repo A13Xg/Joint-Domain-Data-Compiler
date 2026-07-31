@@ -11,6 +11,12 @@ export function parseKml(text: string): ParseResult {
   }
 
   const points: TrackPoint[] = []
+  // Shared across both loops below so every distinct geometry block in the
+  // file — gx:Track or plain <coordinates> — gets its own index, purely for
+  // sourceFeatureIndex (see PointProvenance). This does not touch
+  // sourceSegment, which keeps its original, human-readable value and
+  // semantics unchanged: normal track import/display behavior is unaffected.
+  let featureIndex = 0
 
   // gx:Track — timestamps live in sibling <when> elements.
   const tracks = Array.from(doc.getElementsByTagName('*')).filter(
@@ -20,6 +26,7 @@ export function parseKml(text: string): ParseResult {
     const whens = Array.from(track.children).filter((c) => c.localName === 'when')
     const coords = Array.from(track.children).filter((c) => c.localName === 'coord')
     const trackName = nearestPlacemarkName(track) ?? 'gx:Track'
+    const sourceFeatureIndex = featureIndex++
     if (whens.length > 0 && whens.length !== coords.length) {
       warnings.push(`${trackName} has ${whens.length} timestamps for ${coords.length} coordinates; timestamps were paired by index.`)
     }
@@ -29,7 +36,7 @@ export function parseKml(text: string): ParseResult {
       const lat = parseNumber(parts[1])
       const ele = parseNumber(parts[2] ?? '')
       if (lat === null || lon === null) continue
-      const point: TrackPoint = { lat, lon, provenance: { sourceSegment: trackName } }
+      const point: TrackPoint = { lat, lon, provenance: { sourceSegment: trackName, sourceFeatureIndex } }
       if (ele !== null) point.ele = ele
       const when = whens[i]?.textContent?.trim()
       if (when) {
@@ -48,15 +55,16 @@ export function parseKml(text: string): ParseResult {
   for (const el of coordEls) {
     const tuples = el.textContent?.trim().split(/\s+/).filter(Boolean) ?? []
     const placemarkName = nearestPlacemarkName(el)
+    const sourceFeatureIndex = featureIndex++
     for (const tuple of tuples) {
       const [lonS, latS, eleS] = tuple.split(',')
       const lon = parseNumber(lonS)
       const lat = parseNumber(latS)
       if (lat === null || lon === null) continue
-      const point: TrackPoint = { lat, lon }
+      const point: TrackPoint = { lat, lon, provenance: { sourceFeatureIndex } }
       const ele = parseNumber(eleS ?? '')
       if (ele !== null) point.ele = ele
-      if (placemarkName) point.provenance = { sourceSegment: placemarkName }
+      if (placemarkName) point.provenance!.sourceSegment = placemarkName
       if (placemarkName && tuples.length === 1) point.name = placemarkName
       points.push(point)
     }

@@ -187,7 +187,7 @@ code { font-family: var(--mono); background: var(--bg-3); padding: 1px 5px; bord
 .tab.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--accent); }
 .tab-active-name { margin-left: auto; color: var(--text-faint); font-size: 11px; padding-right: 8px; }
 
-.tab-content { flex: 1; min-height: 0; overflow: hidden; padding: 18px; background: var(--bg-2); display: flex; flex-direction: column; }
+.tab-content { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 18px; background: var(--bg-2); display: flex; flex-direction: column; }
 .tab-content > * { min-height: 0; max-width: 100%; }
 .global-progress { margin-bottom: 14px; }
 
@@ -499,9 +499,9 @@ code { font-family: var(--mono); background: var(--bg-3); padding: 1px 5px; bord
   .sidebar { width: 210px; }
 }
 
-/* Dense operation pages fit the available instrument face instead of creating
-   a second page scrollbar. The data table remains the intentional scroll
-   surface for large point collections. */
+/* Transform is the densest tab, so it still shrinks on short viewports to
+   reduce how much scrolling is needed; .tab-content scrolls underneath it
+   (and every other tab) for whatever doesn't fit. */
 @media (max-height: 820px) {
   .log-dock { height: 150px; }
   .tab-content { padding: 12px; }
