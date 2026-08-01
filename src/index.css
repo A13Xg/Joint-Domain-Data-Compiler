@@ -191,6 +191,16 @@ code { font-family: var(--mono); background: var(--bg-3); padding: 1px 5px; bord
 .tab-content > * { min-height: 0; max-width: 100%; }
 .global-progress { margin-bottom: 14px; }
 
+/* ---------- Chart type selector ---------- */
+.chart-type-selector { display: flex; gap: 8px; padding: 8px 0; }
+.chart-type-btn {
+  padding: 6px 14px;
+  font-weight: 500;
+}
+.chart-type-btn.active { border-color: var(--accent); background: #1c2436; color: var(--text); }
+.chart-type-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.chart-type-btn-disabled { opacity: 0.4; cursor: not-allowed; }
+
 /* ---------- Import view ---------- */
 .import-view { display: flex; flex-direction: column; gap: 18px; max-width: 920px; margin: 0 auto; }
 .dropzone {
