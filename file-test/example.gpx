@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="example-generator" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Example GPS Track</name>
+    <desc>Sample GPS trace for testing</desc>
+  </metadata>
+  <trk>
+    <name>Example Track</name>
+    <trkseg>
+      <trkpt lat="40.7128" lon="-74.0060">
+        <ele>10.5</ele>
+        <time>2025-01-01T12:00:00Z</time>
+      </trkpt>
+      <trkpt lat="40.7129" lon="-74.0061">
+        <ele>11.2</ele>
+        <time>2025-01-01T12:01:00Z</time>
+      </trkpt>
+      <trkpt lat="40.7131" lon="-74.0063">
+        <ele>12.8</ele>
+        <time>2025-01-01T12:02:00Z</time>
+      </trkpt>
+      <trkpt lat="40.7135" lon="-74.0067">
+        <ele>14.1</ele>
+        <time>2025-01-01T12:03:00Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>
