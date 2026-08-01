@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2">
-<Document>
-<name>Malformed USGS sequence</name>
-<Placemark><name>us7000t3eb</name><Point><coordinates>-72.7547</coordinates></Point></Placemark>
-<Placemark><name>us7000t3fm</name><Point><coordinates></coordinates></Point></Placemark>
-</Document>
-</kml>
