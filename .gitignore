@@ -12,6 +12,7 @@ dist
 dist-ssr
 release
 .test-build
+.worktrees
 playwright-report
 test-results
 *.local
