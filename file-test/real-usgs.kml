@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+<name>USGS event sequence</name>
+<Placemark><name>us7000t3eb</name><Point><coordinates>-72.7547,4.7907,-12362</coordinates></Point></Placemark>
+<Placemark><name>us7000t3fm</name><Point><coordinates>-173.306,51.4994,-10000</coordinates></Point></Placemark>
+<Placemark><name>us7000t3fs</name><Point><coordinates>-86.8076,11.2364,-35000</coordinates></Point></Placemark>
+<Placemark><name>us7000t3g4</name><Point><coordinates>123.4402,-10.007,-10000</coordinates></Point></Placemark>
+<Placemark><name>us7000t3gt</name><Point><coordinates>121.8508,24.8852,-93836</coordinates></Point></Placemark>
+<Placemark><name>us7000t3ia</name><Point><coordinates>-66.7262,-28.0972,-157114</coordinates></Point></Placemark>
+<Placemark><name>us7000t3il</name><Point><coordinates>179.8773,-23.4795,-535429</coordinates></Point></Placemark>
+<Placemark><name>us7000t3in</name><Point><coordinates>-42.8052,29.9365,-10000</coordinates></Point></Placemark>
+</Document>
+</kml>
