@@ -191,6 +191,65 @@ code { font-family: var(--mono); background: var(--bg-3); padding: 1px 5px; bord
 .tab-content > * { min-height: 0; max-width: 100%; }
 .global-progress { margin-bottom: 14px; }
 
+/* ---------- Time series chart integration ---------- */
+.time-series-chart-container { display: flex; flex-direction: column; gap: 4px; height: 100%; min-height: 0; }
+.chart-wrapper { flex: 1; position: relative; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.chart-mismatch-warning {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 10px 14px; background: rgba(234, 179, 8, 0.12); border: 1px solid var(--amber); border-radius: var(--radius);
+}
+.chart-mismatch-warning p { margin: 0; font-size: 13px; color: var(--text); }
+.chart-mismatch-warning button { flex: none; }
+
+/* ---------- Chart type selector ---------- */
+.chart-type-selector { display: flex; gap: 8px; padding: 8px 0; }
+.chart-type-btn {
+  padding: 6px 14px;
+  font-weight: 500;
+}
+.chart-type-btn.active { border-color: var(--accent); background: #1c2436; color: var(--text); }
+.chart-type-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.chart-type-btn-disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ---------- Chart legend ---------- */
+.chart-legend { padding: 6px 0; }
+.legend-items { display: flex; flex-wrap: wrap; gap: 6px 14px; list-style: none; margin: 0; padding: 0; }
+.legend-item { display: flex; align-items: center; gap: 6px; opacity: 0.55; transition: opacity 0.15s; }
+.legend-item.visible { opacity: 1; }
+.legend-color { display: inline-block; width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.legend-label { font-size: 12px; color: var(--text-dim); }
+.legend-item.visible .legend-label { color: var(--text); }
+.legend-toggle {
+  padding: 1px 8px;
+  font-size: 10.5px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.legend-toggle:hover { border-color: var(--border-bright); color: var(--text); }
+.legend-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ---------- Operation history panel ---------- */
+.operation-history-panel { display: flex; flex-direction: column; gap: 10px; }
+.operation-history-summary h3 { margin: 0 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); }
+.operation-history-empty { margin: 0; }
+.operation-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.operation-item {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.operation-item-header { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.operation-index { color: var(--text-dim); font-size: 12px; flex: none; }
+.operation-summary { color: var(--text); font-weight: 500; flex: 1; }
+.operation-timestamp { margin-left: auto; }
+.operation-item-detail { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.operation-warnings { list-style: none; margin: 2px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+
 /* ---------- Import view ---------- */
 .import-view { display: flex; flex-direction: column; gap: 18px; max-width: 920px; margin: 0 auto; }
 .dropzone {

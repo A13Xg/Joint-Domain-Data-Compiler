@@ -38,4 +38,15 @@ export default defineConfig([
       globals: globals.node,
     },
   },
+  {
+    files: ['test/**/*.tsx'],
+    extends: [
+      js.configs.recommended,
+      tseslint.configs.recommended,
+      reactHooks.configs.flat.recommended,
+    ],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
 ])
