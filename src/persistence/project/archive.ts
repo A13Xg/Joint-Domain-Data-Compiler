@@ -62,6 +62,10 @@ const MAX_PATCHES_PER_DELTA = 100_000
 const textEncoder = new TextEncoder()
 const textDecoder = new TextDecoder()
 
+function isUnsafeObjectKey(key: string): boolean {
+  return key === '__proto__' || key === 'constructor' || key === 'prototype'
+}
+
 export function createProjectArchive(input: {
   manifest: ProjectManifest
   datasets: Dataset[]
@@ -203,6 +207,7 @@ export function validateProjectArchive(value: unknown): ProjectArchive {
   }
 
   for (const [datasetId, history] of Object.entries(value.histories)) {
+    if (isUnsafeObjectKey(datasetId)) throw new Error('Project archive histories contain an unsafe dataset id')
     if (!datasetIds.has(datasetId)) throw new Error(`History references missing dataset ${datasetId}`)
     validateHistory(history, datasetId)
   }
@@ -313,6 +318,7 @@ function validateHistory(value: unknown, datasetId: string): asserts value is Pr
 function persistedHistories(archive: ProjectArchive): Record<string, PersistedHistory> {
   const records = operationRecordsFromManifest(archive.manifest)
   return Object.fromEntries(Object.entries(archive.histories).map(([datasetId, history]) => {
+    if (isUnsafeObjectKey(datasetId)) throw new Error('Project history key is unsafe')
     const checkpoint = history.past[0] ? structuredClone(history.past[0]) : null
     const pastBase = checkpoint ?? archive.datasets.find((dataset) => dataset.id === datasetId)
     if (!pastBase) throw new Error(`History references missing dataset ${datasetId}`)
@@ -357,6 +363,7 @@ function materializePersistedArchive(value: Record<string, unknown>): ProjectArc
   const persisted = value.histories as Record<string, PersistedHistory>
   const histories: Record<string, ProjectDatasetHistory> = {}
   for (const [datasetId, stored] of Object.entries(persisted)) {
+    if (isUnsafeObjectKey(datasetId)) throw new Error('History references an unsafe dataset id')
     const current = datasets.find((dataset) => dataset.id === datasetId)
     if (!current) throw new Error(`History references missing dataset ${datasetId}`)
     const past: Dataset[] = stored.checkpoint ? [stored.checkpoint] : []
@@ -414,9 +421,13 @@ function applyPatches(base: Dataset, patches: PersistedDelta['patches'], dataset
       if (Array.isArray(target) && (!/^0$|^[1-9]\d*$/.test(segment) || Number(segment) >= target.length)) {
         throw new Error(`History ${datasetId} patch path cannot create sparse arrays`)
       }
+      // nosemgrep
       target = (target as Record<string, unknown>)[segment] as Record<string, unknown> | unknown[]
     }
     const key = patch.path[patch.path.length - 1]!
+    if (isUnsafeObjectKey(key)) {
+      throw new Error(`History ${datasetId} patch path contains an unsafe key`)
+    }
     if (patch.delete) delete (target as Record<string, unknown>)[key]
     else (target as Record<string, unknown>)[key] = structuredClone(patch.value)
   }
@@ -434,6 +445,7 @@ function validatePersistedArchive(value: unknown): asserts value is Record<strin
   const runtime = { ...value, histories: {} }
   validateProjectArchive(runtime)
   for (const [datasetId, history] of Object.entries(value.histories)) {
+    if (isUnsafeObjectKey(datasetId)) throw new Error('Persisted history contains an unsafe dataset id')
     if (!isRecord(history) || (history.checkpoint !== null && history.checkpoint === undefined) || !Array.isArray(history.past) || !Array.isArray(history.future)) throw new Error(`Persisted history for ${datasetId} is malformed`)
     if (history.checkpoint !== null) { validateDataset(history.checkpoint); if (history.checkpoint.id !== datasetId) throw new Error(`History checkpoint id does not match ${datasetId}`) }
     for (const delta of [...history.past, ...history.future]) validatePersistedDelta(delta, datasetId)
@@ -458,7 +470,10 @@ function validatePersistedDelta(value: unknown, datasetId: string): asserts valu
 function migrateLegacyArchive(value: Record<string, unknown>): ProjectArchive {
   const legacy = { ...value, manifest: parseProjectManifest(JSON.stringify(value.manifest)) } as Record<string, unknown>
   if (!Array.isArray(legacy.datasets) || !isRecord(legacy.histories)) throw new Error('Legacy project archive payload is malformed')
-  for (const [datasetId, history] of Object.entries(legacy.histories)) validateHistory(history, datasetId)
+  for (const [datasetId, history] of Object.entries(legacy.histories)) {
+    if (isUnsafeObjectKey(datasetId)) throw new Error('Legacy history contains an unsafe dataset id')
+    validateHistory(history, datasetId)
+  }
   const migrated = { ...legacy, schemaVersion: 2 } as ProjectArchive
   return validateProjectArchive(migrated)
 }

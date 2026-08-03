@@ -42,12 +42,14 @@ jobs:
         run: npm run check:web
 
       - name: Upload web build
+        if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: web-dist-${{ github.sha }}
           path: dist
-          if-no-files-found: error
-          retention-days: 7
+          if-no-files-found: warn
+          retention-days: 3
 
   browser-smoke:
     name: Browser workbench smoke
@@ -74,6 +76,7 @@ jobs:
 
       - name: Upload browser failure report
         if: failure()
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: playwright-report-${{ github.sha }}
@@ -81,7 +84,7 @@ jobs:
             playwright-report
             test-results
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 3
 
   security:
     name: Runtime dependency audit and SBOM
@@ -111,12 +114,13 @@ jobs:
 
       - name: Upload security report
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: security-report-${{ github.sha }}
           path: jddc-sbom.cdx.json
           if-no-files-found: warn
-          retention-days: 30
+          retention-days: 3
 
   static-analysis:
     name: Semgrep static analysis

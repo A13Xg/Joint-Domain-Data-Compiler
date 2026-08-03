@@ -8,7 +8,11 @@ const expectedTitle = 'Joint Domain Data Compiler'
 const expectedUrlFragment = 'app.asar/dist/index.html'
 const port = await availablePort()
 const output = []
+const inCiLinux = process.platform === 'linux' && (process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true')
 const electronArgs = ['--disable-gpu', `--remote-debugging-port=${port}`]
+if (inCiLinux || process.env.JDDC_SMOKE_NO_SANDBOX === '1') {
+  electronArgs.push('--no-sandbox', '--disable-setuid-sandbox')
+}
 const command = process.platform === 'linux' ? 'xvfb-run' : executable
 const args = process.platform === 'linux' ? ['-a', executable, ...electronArgs] : electronArgs
 const child = spawn(command, args, {

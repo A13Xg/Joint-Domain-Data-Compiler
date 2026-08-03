@@ -336,11 +336,14 @@ function formatNumber(value: number): string {
   return Number.isFinite(value) ? value.toLocaleString('en-US', { maximumFractionDigits: 3 }) : '—'
 }
 
+const HTML_ESCAPE: Readonly<Record<string, string>> = Object.freeze({
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+})
+
 function escapeHtml(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
+  return value.replace(/[&<>"']/g, (character) => HTML_ESCAPE[character] ?? character)
 }

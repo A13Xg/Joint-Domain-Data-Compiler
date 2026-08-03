@@ -28,11 +28,19 @@ function safeLibraryName(name) {
   return base
 }
 
+function resolveChildPath(directory, fileName) {
+  const normalizedDirectory = path.normalize(directory)
+  const candidate = path.normalize(`${normalizedDirectory}${path.sep}${fileName}`)
+  const relative = path.relative(normalizedDirectory, candidate)
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error('KML/KMZ path escaped the library directory')
+  }
+  return candidate
+}
+
 function resolveLibraryPath(directory, name) {
   const safe = safeLibraryName(name)
-  const filePath = path.join(directory, safe)
-  if (!filePath.startsWith(directory + path.sep)) throw new Error('KML/KMZ path escaped the library directory')
-  return filePath
+  return resolveChildPath(directory, safe)
 }
 
 function ipcBytes(value) {
