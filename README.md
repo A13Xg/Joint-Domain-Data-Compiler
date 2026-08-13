@@ -4,7 +4,7 @@
 [![Windows package](https://img.shields.io/github/actions/workflow/status/A13Xg/Joint-Domain-Data-Compiler/release.yml?branch=main&label=Windows)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/actions/workflows/release.yml)
 [![macOS package](https://img.shields.io/github/actions/workflow/status/A13Xg/Joint-Domain-Data-Compiler/release.yml?branch=main&label=macOS)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/actions/workflows/release.yml)
 [![Linux package](https://img.shields.io/github/actions/workflow/status/A13Xg/Joint-Domain-Data-Compiler/release.yml?branch=main&label=Linux)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/actions/workflows/release.yml)
-[![Runtime audit](https://img.shields.io/badge/runtime_audit-0_high%2Fcritical-15803d)](docs/dependency-policy.md)
+[![Runtime audit](https://img.shields.io/badge/runtime_audit-0_high%2Fcritical-15803d)](.agents)
 
 A **single-user trajectory and TSPI engineering workbench** for importing, normalizing, inspecting, transforming, comparing, visualizing, saving and exporting time-space-position-information data.
 
@@ -14,8 +14,9 @@ JDDC runs as a browser application and an Electron desktop application. Data par
 
 JDDC is a functional engineering workbench with a strong deterministic core. It is not yet production-complete.
 
-- `futureConsiderations.md` — known open items and deferred work.
 - `CHANGELOG.md` — user-visible changes grouped by release.
+- `ONBOARDING.md` — developer setup and contribution guidelines.
+- `.agents` — project architecture, design rules, and constraints (machine-readable).
 
 ## Import
 
@@ -27,6 +28,7 @@ JDDC is a functional engineering workbench with a strong deterministic core. It 
 | KML | `.kml` | Points, LineStrings and Google `gx:Track`. |
 | NMEA 0183 | `.nmea .gps .log` | GGA, RMC and GLL with checksum handling. |
 | GPB | `.gpb .bin` | Compact JDDC numeric binary transport. GPB is not a complete lossless workspace format. |
+| EAG TSPI | `.eag .txt` | European Air Group TSPI: tab-delimited ECEF coordinates from NATO/European range instrumentation. Filename-based date extraction and per-row HH:MM:SS time reconstruction. |
 
 All supported inputs normalize into a shared dataset model with source metadata, channel definitions, provenance fields, warnings and quality flags.
 
@@ -124,6 +126,7 @@ history and richer reports remain roadmap work.
 - CSV.
 - GeoJSON.
 - KML.
+- EAG TSPI (tab-delimited ECEF with configurable header metadata).
 - GPB compact numeric binary.
 
 Project archives currently provide higher-fidelity JDDC persistence than the individual interchange formats.
@@ -166,18 +169,17 @@ Configured targets:
 The release workflow also produces SBOMs, SHA-256 checksums, and GitHub/Sigstore build-provenance
 attestations; enforces a reviewed Electron fuse set; signs Windows artifacts when repository
 certificate secrets are available (otherwise producing and verifying an unsigned fallback); and
-runs a native packaged-renderer smoke gate on Linux, Windows and macOS. Follow
-[`docs/release-checklist.md`](docs/release-checklist.md) for a release and
-[`docs/rollback.md`](docs/rollback.md) for recovery. Linux is locally proven; native Windows and
-macOS execution awaits an available GitHub-hosted runner. macOS signing/notarization still
-requires owner-provided credentials.
+runs a native packaged-renderer smoke gate on Linux, Windows and macOS. Release procedures and
+rollback recovery steps are documented in the `.agents` file. Linux is locally proven; native
+Windows and macOS execution awaits an available GitHub-hosted runner. macOS signing/notarization
+still requires owner-provided credentials.
 
 ## Testing
 
-The default suite currently includes 42 deterministic TypeScript regression harnesses covering
+The default suite currently includes 62 deterministic TypeScript regression harnesses covering
 analytics, linked visualization helpers, selection, transforms, fusion, resampling, compute
 protocol/runtime, project archives/migrations, diagnostics, recipes/plugins, geodesy, 3D
-geometry, parsers, bounded property/fuzz cases and exports.
+geometry, parsers (including EAG TSPI with geographic sanity and midnight-crossing tests), bounded property/fuzz cases and exports.
 
 The repository includes a Chromium end-to-end smoke test for the primary local workflow:
 GPX import, linked table/chart/map/3D selection, transform, project save/open, report and
@@ -189,7 +191,9 @@ performance coverage remains a roadmap priority.
 ## Test data
 
 `file-test/` contains a documented USGS-derived sample corpus with valid and malformed fixtures
-for every supported import format, plus comparison inputs.
+for every supported import format, plus comparison inputs. EAG TSPI test data includes 6 real
+flight-path samples from NATO range instrumentation (145.7K points total) spanning Nevada and
+West-Coast airspace, plus synthetic midnight-crossing test cases.
 
 ## Branch workflow
 

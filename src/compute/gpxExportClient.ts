@@ -15,7 +15,7 @@ export const GPX_EXPORT_TASK = 'gpx-export'
 export const GPX_EXPORT_TASK_VERSION = 1
 
 // Sync GPX export (buildGpx, src/core/exporters/gpx.ts) is a single uninterruptible
-// pass over the dataset. Per docs/performance-baseline.md, it stays comfortably
+// pass over the dataset. Per performance baselines (.agents), it stays comfortably
 // fast (185ms) at 100k points but grows into hundreds of ms to multiple seconds
 // beyond that (783ms at 500k, ~1.6-1.7s+ at 1M), which is enough to visibly stall
 // the renderer thread. Route anything above this threshold through the chunked

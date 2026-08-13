@@ -16,6 +16,7 @@ import { parseGeoJson } from './geojson'
 import { parseKml } from './kml'
 import { parseNmea } from './nmea'
 import { parseGpb, looksLikeGpb } from './gpb'
+import { parseEag } from './eag'
 import { assertByteBudget, assertPointBudget, DEFAULT_FORMAT_BUDGETS } from './limits'
 import { describeSignatureMismatch, sniffBinarySignature, sniffTextSignature } from './contentSignature'
 
@@ -35,6 +36,7 @@ export const INPUT_FORMATS: FormatDescriptor[] = [
   { id: 'kml', label: 'KML / KMZ', extensions: ['kml', 'kmz'], binary: false, needsMapping: false, description: 'Google Earth placemarks, gx:Track, and desktop KMZ library files.' },
   { id: 'nmea', label: 'NMEA 0183', extensions: ['nmea', 'gps', 'log'], binary: false, needsMapping: false, description: 'Raw receiver sentences (GGA/RMC/GLL).' },
   { id: 'gpb', label: 'GPB (binary)', extensions: ['gpb', 'bin'], binary: true, needsMapping: false, description: 'JDDC Geo Point Binary container.' },
+  { id: 'eag', label: 'EAG TSPI', extensions: ['eag', 'txt'], binary: false, needsMapping: false, description: 'European Air Group TSPI (tab-delimited ECEF coordinates from NATO range instrumentation).' },
 ]
 
 export function detectFormat(fileName: string): FormatDescriptor | null {
@@ -43,6 +45,21 @@ export function detectFormat(fileName: string): FormatDescriptor | null {
     if (fmt.extensions.includes(ext)) return fmt
   }
   return null
+}
+
+export function resolveTextFormat(text: string): SourceFormat {
+  // Check for EAG header shape: 7 tab-separated fields on first line, and 11 fields on data rows
+  const lines = text.trim().split(/\r?\n/)
+  if (lines.length >= 2) {
+    const headerFields = lines[0].split('\t')
+    const firstDataFields = lines[1].split('\t')
+    // EAG: header has 7 fields, data rows have 11 fields
+    if (headerFields.length === 7 && firstDataFields.length === 11) {
+      return 'eag'
+    }
+  }
+  // Default to CSV for ambiguous .txt files
+  return 'csv'
 }
 
 const PARSER_VERSION = '1'
@@ -80,6 +97,7 @@ export function makeDataset(
         parserId: format,
         parserVersion: PARSER_VERSION,
       },
+      meta: result.meta,
     },
     sourceBytes,
     createdAt,
@@ -105,6 +123,8 @@ export async function parseFileToDataset(file: File, format: FormatDescriptor): 
 
     let result: ParseResult
     let mismatch: string | null
+    let resolvedFormat: SourceFormat = format.id
+
     if (format.binary) {
       if (format.id === 'gpb' || looksLikeGpb(bytes)) {
         result = parseGpb(buffer, DEFAULT_FORMAT_BUDGETS.gpb.maxPoints)
@@ -114,8 +134,14 @@ export async function parseFileToDataset(file: File, format: FormatDescriptor): 
       mismatch = describeSignatureMismatch(format.id, sniffBinarySignature(bytes))
     } else {
       const text = new TextDecoder('utf-8').decode(bytes)
-      mismatch = describeSignatureMismatch(format.id, sniffTextSignature(text))
-      switch (format.id) {
+
+      // Disambiguate .txt files: EAG vs CSV via content sniffing
+      if (format.id === 'csv' && file.name.toLowerCase().endsWith('.txt')) {
+        resolvedFormat = resolveTextFormat(text, file.name)
+      }
+
+      mismatch = describeSignatureMismatch(resolvedFormat, sniffTextSignature(text))
+      switch (resolvedFormat) {
         case 'gpx':
           result = parseGpx(text)
           break
@@ -128,16 +154,19 @@ export async function parseFileToDataset(file: File, format: FormatDescriptor): 
         case 'nmea':
           result = parseNmea(text)
           break
+        case 'eag':
+          result = parseEag(text, file.name)
+          break
         default:
-          throw new Error(`Format ${format.id} must be imported through the CSV mapping flow.`)
+          throw new Error(`Format ${resolvedFormat} must be imported through the CSV mapping flow.`)
       }
     }
     if (mismatch) result.warnings.push(mismatch)
 
-    assertPointBudget(format.id, result.points.length)
+    assertPointBudget(resolvedFormat, result.points.length)
 
     for (const warning of result.warnings) logger.warn('parser', `${file.name}: ${warning}`)
-    const dataset = makeDataset(file.name, format.id, result, file.size, checksum)
+    const dataset = makeDataset(file.name, resolvedFormat, result, file.size, checksum)
     logger.success('parser', `Loaded ${dataset.points.length} points from ${file.name}`, {
       format: format.id,
       channels: dataset.channels,

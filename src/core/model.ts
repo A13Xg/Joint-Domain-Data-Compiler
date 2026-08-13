@@ -36,6 +36,8 @@ export interface DatasetMetadata {
   timeReference: TimeReference
   channels: ChannelDefinition[]
   source: SourceMetadata
+  /** Format-specific header metadata (e.g., EAG platform name, exercise ID). */
+  meta?: Record<string, string>
 }
 
 export interface PointProvenance {
@@ -88,6 +90,7 @@ export type SourceFormat =
   | 'kml'
   | 'nmea'
   | 'gpb'
+  | 'eag'
   | 'unknown'
 
 /** A normalized, in-memory track. */

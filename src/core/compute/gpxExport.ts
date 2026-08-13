@@ -1,13 +1,13 @@
 // Chunked, cancellable GPX export core.
 //
 // Benchmarked at ~4.2s / ~74% of total per-size cost at 1,000,000 points
-// (docs/performance-baseline.md), GPX export is the biggest measured hotspot in
-// JDDC and scales roughly linearly with point count. This module is the pure,
-// framework-free compute core for that hotspot: it produces byte-identical output
-// to `buildGpx` (src/core/exporters/gpx.ts) but processes points in bounded
-// batches, checking for cancellation and yielding control back to the event loop
-// between batches, so a Worker host running this can honor progress/cancel
-// requests instead of blocking for seconds at a stretch.
+// (see .agents for performance baseline), GPX export is the biggest measured
+// hotspot in JDDC and scales roughly linearly with point count. This module is
+// the pure, framework-free compute core for that hotspot: it produces
+// byte-identical output to `buildGpx` (src/core/exporters/gpx.ts) but processes
+// points in bounded batches, checking for cancellation and yielding control back
+// to the event loop between batches, so a Worker host running this can honor
+// progress/cancel requests instead of blocking for seconds at a stretch.
 //
 // This module has no dependency on the Worker protocol (src/compute/*) — it is
 // wired into a task in src/compute/tasks.ts, following the existing pattern used

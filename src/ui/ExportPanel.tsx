@@ -10,6 +10,7 @@ import { logger } from '../core/logger'
 import { ComputeClient, type ComputeRunHandle } from '../compute/client'
 import { createGpxExportWorker, runGpxExport, shouldUseGpxExportWorker } from '../compute/gpxExportClient'
 import type { GpxBuildResult } from '../core/exporters/gpx'
+import type { EagExportOptions } from '../core/exporters/eag'
 
 type Target = ExportFormat | 'gpb'
 
@@ -19,6 +20,12 @@ export function ExportPanel({ dataset }: { dataset: Dataset }) {
   const [bom, setBom] = useState(false)
   const [includeExtensions, setIncludeExtensions] = useState(true)
   const [precision, setPrecision] = useState(7)
+  const [eagOptions, setEagOptions] = useState<EagExportOptions>({
+    platformType: 'A',
+    exerciseId: '0',
+    missionId: '0',
+    eagField4: '25',
+  })
   const [trackName, setTrackName] = useState(dataset.name.replace(/\.[^.]+$/, ''))
   const [acknowledgedNotional, setAcknowledgedNotional] = useState(false)
   // Reset the acknowledgment during render when the dataset changes, rather
@@ -45,12 +52,13 @@ export function ExportPanel({ dataset }: { dataset: Dataset }) {
     try {
       const result = exportDataset(dataset, target, {
         gpx: { sortByTime, bom, includeExtensions, coordinatePrecision: precision, trackName },
+        eag: { ...eagOptions, platformName: trackName },
       })
       return { text: result.text.slice(0, 1400), pointCount: result.pointCount, warnings: result.warnings }
     } catch (err) {
       return { text: `Export error: ${(err as Error).message}`, pointCount: 0, warnings: [] }
     }
-  }, [dataset, target, sortByTime, bom, includeExtensions, precision, trackName])
+  }, [dataset, target, sortByTime, bom, includeExtensions, precision, trackName, eagOptions])
 
   const descriptor = EXPORTERS.find((e) => e.id === target)
 
@@ -118,6 +126,7 @@ export function ExportPanel({ dataset }: { dataset: Dataset }) {
       } else {
         const result = exportDataset(dataset, target, {
           gpx: { sortByTime, bom, includeExtensions, coordinatePrecision: precision, trackName },
+          eag: { ...eagOptions, platformName: trackName },
         })
         blob = new Blob([result.text], { type: `${result.mime};charset=utf-8` })
         ext = result.extension
@@ -161,6 +170,27 @@ export function ExportPanel({ dataset }: { dataset: Dataset }) {
               <label className="num-field">
                 <span>coordinate precision</span>
                 <input type="number" min={4} max={9} value={precision} onChange={(e) => setPrecision(Number(e.target.value))} />
+              </label>
+            </div>
+          )}
+
+          {target === 'eag' && (
+            <div className="eag-options">
+              <label className="str-field">
+                <span>platform type</span>
+                <input type="text" maxLength={1} value={eagOptions.platformType ?? 'A'} onChange={(e) => setEagOptions({ ...eagOptions, platformType: e.target.value })} />
+              </label>
+              <label className="str-field">
+                <span>exercise ID</span>
+                <input type="text" value={eagOptions.exerciseId ?? '0'} onChange={(e) => setEagOptions({ ...eagOptions, exerciseId: e.target.value })} />
+              </label>
+              <label className="str-field">
+                <span>mission ID</span>
+                <input type="text" value={eagOptions.missionId ?? '0'} onChange={(e) => setEagOptions({ ...eagOptions, missionId: e.target.value })} />
+              </label>
+              <label className="str-field">
+                <span>field 4 (constant)</span>
+                <input type="text" value={eagOptions.eagField4 ?? '25'} onChange={(e) => setEagOptions({ ...eagOptions, eagField4: e.target.value })} />
               </label>
             </div>
           )}

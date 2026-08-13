@@ -3,8 +3,9 @@
 import { collectChannels, isValidLat, isValidLon, type Dataset, type TrackPoint } from '../model'
 import { epochMsToIso, escapeXml, trimNumber } from '../format'
 import { buildGpx, type GpxExportOptions } from './gpx'
+import { buildEag, type EagExportOptions } from './eag'
 
-export type ExportFormat = 'gpx' | 'csv' | 'geojson' | 'kml'
+export type ExportFormat = 'gpx' | 'csv' | 'geojson' | 'kml' | 'eag'
 
 export interface ExportDescriptor {
   id: ExportFormat
@@ -43,6 +44,13 @@ export const EXPORTERS: ExportDescriptor[] = [
     mime: 'application/vnd.google-earth.kml+xml',
     description: 'Google Earth track with timestamps and altitude.',
   },
+  {
+    id: 'eag',
+    label: 'EAG TSPI',
+    extension: 'eag',
+    mime: 'text/plain',
+    description: 'European Air Group TSPI format (tab-delimited ECEF coordinates).',
+  },
 ]
 
 export interface ExportResult {
@@ -56,7 +64,7 @@ export interface ExportResult {
 export function exportDataset(
   dataset: Dataset,
   format: ExportFormat,
-  options: { gpx?: GpxExportOptions } = {},
+  options: { gpx?: GpxExportOptions; eag?: EagExportOptions } = {},
 ): ExportResult {
   switch (format) {
     case 'gpx': {
@@ -72,6 +80,10 @@ export function exportDataset(
       return exportGeoJson(dataset)
     case 'kml':
       return exportKml(dataset)
+    case 'eag': {
+      const result = buildEag(dataset, options.eag)
+      return { text: result.text, mime: 'text/plain', extension: 'eag', pointCount: result.pointCount, warnings: result.warnings }
+    }
     default:
       throw new Error(`Unknown export format: ${format}`)
   }
