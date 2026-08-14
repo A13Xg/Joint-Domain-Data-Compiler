@@ -137,7 +137,7 @@ npm run build:desktop
 
 ## Branch Strategy
 
-See `.agents` for detailed branch workflow. Quick summary:
+Quick summary:
 
 - **`main`** — Stable, validated integration and release history
 - **`staging-branch`** — Active development (default working branch)
@@ -362,7 +362,7 @@ Before optimizing:
 
 ## Getting Help
 
-- **Questions about architecture?** — See `.agents` or `FUTURE_CONSIDERATIONS.md`
+- **Questions about architecture?** — See [`.agents/ARCHITECTURE.md`](.agents/ARCHITECTURE.md) or `FUTURE_CONSIDERATIONS.md`
 - **Need dev setup help?** — Check `ONBOARDING.md`
 - **Have a design question?** — Open a discussion or issue
 - **Found a bug in tests?** — Report it; test infrastructure is critical

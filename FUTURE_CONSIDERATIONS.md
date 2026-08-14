@@ -265,8 +265,7 @@ This document captures strategic decisions, architectural trade-offs, and long-t
 - Weekly `npm audit` runs in CI
 - Immediate patch release for high/critical runtime vulns
 - Major version updates on deliberate schedule (quarterly review)
-- All GitHub Actions pinned to immutable commit SHA
-- Semgrep container pinned to OCI manifest digest
+- All GitHub Actions pinned to immutable commit SHA (enforced by `test/release-integrity.ts`)
 
 **Rationale:**
 - **User safety:** Runtime deps directly affect shipped app; strict audit justified

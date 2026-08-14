@@ -8,7 +8,7 @@ JDDC is a **single-screen engineering workbench** for analyzing TSPI (trajectory
 
 Core design: **one screen, 13 tabs, one active dataset at a time, with cross-cutting state (dataset list, log console) always visible.**
 
-**Learn more:** See `.agents` file for full architecture, design rules, and philosophy.
+**Learn more:** See [`.agents/ARCHITECTURE.md`](.agents/ARCHITECTURE.md) for the data model, layer map, and invariants.
 
 ## Prerequisites
 
@@ -47,7 +47,8 @@ npm run dev:desktop
 
 ### Building
 - `npm run build` — Build optimized browser bundle
-- `npm run build:desktop:linux` / `:win` / `:mac` — Package for desktop platforms
+- `npm run build:desktop:linux` / `:win` — Package for Linux or Windows
+- `npm run build:desktop` — Package for the host platform (this is the macOS path; there is no `:mac` variant)
 - `npx vite build` — Vite build only
 
 ### Testing & Quality
@@ -120,9 +121,10 @@ test/                        # Test harnesses (check() pattern)
 
 benchmarks/                  # Performance baseline harnesses
 electron/                    # Desktop app main process, preload script, security config
-docs/ (removed)             # Docs consolidated into .agents + ONBOARDING.md
+docs/ (removed)             # Docs consolidated into .agents/ + ONBOARDING.md
 
-.agents                      # Project metadata, design rules, architecture (AI-friendly)
+.agents/                     # AI tooling + ARCHITECTURE.md (how the app works)
+AGENTS.md                    # Entrypoint for AI coding agents
 ONBOARDING.md              # This file
 README.md                   # User-facing project description
 CLAUDE.md                   # Claude Code project configuration (local)
@@ -208,11 +210,13 @@ The desktop app (`.exe` / `.dmg` / AppImage) packages the browser build with:
 
 To test locally:
 ```bash
-npm run build:desktop:linux  # or :win, :mac
-npm run check:desktop:linux
+npm run build:desktop:linux  # or :win; use `build:desktop` on macOS
+npm run check:desktop:linux  # or :win, :mac
 ```
 
-Before release, test all three platforms (CI automates this; macOS signing is manual).
+Releases run per-platform. Tag `v0.2.0` to build all three, or `linux-v0.2.0` /
+`win-v0.2.0` / `mac-v0.2.0` to add a single platform to that same release. Every
+platform workflow can also be run on demand from the Actions tab. macOS signing is manual.
 
 ## Common Tasks
 
@@ -249,7 +253,7 @@ Before release, test all three platforms (CI automates this; macOS signing is ma
 
 ## Getting Help
 
-- **Architecture questions**: Read `.agents` file (full design rules, philosophy, constraints)
+- **Architecture questions**: Read [`.agents/ARCHITECTURE.md`](.agents/ARCHITECTURE.md) (data model, layers, invariants)
 - **Component questions**: Check `src/ui/` file nearest to your task; most components are self-documented
 - **State management**: See `src/state/*.ts` modules
 - **Data pipeline**: Trace imports → parsing → transformations → export in `src/core/`
@@ -258,7 +262,7 @@ Before release, test all three platforms (CI automates this; macOS signing is ma
 
 ## Release Process
 
-See `.agents` for full release checklist. High-level:
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full release checklist. High-level:
 
 1. Update version in `package.json`, `package-lock.json`, `README.md`
 2. Commit release prep, wait for CI (Quality Gates workflow)

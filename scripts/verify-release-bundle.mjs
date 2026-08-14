@@ -2,22 +2,36 @@ import { createHash } from 'node:crypto'
 import { readFile, readdir } from 'node:fs/promises'
 import { basename, resolve } from 'node:path'
 
-const REQUIRED_ARTIFACTS = [
-  { label: 'Windows installer', pattern: /Windows-x64-Setup\.exe$/ },
-  { label: 'Windows portable executable', pattern: /Windows-x64-Portable\.exe$/ },
-  { label: 'Linux AppImage', pattern: /\.AppImage$/ },
-  { label: 'Linux Debian package', pattern: /\.deb$/ },
-  { label: 'macOS disk image', pattern: /\.dmg$/ },
-  { label: 'macOS zip archive', pattern: /\.zip$/ },
-  { label: 'Linux SBOM', pattern: /^JDDC-SBOM-Linux\.cdx\.json$/ },
-  { label: 'Windows SBOM', pattern: /^JDDC-SBOM-Windows\.cdx\.json$/ },
-  { label: 'macOS SBOM', pattern: /^JDDC-SBOM-macOS\.cdx\.json$/ },
-  { label: 'Windows checksum manifest', pattern: /^SHA256SUMS-Windows\.txt$/ },
-]
+const ARTIFACTS_BY_PLATFORM = {
+  linux: [
+    { label: 'Linux AppImage', pattern: /\.AppImage$/ },
+    { label: 'Linux Debian package', pattern: /\.deb$/ },
+    { label: 'Linux SBOM', pattern: /^JDDC-SBOM-Linux\.cdx\.json$/ },
+  ],
+  windows: [
+    { label: 'Windows installer', pattern: /Windows-x64-Setup\.exe$/ },
+    { label: 'Windows portable executable', pattern: /Windows-x64-Portable\.exe$/ },
+    { label: 'Windows SBOM', pattern: /^JDDC-SBOM-Windows\.cdx\.json$/ },
+    { label: 'Windows checksum manifest', pattern: /^SHA256SUMS-Windows\.txt$/ },
+  ],
+  macos: [
+    { label: 'macOS disk image', pattern: /\.dmg$/ },
+    { label: 'macOS zip archive', pattern: /\.zip$/ },
+    { label: 'macOS SBOM', pattern: /^JDDC-SBOM-macOS\.cdx\.json$/ },
+  ],
+}
 
-export function validateReleaseFileSet(fileNames) {
+export const RELEASE_PLATFORMS = Object.keys(ARTIFACTS_BY_PLATFORM)
+
+function requiredArtifactsFor(platforms) {
+  const unknown = platforms.filter((platform) => !ARTIFACTS_BY_PLATFORM[platform])
+  if (unknown.length > 0) throw new Error(`Unknown release platform(s): ${unknown.join(', ')}.`)
+  return platforms.flatMap((platform) => ARTIFACTS_BY_PLATFORM[platform])
+}
+
+export function validateReleaseFileSet(fileNames, platforms = RELEASE_PLATFORMS) {
   const errors = []
-  for (const required of REQUIRED_ARTIFACTS) {
+  for (const required of requiredArtifactsFor(platforms)) {
     const matches = fileNames.filter((name) => required.pattern.test(name))
     if (matches.length !== 1) {
       errors.push(`Expected exactly one ${required.label}; found ${matches.length}.`)
@@ -47,12 +61,12 @@ async function sha256(filePath) {
   return createHash('sha256').update(await readFile(filePath)).digest('hex')
 }
 
-export async function verifyReleaseBundle(directory) {
+export async function verifyReleaseBundle(directory, platforms = RELEASE_PLATFORMS) {
   const absoluteDirectory = resolve(directory)
   const fileNames = (await readdir(absoluteDirectory, { withFileTypes: true }))
     .filter((entry) => entry.isFile())
     .map((entry) => entry.name)
-  const errors = validateReleaseFileSet(fileNames)
+  const errors = validateReleaseFileSet(fileNames, platforms)
   const manifestName = 'SHA256SUMS.txt'
   if (!fileNames.includes(manifestName)) {
     errors.push(`Missing ${manifestName}.`)
@@ -84,7 +98,10 @@ export async function verifyReleaseBundle(directory) {
 }
 
 if (process.argv[1] && basename(process.argv[1]) === 'verify-release-bundle.mjs') {
-  const errors = await verifyReleaseBundle(process.argv[2] ?? 'release')
+  const requestedPlatforms = process.argv[3]
+    ? process.argv[3].split(',').map((platform) => platform.trim()).filter(Boolean)
+    : RELEASE_PLATFORMS
+  const errors = await verifyReleaseBundle(process.argv[2] ?? 'release', requestedPlatforms)
   if (errors.length > 0) {
     for (const error of errors) console.error(error)
     process.exitCode = 1

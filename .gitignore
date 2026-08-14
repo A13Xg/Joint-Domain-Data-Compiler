@@ -17,6 +17,12 @@ playwright-report
 test-results
 *.local
 
+# AI tooling lives in .agents/ and is tracked deliberately, but exclude
+# machine-specific settings and system paths.
+!.agents/**
+.agents/.claude/settings.local.json
+.agents/.codex/settings.local.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
