@@ -17,6 +17,7 @@ export const DEFAULT_FORMAT_BUDGETS: Record<SourceFormat, FormatBudget> = {
   kml: { maxBytes: 150 * MB, maxPoints: 1_000_000 },
   nmea: { maxBytes: 150 * MB, maxPoints: 2_000_000 },
   gpb: { maxBytes: 300 * MB, maxPoints: 3_000_000 },
+  eag: { maxBytes: 150 * MB, maxPoints: 2_000_000 },
   unknown: { maxBytes: 50 * MB, maxPoints: 500_000 },
 }
 

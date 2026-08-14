@@ -27,7 +27,19 @@ export function sniffTextSignature(text: string): ContentSignature {
   }
   if (/^\$[A-Za-z]{5},/m.test(head)) return 'nmea'
 
-  const firstLine = head.split(/\r?\n/, 1)[0] ?? ''
+  const lines = head.split(/\r?\n/)
+  const firstLine = lines[0] ?? ''
+  const secondLine = lines[1] ?? ''
+
+  // EAG header: 7 tab-separated fields on first line, 11 on data rows
+  if (firstLine && /\t/.test(firstLine)) {
+    const headerFields = firstLine.split('\t')
+    const dataFields = secondLine.split('\t')
+    if (headerFields.length === 7 && dataFields.length === 11) {
+      return 'eag'
+    }
+  }
+
   if (/[,\t;]/.test(firstLine) && !/^\s*</.test(firstLine)) return 'csv'
 
   return 'unknown'

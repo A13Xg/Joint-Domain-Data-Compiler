@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CsvAnalysisResult, DetectedColumn } from './types/converter'
 import type { Dataset, TrackPoint } from './core/model'
 import { withPoints } from './core/transforms'
-import { detectFormat, makeDataset, parseFileToDataset, INPUT_FORMATS } from './core/parsers'
+import { detectFormat, makeDataset, parseFileToDataset, INPUT_FORMATS, resolveTextFormat } from './core/parsers'
 import { streamCsvFileToPoints, CsvImportCancelledError, type CsvMapping } from './core/parsers/csv'
 import { assertByteBudget, assertPointBudget, DEFAULT_FORMAT_BUDGETS } from './core/parsers/limits'
 import { describeSignatureMismatch, sniffTextSignature } from './core/parsers/contentSignature'
@@ -324,8 +324,20 @@ export default function App() {
       }
       return
     }
-    const format = detectFormat(file.name)
+    let format = detectFormat(file.name)
     if (!format) { logger.error('import', `Unsupported file type: ${file.name}`); flashToast(`Unsupported file type: ${file.name}`); return }
+
+    // Disambiguate .txt files: might be EAG or CSV
+    if (ext === 'txt' && format.id === 'csv') {
+      try {
+        const text = await file.text()
+        const resolvedFormat = resolveTextFormat(text)
+        format = INPUT_FORMATS.find((f) => f.id === resolvedFormat) ?? format
+      } catch (error) {
+        logger.warn('import', `Could not read ${file.name} for format detection: ${(error as Error).message}`)
+      }
+    }
+
     if (format.needsMapping) { analyzeCsv(file); return }
     setBusy(`Parsing ${file.name}`); setProgress(null)
     try { addDataset(await parseFileToDataset(file, format)) }

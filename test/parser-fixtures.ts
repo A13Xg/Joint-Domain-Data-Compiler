@@ -11,6 +11,7 @@ import { parseKml } from '../src/core/parsers/kml.ts'
 import { parseGeoJson } from '../src/core/parsers/geojson.ts'
 import { parseNmea } from '../src/core/parsers/nmea.ts'
 import { parseGpb } from '../src/core/parsers/gpb.ts'
+import { parseEag } from '../src/core/parsers/eag.ts'
 import { buildPointsFromCsvRows, type CsvMapping } from '../src/core/parsers/csv.ts'
 import { makeDataset } from '../src/core/parsers/index.ts'
 
@@ -172,6 +173,37 @@ function toBuffer(bytes: Buffer): ArrayBuffer {
     'Malformed CSV row is still parsed into a point despite the quote error (documented gap)',
     malformedResult.points.length === 1,
     `${malformedResult.points.length} points`,
+  )
+}
+
+// --- EAG ---------------------------------------------------------------
+{
+  const valid = parseEag(readFileSync(`${BASE}06JAN25_TEST.txt`, 'utf8'), '06JAN25_TEST.txt')
+  check('Valid EAG yields 8 points', valid.points.length === 8, `${valid.points.length} points`)
+  check('Valid EAG has no warnings', valid.warnings.length === 0, valid.warnings.join('; '))
+  check('Valid EAG preserves heading_deg channel', valid.channels.includes('heading_deg'))
+  check('Valid EAG includes eag_field7 and eag_field8 channels', valid.channels.includes('eag_field7') && valid.channels.includes('eag_field8'))
+  check('Valid EAG carries elevation from ECEF', valid.points[0].ele !== undefined && typeof valid.points[0].ele === 'number')
+  check('Valid EAG includes header metadata', valid.meta && valid.meta['platformName'] === 'TEST-A/C')
+  check('Valid EAG reconstructs UTC times', valid.points.every((p) => typeof p.time === 'number'))
+  // Check midnight-crossing points (rows 4-5): should have different day-indices
+  const point4Time = valid.points[4]?.time
+  const point5Time = valid.points[5]?.time
+  if (point4Time && point5Time) {
+    const d4 = new Date(point4Time)
+    const d5 = new Date(point5Time)
+    check('Valid EAG midnight-crossing points advance calendar', d5.getUTCDate() === d4.getUTCDate() || d5.getUTCDate() === d4.getUTCDate() + 1)
+  }
+
+  const dataset = makeDataset('06JAN25_TEST.txt', 'eag', valid)
+  check('makeDataset wires EAG meta through to metadata.meta', dataset.metadata?.meta !== undefined)
+
+  const malformed = parseEag(readFileSync(`${INVALID}malformed-eag.txt`, 'utf8'), '06JAN25_MALFORMED.txt')
+  check('Malformed EAG (wrong field counts, invalid ECEF) yields zero points', malformed.points.length === 0)
+  check(
+    'Malformed EAG surfaces explanatory warnings',
+    malformed.warnings.some((w) => /EAG rows skipped/.test(w)),
+    malformed.warnings.join('; '),
   )
 }
 
