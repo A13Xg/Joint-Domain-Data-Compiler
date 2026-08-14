@@ -15,10 +15,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
-    name: Lint, test, and web build
+  unit-tests:
+    name: Lint and unit tests
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - name: Check out source
         uses: actions/checkout@d632683dd7b4114d4e6ca60534b3783c8c73d4c1 # v4
@@ -35,10 +35,28 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint and run the complete regression suite (check:unit)
+      - name: Lint and run the complete regression suite
         run: npm run check:unit
 
-      - name: Build web application (check:web)
+  build-web:
+    name: Build web application
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d632683dd7b4114d4e6ca60534b3783c8c73d4c1 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@0a44ba7841707b7fe618dbbf4107c368b0dec200 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web application
         run: npm run check:web
 
   browser-smoke:
