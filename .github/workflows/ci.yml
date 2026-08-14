@@ -21,10 +21,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Check out source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@d632683dd7b4114d4e6ca60534b3783c8c73d4c1 # v4
 
       - name: Set up Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@0a44ba7841707b7fe618dbbf4107c368b0dec200 # v4
         with:
           node-version: 22
           cache: npm
@@ -47,10 +47,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Check out source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@d632683dd7b4114d4e6ca60534b3783c8c73d4c1 # v4
 
       - name: Set up Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@0a44ba7841707b7fe618dbbf4107c368b0dec200 # v4
         with:
           node-version: 22
           cache: npm
@@ -67,7 +67,7 @@ jobs:
       - name: Upload browser failure report
         if: failure()
         continue-on-error: true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@6f51b1e2c4af15367c4595661c38db3fd7e0e694 # v4
         with:
           name: playwright-report-${{ github.sha }}
           path: |
@@ -82,10 +82,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Check out source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@d632683dd7b4114d4e6ca60534b3783c8c73d4c1 # v4
 
       - name: Set up Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@0a44ba7841707b7fe618dbbf4107c368b0dec200 # v4
         with:
           node-version: 22
           cache: npm
@@ -102,7 +102,7 @@ jobs:
       - name: Upload security report
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@6f51b1e2c4af15367c4595661c38db3fd7e0e694 # v4
         with:
           name: security-report-${{ github.sha }}
           path: jddc-sbom.cdx.json
@@ -117,7 +117,7 @@ jobs:
       image: semgrep/semgrep@sha256:691e6b67d374edd3f546a123c0255fd281a63a2bf11ca9dda51fb1a735fa3264
     steps:
       - name: Check out source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@d632683dd7b4114d4e6ca60534b3783c8c73d4c1 # v4
 
       - name: Scan production source
         run: semgrep scan --config auto --error src electron scripts
