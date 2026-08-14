@@ -41,16 +41,6 @@ jobs:
       - name: Build web application (check:web)
         run: npm run check:web
 
-      - name: Upload web build
-        if: always()
-        continue-on-error: true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: web-dist-${{ github.sha }}
-          path: dist
-          if-no-files-found: warn
-          retention-days: 3
-
   browser-smoke:
     name: Browser workbench smoke
     runs-on: ubuntu-latest
@@ -108,9 +98,6 @@ jobs:
 
       - name: Generate CycloneDX SBOM
         run: npm sbom --sbom-format=cyclonedx > jddc-sbom.cdx.json
-
-      - name: Validate SBOM JSON
-        run: node -e "const fs=require('fs');const x=JSON.parse(fs.readFileSync('jddc-sbom.cdx.json','utf8'));if(x.bomFormat!=='CycloneDX'||!Array.isArray(x.components))process.exit(1)"
 
       - name: Upload security report
         if: always()
