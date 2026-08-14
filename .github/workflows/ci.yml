@@ -15,10 +15,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  unit-tests:
-    name: Lint and unit tests
+  test:
+    name: Tests and build verification
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -29,57 +29,25 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install GPX schema validator
-        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils xvfb libgtk-3-0
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint and run the complete regression suite
+      - name: Lint and run regression suite
         run: npm run check:unit
-
-  build-web:
-    name: Build web application
-    needs: unit-tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
 
       - name: Build web application
         run: npm run check:web
 
-  browser-smoke:
-    name: Browser workbench smoke
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v4
+      - name: Audit runtime dependencies
+        run: npm audit --omit=dev --audit-level=high
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install Chromium and system dependencies
+      - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Run basic application smoke tests
+      - name: Run browser smoke tests
         run: npm run check:e2e:ci
 
       - name: Upload browser failure report
@@ -91,39 +59,6 @@ jobs:
           path: |
             playwright-report
             test-results
-          if-no-files-found: warn
-          retention-days: 3
-
-  security:
-    name: Runtime dependency audit and SBOM
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Audit shipped runtime dependencies
-        run: npm audit --omit=dev --audit-level=high
-
-      - name: Generate CycloneDX SBOM
-        run: npm sbom --sbom-format=cyclonedx > jddc-sbom.cdx.json
-
-      - name: Upload security report
-        if: always()
-        continue-on-error: true
-        uses: actions/upload-artifact@v4
-        with:
-          name: security-report-${{ github.sha }}
-          path: jddc-sbom.cdx.json
           if-no-files-found: warn
           retention-days: 3
 

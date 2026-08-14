@@ -13,10 +13,10 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
-  check-unit:
-    name: Unit tests
+  test:
+    name: Tests and build verification
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -27,33 +27,25 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils xvfb libgtk-3-0
+
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint and run the complete regression suite
+      - name: Lint and run regression suite
         run: npm run check:unit
 
-  browser-smoke:
-    name: Browser workbench smoke
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v4
+      - name: Build web application
+        run: npm run check:web
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
+      - name: Audit runtime dependencies
+        run: npm audit --omit=dev --audit-level=high
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install Chromium and system dependencies
+      - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Exercise the primary browser workflow
+      - name: Exercise primary workflow
         run: npm run check:e2e
 
       - name: Upload browser failure report
@@ -68,29 +60,9 @@ jobs:
           if-no-files-found: warn
           retention-days: 5
 
-  runtime-security:
-    name: Release runtime dependency audit
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Audit shipped runtime dependencies
-        run: npm audit --omit=dev --audit-level=high
-
   package:
     name: Package ${{ matrix.platform_name }}
-    needs: [check-unit, browser-smoke]
+    needs: [test]
     strategy:
       fail-fast: false
       matrix:
@@ -236,7 +208,7 @@ jobs:
 
   publish-release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [check-unit, browser-smoke, runtime-security, package]
+    needs: [test, package]
     runs-on: ubuntu-latest
     permissions:
       contents: write
