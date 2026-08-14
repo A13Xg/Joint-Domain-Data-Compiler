@@ -4,8 +4,9 @@ test('application loads and renders workbench', async ({ page }) => {
   await page.goto('/')
 
   // Check main UI elements are visible
-  await expect(page.locator('text=Import')).toBeVisible({ timeout: 5000 })
-  await expect(page.getByRole('button', { name: /Overview|Import|Map|Chart/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Import', exact: true })).toBeVisible({ timeout: 5000 })
+  await expect(page.getByRole('button', { name: 'Overview' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Map', exact: true })).toBeVisible()
 })
 
 test('file input accepts all supported formats', async ({ page }) => {
@@ -20,8 +21,9 @@ test('can display dataset list and format badges', async ({ page }) => {
 
   // Check format badges are displayed
   const badges = page.locator('.format-badges .badge')
-  await expect(badges).toHaveCount(8) // CSV, GPX, GeoJSON, KML, NMEA, GPB, EAG
+  await expect(badges).toHaveCount(8) // CSV, GPX, GeoJSON, KML, NMEA, GPB, EAG, KML Library
 
-  // Check dataset list exists
+  // Check dataset list exists (empty by default)
   await expect(page.locator('.dataset-list')).toBeVisible()
+  await expect(page.locator('text=No datasets yet')).toBeVisible()
 })
