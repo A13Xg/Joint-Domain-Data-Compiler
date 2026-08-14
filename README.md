@@ -14,9 +14,13 @@ JDDC runs as a browser application and an Electron desktop application. Data par
 
 JDDC is a functional engineering workbench with a strong deterministic core. It is not yet production-complete.
 
-- `CHANGELOG.md` — user-visible changes grouped by release.
-- `ONBOARDING.md` — developer setup and contribution guidelines.
-- `.agents` — project architecture, design rules, and constraints (machine-readable).
+### Documentation
+
+- **`CHANGELOG.md`** — User-visible changes grouped by release.
+- **`ROADMAP.md`** — Planned features, phases, and future direction.
+- **`FUTURE_CONSIDERATIONS.md`** — Strategic decisions, architecture trade-offs, and long-term vision.
+- **`ONBOARDING.md`** — Developer setup, branch strategy, and contribution guidelines.
+- **`.agents`** — Project architecture, design rules, constraints, and development workflow (machine-readable YAML).
 
 ## Import
 
