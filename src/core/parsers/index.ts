@@ -47,7 +47,7 @@ export function detectFormat(fileName: string): FormatDescriptor | null {
   return null
 }
 
-export function resolveTextFormat(text: string, _fileName?: string): SourceFormat {
+export function resolveTextFormat(text: string): SourceFormat {
   // Check for EAG header shape: 7 tab-separated fields on first line, and 11 fields on data rows
   const lines = text.trim().split(/\r?\n/)
   if (lines.length >= 2) {
@@ -137,7 +137,7 @@ export async function parseFileToDataset(file: File, format: FormatDescriptor): 
 
       // Disambiguate .txt files: EAG vs CSV via content sniffing
       if (format.id === 'csv' && file.name.toLowerCase().endsWith('.txt')) {
-        resolvedFormat = resolveTextFormat(text, file.name)
+        resolvedFormat = resolveTextFormat(text)
       }
 
       mismatch = describeSignatureMismatch(resolvedFormat, sniffTextSignature(text))

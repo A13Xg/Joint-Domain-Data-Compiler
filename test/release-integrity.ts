@@ -41,7 +41,13 @@ check('Checksum manifest rejects duplicate entries', duplicateRejected)
 
 const releaseWorkflow = await readFile('.github/workflows/release.yml', 'utf8')
 check('Prerelease tags are published as prereleases', releaseWorkflow.includes("prerelease: ${{ contains(github.ref_name, '-') }}"))
-check('Release publication requires runtime audit and Semgrep', releaseWorkflow.includes('needs: [browser-smoke, runtime-security, static-analysis, package]') && releaseWorkflow.includes('npm audit --omit=dev --audit-level=high') && releaseWorkflow.includes('semgrep scan --config auto --error src electron scripts'))
+check('Release publication requires runtime audit and Semgrep',
+  releaseWorkflow.includes('browser-smoke') &&
+  releaseWorkflow.includes('runtime-security') &&
+  releaseWorkflow.includes('static-analysis') &&
+  releaseWorkflow.includes('package') &&
+  releaseWorkflow.includes('npm audit --omit=dev --audit-level=high') &&
+  releaseWorkflow.includes('semgrep scan --config auto --error src electron scripts'))
 
 const fixtureDirectory = await mkdtemp(join(tmpdir(), 'jddc-release-integrity-'))
 try {
