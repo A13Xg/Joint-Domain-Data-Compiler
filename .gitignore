@@ -12,6 +12,7 @@ dist
 dist-ssr
 release
 .test-build
+.screenshots
 .worktrees
 playwright-report
 test-results
