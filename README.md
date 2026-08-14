@@ -14,23 +14,40 @@ JDDC runs as a browser application and an Electron desktop application. Data par
 
 JDDC is a functional engineering workbench with a strong deterministic core. It is not yet production-complete.
 
-- `CHANGELOG.md` — user-visible changes grouped by release.
-- `ONBOARDING.md` — developer setup and contribution guidelines.
-- `.agents` — project architecture, design rules, and constraints (machine-readable).
+### Documentation
+
+- **`CHANGELOG.md`** — User-visible changes grouped by release.
+- **`ROADMAP.md`** — Planned features, phases, and future direction.
+- **`FUTURE_CONSIDERATIONS.md`** — Strategic decisions, architecture trade-offs, and long-term vision.
+- **`ONBOARDING.md`** — Developer setup, branch strategy, and contribution guidelines.
+- **`.agents`** — Project architecture, design rules, constraints, and development workflow (machine-readable YAML).
 
 ## Import
 
-| Format | Extensions | Current behavior |
-|---|---|---|
-| CSV / TSV | `.csv .tsv .txt` | Header analysis, field mapping, type inference, DMS coordinates, decimal-comma handling and multiple timestamp forms. |
-| GPX | `.gpx` | Tracks, routes, waypoints and extension-leaf channels. |
-| GeoJSON | `.geojson .json` | Points, LineStrings, MultiLineStrings and supported geometry collections. |
-| KML | `.kml` | Points, LineStrings and Google `gx:Track`. |
-| NMEA 0183 | `.nmea .gps .log` | GGA, RMC and GLL with checksum handling. |
-| GPB | `.gpb .bin` | Compact JDDC numeric binary transport. GPB is not a complete lossless workspace format. |
-| EAG TSPI | `.eag .txt` | European Air Group TSPI: tab-delimited ECEF coordinates from NATO/European range instrumentation. Filename-based date extraction and per-row HH:MM:SS time reconstruction. |
+| Format | Extensions | Web | Desktop | Current behavior |
+|---|---|---|---|---|
+| CSV / TSV | `.csv .tsv .txt` | ✓ | ✓ | Header analysis, field mapping, type inference, DMS coordinates, decimal-comma handling and multiple timestamp forms. |
+| GPX | `.gpx` | ✓ | ✓ | Tracks, routes, waypoints and extension-leaf channels. |
+| GeoJSON | `.geojson .json` | ✓ | ✓ | Points, LineStrings, MultiLineStrings and supported geometry collections. |
+| KML | `.kml` | ✓ | ✓ | Points, LineStrings and Google `gx:Track`. |
+| KML Library | `.kml .kmz` | — | ✓ | Persistent desktop library with disk-backed KML/KMZ overlay storage. Desktop only. |
+| NMEA 0183 | `.nmea .gps .log` | ✓ | ✓ | GGA, RMC and GLL with checksum handling. |
+| GPB | `.gpb .bin` | ✓ | ✓ | Compact JDDC numeric binary transport. GPB is not a complete lossless workspace format. |
+| EAG TSPI | `.eag .txt` | ✓ | ✓ | European Air Group TSPI: tab-delimited ECEF coordinates from NATO/European range instrumentation. Filename-based date extraction and per-row HH:MM:SS time reconstruction. |
 
 All supported inputs normalize into a shared dataset model with source metadata, channel definitions, provenance fields, warnings and quality flags.
+
+### Import Sources: Web vs. Desktop
+
+**Browser mode** supports importing data files directly from disk:
+- All formats listed above (except KML Library) are available
+- KML/KMZ files are parsed as datasets and added to the workspace
+
+**Electron desktop app** adds a persistent **KML/KMZ Library**:
+- Save KML/KMZ files to a library stored in your home directory (`~/.jddc/kml-library/`)
+- Reuse saved overlays across projects without re-importing
+- Library persists between sessions and app restarts
+- Available via the **Library** tab in the desktop app
 
 ## Analysis and linked inspection
 

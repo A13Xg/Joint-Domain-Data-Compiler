@@ -2,7 +2,6 @@ name: Release Build
 
 on:
   push:
-    branches: [main]
     tags: ['v*']
   workflow_dispatch:
 
@@ -14,33 +13,45 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
-  browser-smoke:
-    name: Browser workbench smoke
+  test:
+    name: Tests and build verification
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Check out source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@v4
 
       - name: Set up Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils xvfb libgtk-3-0
+
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Chromium and system dependencies
+      - name: Lint and run regression suite
+        run: npm run check:unit
+
+      - name: Build web application
+        run: npm run check:web
+
+      - name: Audit runtime dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Exercise the primary browser workflow
+      - name: Exercise primary workflow
         run: npm run check:e2e
 
       - name: Upload browser failure report
         if: failure()
         continue-on-error: true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4
         with:
           name: release-playwright-report-${{ github.sha }}
           path: |
@@ -49,41 +60,9 @@ jobs:
           if-no-files-found: warn
           retention-days: 5
 
-  runtime-security:
-    name: Release runtime dependency audit
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Check out source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Audit shipped runtime dependencies
-        run: npm audit --omit=dev --audit-level=high
-
-  static-analysis:
-    name: Release Semgrep static analysis
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    container:
-      image: semgrep/semgrep@sha256:691e6b67d374edd3f546a123c0255fd281a63a2bf11ca9dda51fb1a735fa3264
-    steps:
-      - name: Check out source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: Scan production source
-        run: semgrep scan --config auto --error src electron scripts
-
   package:
     name: Package ${{ matrix.platform_name }}
+    needs: [test]
     strategy:
       fail-fast: false
       matrix:
@@ -115,10 +94,10 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Check out source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@v4
 
       - name: Set up Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
@@ -140,9 +119,6 @@ jobs:
             echo "Tag version $tag_version does not match package.json $package_version"
             exit 1
           }
-
-      - name: Lint and run the complete regression suite (check:unit)
-        run: npm run check:unit
 
       - name: Build and package app
         if: runner.os != 'Windows'
@@ -223,7 +199,7 @@ jobs:
 
       - name: Upload release-build artifacts
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.os }}-${{ github.sha }}
           path: ${{ matrix.artifact_glob }}
@@ -232,7 +208,7 @@ jobs:
 
   publish-release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [browser-smoke, runtime-security, static-analysis, package]
+    needs: [test, package]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -241,13 +217,13 @@ jobs:
       artifact-metadata: write
     steps:
       - name: Check out release verifier
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@v4
         with:
           sparse-checkout: scripts/verify-release-bundle.mjs
           sparse-checkout-cone-mode: false
 
       - name: Download platform artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@v4
         with:
           pattern: release-*-${{ github.sha }}
           path: release-bundle

@@ -137,7 +137,7 @@ export async function parseFileToDataset(file: File, format: FormatDescriptor): 
 
       // Disambiguate .txt files: EAG vs CSV via content sniffing
       if (format.id === 'csv' && file.name.toLowerCase().endsWith('.txt')) {
-        resolvedFormat = resolveTextFormat(text, file.name)
+        resolvedFormat = resolveTextFormat(text)
       }
 
       mismatch = describeSignatureMismatch(resolvedFormat, sniffTextSignature(text))
