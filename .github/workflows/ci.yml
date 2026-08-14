@@ -79,8 +79,8 @@ jobs:
       - name: Install Chromium and system dependencies
         run: npx playwright install --with-deps chromium
 
-      - name: Exercise the primary browser workflow
-        run: npm run check:e2e
+      - name: Run basic application smoke tests
+        run: npm run check:e2e:ci
 
       - name: Upload browser failure report
         if: failure()
