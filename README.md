@@ -4,7 +4,7 @@
 [![Windows package](https://img.shields.io/github/actions/workflow/status/A13Xg/Joint-Domain-Data-Compiler/release.yml?branch=main&label=Windows)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/actions/workflows/release.yml)
 [![macOS package](https://img.shields.io/github/actions/workflow/status/A13Xg/Joint-Domain-Data-Compiler/release.yml?branch=main&label=macOS)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/actions/workflows/release.yml)
 [![Linux package](https://img.shields.io/github/actions/workflow/status/A13Xg/Joint-Domain-Data-Compiler/release.yml?branch=main&label=Linux)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/actions/workflows/release.yml)
-[![Runtime audit](https://img.shields.io/badge/runtime_audit-0_high%2Fcritical-15803d)](.agents)
+[![Runtime audit](https://img.shields.io/badge/runtime_audit-0_high%2Fcritical-15803d)](FUTURE_CONSIDERATIONS.md)
 
 A **single-user trajectory and TSPI engineering workbench** for importing, normalizing, inspecting, transforming, comparing, visualizing, saving and exporting time-space-position-information data.
 
@@ -20,7 +20,7 @@ JDDC is a functional engineering workbench with a strong deterministic core. It 
 - **`ROADMAP.md`** — Planned features, phases, and future direction.
 - **`FUTURE_CONSIDERATIONS.md`** — Strategic decisions, architecture trade-offs, and long-term vision.
 - **`ONBOARDING.md`** — Developer setup, branch strategy, and contribution guidelines.
-- **`.agents`** — Project architecture, design rules, constraints, and development workflow (machine-readable YAML).
+- **`.agents/ARCHITECTURE.md`** — How JDDC works: data model, layer map, and invariants. `AGENTS.md` is the short entrypoint for AI coding agents.
 
 ## Import
 
@@ -187,7 +187,7 @@ The release workflow also produces SBOMs, SHA-256 checksums, and GitHub/Sigstore
 attestations; enforces a reviewed Electron fuse set; signs Windows artifacts when repository
 certificate secrets are available (otherwise producing and verifying an unsigned fallback); and
 runs a native packaged-renderer smoke gate on Linux, Windows and macOS. Release procedures and
-rollback recovery steps are documented in the `.agents` file. Linux is locally proven; native
+rollback recovery steps are documented in `CONTRIBUTING.md`. Linux is locally proven; native
 Windows and macOS execution awaits an available GitHub-hosted runner. macOS signing/notarization
 still requires owner-provided credentials.
 

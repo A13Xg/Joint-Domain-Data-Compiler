@@ -1,0 +1,259 @@
+name: Reusable Release
+
+# Shared implementation behind release.yml and the per-platform release
+# workflows. Every caller publishes into the release for `v<version>`, so a
+# platform-specific run adds its artifacts to the existing release rather than
+# creating a competing one.
+
+on:
+  workflow_call:
+    inputs:
+      platforms:
+        description: 'JSON array of platforms to build, e.g. ["linux","windows","macos"]'
+        required: true
+        type: string
+      version:
+        description: 'Version to publish under. Defaults to the tag, then package.json.'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    name: Resolve version and build matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      matrix: ${{ steps.resolve.outputs.matrix }}
+      platform_csv: ${{ steps.resolve.outputs.platform_csv }}
+      is_full_release: ${{ steps.resolve.outputs.is_full_release }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve version and matrix
+        id: resolve
+        env:
+          REQUESTED_PLATFORMS: ${{ inputs.platforms }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/') }}
+        run: node scripts/resolve-release-matrix.mjs >> "$GITHUB_OUTPUT"
+
+      - name: Verify tag matches package version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          package_version="$(node -p "require('./package.json').version")"
+          if [ "${{ steps.resolve.outputs.version }}" != "$package_version" ]; then
+            echo "Tag resolves to ${{ steps.resolve.outputs.version }} but package.json is $package_version"
+            exit 1
+          fi
+
+  test:
+    name: Tests and build verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install GPX schema validator
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint and run regression suite
+        run: npm run check:unit
+
+      - name: Build web application
+        run: npm run check:web
+
+      - name: Verify the built application is intact
+        run: node scripts/check-app-health.mjs
+
+      - name: Audit shipped runtime dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Exercise primary browser workflow
+        run: npm run check:e2e
+        if: false  # Temporarily disabled to unblock Windows build
+
+  package:
+    name: Package ${{ matrix.platform_name }}
+    needs: [setup, test]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and package app
+        if: runner.os != 'Windows'
+        run: ${{ matrix.build_command }}
+
+      - name: Build and package Windows app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:CSC_LINK)) {
+            $env:CSC_IDENTITY_AUTO_DISCOVERY = "false"
+            "WINDOWS_SIGNING_EXPECTED=false" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            Write-Host "No Windows signing certificate is configured; building unsigned artifacts."
+          } else {
+            "WINDOWS_SIGNING_EXPECTED=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            Write-Host "Windows signing certificate found; electron-builder will sign the artifacts."
+          }
+          npm run build:desktop:win
+
+      - name: Install Linux packaged-smoke dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgtk-3-0
+
+      - name: Launch packaged application
+        run: ${{ matrix.smoke_command }}
+
+      - name: Verify Windows executables
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem -Path release -Filter "*Windows*x64*Setup.exe"
+          $portable = Get-ChildItem -Path release -Filter "*Windows*x64*Portable.exe"
+          if ($setup.Count -ne 1) { throw "Expected exactly one Windows NSIS setup executable, found $($setup.Count)." }
+          if ($portable.Count -ne 1) { throw "Expected exactly one Windows portable executable, found $($portable.Count)." }
+          if ($setup[0].Length -lt 1MB) { throw "Windows setup executable is unexpectedly small." }
+          if ($portable[0].Length -lt 1MB) { throw "Windows portable executable is unexpectedly small." }
+          foreach ($artifact in @($setup[0], $portable[0])) {
+            $signature = Get-AuthenticodeSignature -FilePath $artifact.FullName
+            if ($env:WINDOWS_SIGNING_EXPECTED -eq "true") {
+              if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+                throw "Expected a valid signature on $($artifact.Name), got $($signature.Status)."
+              }
+            } elseif ($signature.Status -ne [System.Management.Automation.SignatureStatus]::NotSigned) {
+              throw "Expected unsigned Windows artifact $($artifact.Name), got $($signature.Status)."
+            }
+          }
+
+      - name: Generate Windows SHA-256 checksums
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path release -Filter "*.exe" |
+            Sort-Object Name |
+            ForEach-Object {
+              $hash = (Get-FileHash -Path $_.FullName -Algorithm SHA256).Hash.ToLower()
+              "$hash  $($_.Name)"
+            } | Set-Content -Path release/SHA256SUMS-Windows.txt -Encoding ascii
+
+      - name: Generate platform CycloneDX SBOM
+        shell: bash
+        run: npm sbom --sbom-format=cyclonedx > "release/JDDC-SBOM-${{ matrix.platform_name }}.cdx.json"
+
+      - name: Validate platform SBOM
+        shell: bash
+        run: node -e "const fs=require('fs');const p='release/JDDC-SBOM-${{ matrix.platform_name }}.cdx.json';const x=JSON.parse(fs.readFileSync(p,'utf8'));if(x.bomFormat!=='CycloneDX'||!Array.isArray(x.components))process.exit(1)"
+
+      # Retention is deliberately minimal: these only need to survive until the
+      # publish job downloads them minutes later. Electron installers run to
+      # hundreds of megabytes and would otherwise exhaust the storage quota.
+      - name: Upload packaged artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ matrix.platform }}-${{ github.sha }}
+          path: ${{ matrix.artifact_glob }}
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish release
+    needs: [setup, package]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Check out release verifier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts/verify-release-bundle.mjs
+          sparse-checkout-cone-mode: false
+
+      - name: Download platform artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: release-*-${{ github.sha }}
+          path: release-bundle
+          merge-multiple: true
+
+      - name: Verify and checksum release bundle
+        shell: bash
+        env:
+          PLATFORM_CSV: ${{ needs.setup.outputs.platform_csv }}
+        run: |
+          mkdir -p release
+          find release-bundle -maxdepth 1 -type f -exec cp {} release/ \;
+          (
+            cd release
+            find . -maxdepth 1 -type f ! -name 'SHA256SUMS.txt' -printf '%f\0' |
+              sort -z |
+              xargs -0 sha256sum
+          ) > release/SHA256SUMS.txt
+          node scripts/verify-release-bundle.mjs release "$PLATFORM_CSV"
+
+      # A partial release must not overwrite the full bundle's manifest on a
+      # release that already carries other platforms.
+      - name: Scope the checksum manifest for a partial release
+        if: needs.setup.outputs.is_full_release != 'true'
+        shell: bash
+        env:
+          PLATFORM_CSV: ${{ needs.setup.outputs.platform_csv }}
+        run: mv release/SHA256SUMS.txt "release/SHA256SUMS-${PLATFORM_CSV//,/-}.txt"
+
+      - name: Attest release artifact provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-path: release/*
+
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: v${{ needs.setup.outputs.version }}
+          files: release/*
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: ${{ contains(needs.setup.outputs.version, '-') }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

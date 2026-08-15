@@ -21,7 +21,7 @@ test('can display dataset list and format badges', async ({ page }) => {
 
   // Check format badges are displayed
   const badges = page.locator('.format-badges .badge')
-  await expect(badges).toHaveCount(8) // CSV, GPX, GeoJSON, KML, NMEA, GPB, EAG, KML Library
+  await expect(badges).toHaveCount(7) // CSV, GPX, GeoJSON, KML/KMZ, NMEA, GPB, EAG
 
   // Check dataset list exists (empty by default)
   await expect(page.locator('.dataset-list')).toBeVisible()
