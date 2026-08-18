@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { LatLngBoundsExpression, LatLngTuple } from 'leaflet'
+import type { LatLngTuple } from 'leaflet'
 import { CircleMarker, MapContainer, Polygon, Polyline, TileLayer, Tooltip, useMap } from 'react-leaflet'
 import type { TrackPoint } from '../core/model'
 import { isValidLat, isValidLon } from '../core/model'
@@ -41,7 +41,7 @@ export interface OtherTrack {
 function FitBounds({ positions, request }: { positions: LatLngTuple[]; request: number }) {
   const map = useMap()
   useEffect(() => {
-    if (positions.length > 0) map.fitBounds(positions as LatLngBoundsExpression, { padding: [28, 28], maxZoom: 16 })
+    if (positions.length > 0) map.fitBounds(positions, { padding: [28, 28], maxZoom: 16 })
   }, [map, positions, request])
   return null
 }
@@ -271,8 +271,8 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
             )
           })}
           {hoveredPosition && <CircleMarker center={hoveredPosition} radius={7} pathOptions={{ color: '#ffffff', fillColor: '#38bdf8', fillOpacity: 0.95, weight: 2 }}><Tooltip>cursor #{hoverIndex}</Tooltip></CircleMarker>}
-          {positions.length > 0 && <CircleMarker center={positions[0]} radius={6} pathOptions={{ color: '#16a34a', fillColor: '#16a34a', fillOpacity: 0.9, weight: 1 }}><Tooltip>start</Tooltip></CircleMarker>}
-          {positions.length > 0 && <CircleMarker center={positions[positions.length - 1]} radius={6} pathOptions={{ color: '#dc2626', fillColor: '#dc2626', fillOpacity: 0.9, weight: 1 }}><Tooltip>end</Tooltip></CircleMarker>}
+          {positions.length > 0 && <CircleMarker center={positions[0]!} radius={6} pathOptions={{ color: '#16a34a', fillColor: '#16a34a', fillOpacity: 0.9, weight: 1 }}><Tooltip>start</Tooltip></CircleMarker>}
+          {positions.length > 0 && <CircleMarker center={positions[positions.length - 1]!} radius={6} pathOptions={{ color: '#dc2626', fillColor: '#dc2626', fillOpacity: 0.9, weight: 1 }}><Tooltip>end</Tooltip></CircleMarker>}
           <FitBounds positions={fitPositions} request={fitRequest} />
           <InvalidateSizeOnResize />
         </MapContainer>

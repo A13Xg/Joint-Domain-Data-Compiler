@@ -16,6 +16,7 @@ import { withPoints } from '../core/transforms'
 import { logger } from '../core/logger'
 import { assessFusionCompatibility } from '../core/metadataCompatibility'
 import { fingerprintDataset } from '../core/recipes/hash'
+import { errorMessage } from '../core/errors'
 
 interface SourceConfig {
   included: boolean
@@ -118,7 +119,7 @@ export function FusionPanel({ datasets, fusionArtifacts = [], onCreateDataset }:
       logger.success('fusion', `Created ${fusedDataset.name} from ${includedDatasets.length} sources (${groups.length} groups)`)
       onCreateDataset(fusedDataset, artifact)
     } catch (err) {
-      const message = (err as Error).message
+      const message = errorMessage(err)
       setError(message)
       logger.error('fusion', `Auto-Combine failed: ${message}`)
     }

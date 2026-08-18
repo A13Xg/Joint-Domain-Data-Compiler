@@ -13,6 +13,8 @@ import {
 import { assessDatasetCompatibility } from '../core/metadataCompatibility'
 import { buildComparisonCsv } from '../core/analytics/comparisonReport'
 import type { WorkspaceState } from '../state/workspace'
+import { logger } from '../core/logger'
+import { errorMessage } from '../core/errors'
 
 interface ComparisonResult {
   samples: RelativePointSample[]
@@ -61,7 +63,10 @@ export function ComparisonPanel({ datasets, activeId, workspace, onWorkspaceChan
       if (!interpolateTarget) {
         try {
           drift = estimateClockDrift(samples.map((sample) => ({ referenceTimeMs: sample.referenceTimeMs, targetTimeMs: sample.targetTimeMs })))
-        } catch {
+        } catch (error) {
+          // A failed drift estimate is not fatal to the comparison, but the
+          // reason must reach the log or the row simply vanishes unexplained.
+          logger.warn('compare', `Clock drift estimate unavailable: ${errorMessage(error)}`)
           drift = undefined
         }
       }
@@ -80,7 +85,7 @@ export function ComparisonPanel({ datasets, activeId, workspace, onWorkspaceChan
         drift,
       }
     } catch (error) {
-      return { samples: [], error: error instanceof Error ? error.message : String(error) }
+      return { samples: [], error: errorMessage(error) }
     }
   }, [datasets, referenceId, targetId, toleranceMs, targetOffsetMs, interpolateTarget])
 

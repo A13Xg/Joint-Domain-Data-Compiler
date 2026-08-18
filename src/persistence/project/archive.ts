@@ -14,6 +14,7 @@ import {
   type ProjectBookmark,
   type ProjectManifest,
 } from './manifest'
+import { errorMessage } from '../../core/errors'
 
 export interface ProjectDatasetHistory {
   past: Dataset[]
@@ -173,35 +174,37 @@ export function validateProjectArchive(value: unknown): ProjectArchive {
   if (value.schema !== 'jddc-project-archive') throw new Error('Unsupported project archive schema')
   if (value.schemaVersion !== 2) throw new Error(`Unsupported project archive version: ${String(value.schemaVersion)}`)
   const manifest = validateProjectManifest(value.manifest)
-  if (!Array.isArray(value.datasets)) throw new Error('Project archive datasets must be an array')
-  if (value.datasets.length > MAX_DATASETS) throw new Error(`Project archive exceeds ${MAX_DATASETS} datasets`)
+  const embedded = requireArray(value.datasets, 'Project archive datasets')
+  if (embedded.length > MAX_DATASETS) throw new Error(`Project archive exceeds ${MAX_DATASETS} datasets`)
   if (!isRecord(value.histories)) throw new Error('Project archive histories must be an object')
 
   const datasetIds = new Set<string>()
+  const datasets: Dataset[] = []
   let totalPoints = 0
-  for (const dataset of value.datasets) {
+  for (const dataset of embedded) {
     validateDataset(dataset)
     if (datasetIds.has(dataset.id)) throw new Error(`Duplicate embedded dataset id: ${dataset.id}`)
     datasetIds.add(dataset.id)
     totalPoints += dataset.points.length
     if (totalPoints > MAX_TOTAL_POINTS) throw new Error(`Project archive exceeds ${MAX_TOTAL_POINTS.toLocaleString()} embedded points`)
+    datasets.push(dataset)
   }
 
   for (const entry of manifest.datasets) {
-    const dataset = value.datasets.find((candidate) => candidate.id === entry.id)
+    const dataset = datasets.find((candidate) => candidate.id === entry.id)
     if (!dataset) throw new Error(`Manifest dataset ${entry.id} has no embedded payload`)
     const fingerprint = fingerprintDataset(dataset)
     if (fingerprint !== entry.sourceHash) throw new Error(`Embedded dataset ${entry.id} fingerprint does not match the manifest`)
   }
-  if (value.datasets.length !== manifest.datasets.length) {
+  if (datasets.length !== manifest.datasets.length) {
     throw new Error('Manifest and embedded dataset counts do not match')
   }
   for (const artifact of manifest.fusionArtifacts) {
     if (artifact.fusedDatasetHash === undefined) continue
-    const fused = value.datasets.find((dataset) => dataset.id === artifact.fusedDatasetId)
+    const fused = datasets.find((dataset) => dataset.id === artifact.fusedDatasetId)
     if (!fused || fingerprintDataset(fused) !== artifact.fusedDatasetHash) throw new Error(`Fusion artifact ${artifact.id} fused dataset binding does not match`)
     for (const source of artifact.sourceRegistrations) {
-      const dataset = value.datasets.find((candidate) => candidate.id === source.datasetId)
+      const dataset = datasets.find((candidate) => candidate.id === source.datasetId)
       if (!dataset || fingerprintDataset(dataset) !== artifact.sourceDatasetHashes?.[source.id]) throw new Error(`Fusion artifact ${artifact.id} source dataset binding does not match`)
     }
   }
@@ -309,7 +312,7 @@ function validateHistory(value: unknown, datasetId: string): asserts value is Pr
   if (!isRecord(value) || !Array.isArray(value.past) || !Array.isArray(value.future)) {
     throw new Error(`History for ${datasetId} must contain past and future arrays`)
   }
-  for (const snapshot of [...value.past, ...value.future]) {
+  for (const snapshot of [...asUnknownArray(value.past), ...asUnknownArray(value.future)]) {
     validateDataset(snapshot)
     if (snapshot.id !== datasetId) throw new Error(`History snapshot id ${snapshot.id} does not match ${datasetId}`)
   }
@@ -448,7 +451,7 @@ function validatePersistedArchive(value: unknown): asserts value is Record<strin
     if (isUnsafeObjectKey(datasetId)) throw new Error('Persisted history contains an unsafe dataset id')
     if (!isRecord(history) || (history.checkpoint !== null && history.checkpoint === undefined) || !Array.isArray(history.past) || !Array.isArray(history.future)) throw new Error(`Persisted history for ${datasetId} is malformed`)
     if (history.checkpoint !== null) { validateDataset(history.checkpoint); if (history.checkpoint.id !== datasetId) throw new Error(`History checkpoint id does not match ${datasetId}`) }
-    for (const delta of [...history.past, ...history.future]) validatePersistedDelta(delta, datasetId)
+    for (const delta of [...asUnknownArray(history.past), ...asUnknownArray(history.future)]) validatePersistedDelta(delta, datasetId)
   }
 }
 
@@ -519,12 +522,27 @@ function requireFinite(value: unknown, field: string): asserts value is number {
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`${field} must be finite`)
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
+/** Narrows an untrusted value to `unknown[]`. `Array.isArray` on an `unknown`
+ *  widens it to `any[]`, which silently disables checking for every element
+ *  read downstream; returning `unknown[]` forces the per-element validators to
+ *  do the narrowing instead. */
+function requireArray(value: unknown, field: string): unknown[] {
+  if (!Array.isArray(value)) throw new Error(`${field} must be an array`)
+  return value as unknown[]
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+/** Re-types an already-`Array.isArray`-checked value as `unknown[]`, for guards
+ *  whose combined condition reports a single message and so cannot be replaced
+ *  by `requireArray` without changing that message. */
+function asUnknownArray(value: unknown): unknown[] {
+  // Defensive: every current caller checks first, but this boundary must fail
+  // with a domain error rather than a raw TypeError out of a later spread.
+  if (!Array.isArray(value)) throw new Error('Project archive expected an array')
+  return value as unknown[]
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function formatBytes(bytes: number): string {

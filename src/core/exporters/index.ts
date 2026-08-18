@@ -85,7 +85,7 @@ export function exportDataset(
       return { text: result.text, mime: 'text/plain', extension: 'eag', pointCount: result.pointCount, warnings: result.warnings }
     }
     default:
-      throw new Error(`Unknown export format: ${format}`)
+      throw new Error(`Unknown export format: ${String(format)}`)
   }
 }
 

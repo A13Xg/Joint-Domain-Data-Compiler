@@ -42,6 +42,7 @@ import { fingerprintDataset } from './core/recipes/hash'
 import type { OperationRecord, Recipe } from './core/recipes/model'
 import { ensureBuiltinOperationsRegistered } from './core/operations/basic'
 import { appendHistorySnapshot } from './state/history'
+import { errorMessage } from './core/errors'
 
 ensureBuiltinDerivationsRegistered()
 ensureBuiltinOperationsRegistered()
@@ -107,6 +108,7 @@ export default function App() {
   const [dragActive, setDragActive] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const cancelCsvRef = useRef(false)
+  const csvWorkerRef = useRef<Worker | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const active = useMemo(() => datasets.find((dataset) => dataset.id === activeId) ?? null, [datasets, activeId])
@@ -153,7 +155,10 @@ export default function App() {
           : browserOverlayFiles[overlay.sourceKey]?.text
         if (!text) return null
         return { id: overlay.id, name: overlay.name, color: '#7c3aed', opacity: overlay.opacity, points: parseKml(text).points }
-      } catch {
+      } catch (error) {
+        // Distinguishable causes (unreadable file vs. malformed KML) both mark
+        // the overlay unavailable, so the reason has to be logged or it is lost.
+        logger.warn('map', `Overlay ${overlay.name} could not be loaded: ${errorMessage(error)}`, { sourceKey: overlay.sourceKey })
         return null
       }
     })).then((loaded) => {
@@ -170,6 +175,9 @@ export default function App() {
           },
         }))
       }
+    }).catch((error: unknown) => {
+      if (cancelled) return
+      logger.error('map', `Map overlay refresh failed: ${errorMessage(error)}`)
     })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on overlaySignature (source identity only) by design; see comment above
@@ -194,34 +202,68 @@ export default function App() {
     flashToast(`Loaded ${dataset.points.length.toLocaleString()} points from ${dataset.name}${warningNote}`)
   }, [datasets, flashToast])
 
+  useEffect(() => () => {
+    csvWorkerRef.current?.terminate()
+    csvWorkerRef.current = null
+  }, [])
+
   const analyzeCsv = useCallback((file: File) => {
     try {
       assertByteBudget('csv', file.size)
     } catch (error) {
-      logger.error('import', `CSV rejected: ${(error as Error).message}`)
-      flashToast((error as Error).message)
+      logger.error('import', `CSV rejected: ${errorMessage(error)}`)
+      flashToast(errorMessage(error))
       return
     }
     setBusy(`Analyzing ${file.name}`)
     setProgress(0)
     logger.info('import', `Analyzing CSV ${file.name} (${formatBytes(file.size)})`)
     const worker = new Worker(new URL('./workers/csvAnalyzer.worker.ts', import.meta.url), { type: 'module' })
+    csvWorkerRef.current?.terminate()
+    csvWorkerRef.current = worker
+
+    // Every exit from the analysis has to clear the busy state. A path that
+    // misses it leaves the shell spinning on a job that will never report back.
+    const finish = () => {
+      setBusy(null); setProgress(null)
+      worker.terminate()
+      if (csvWorkerRef.current === worker) csvWorkerRef.current = null
+    }
+    const fail = (reason: string) => {
+      logger.error('import', `CSV analysis failed: ${reason}`)
+      flashToast(`CSV analysis failed: ${reason}`)
+      finish()
+    }
+
     worker.onmessage = (event: MessageEvent) => {
-      const message = event.data
-      if (message.type === 'progress') setProgress(message.payload.progress)
-      else if (message.type === 'error') {
-        logger.error('import', `CSV analysis failed: ${message.payload.message}`)
-        flashToast(`CSV analysis failed: ${message.payload.message}`)
-        setBusy(null); setProgress(null); worker.terminate()
+      // The frame crosses a structured-clone boundary; reading .payload off a
+      // malformed one would throw here and strand the busy state forever.
+      const message = event.data as { type?: unknown; payload?: unknown } | null
+      if (!message || typeof message !== 'object') return
+      if (message.type === 'progress') {
+        const progress = (message.payload as { progress?: unknown } | undefined)?.progress
+        if (typeof progress === 'number' && Number.isFinite(progress)) setProgress(progress)
+      } else if (message.type === 'error') {
+        fail(errorMessage((message.payload as { message?: unknown } | undefined)?.message))
       } else if (message.type === 'complete') {
-        const analysis = message.payload as CsvAnalysisResult
+        const analysis = message.payload as CsvAnalysisResult | undefined
+        if (!analysis || !Array.isArray(analysis.columns)) {
+          fail('the analyzer returned an unrecognized result.')
+          return
+        }
         logger.success('import', `Analyzed ${file.name}: ${analysis.columns.length} columns`)
         setPendingCsv({ file, analysis, mapping: defaultMapping(analysis), additionalHeaders: false, dataStartRow: analysis.dataStartRow })
-        setBusy(null); setProgress(null); setTab('mapping'); worker.terminate()
+        finish(); setTab('mapping')
       }
     }
-    worker.onerror = (error) => { logger.error('import', `Worker error: ${error.message}`); setBusy(null); setProgress(null); worker.terminate() }
-    worker.postMessage({ type: 'analyze', payload: { file, sampleLimit: CSV_SAMPLE_LIMIT } })
+    worker.onerror = (event) => fail(event.message || 'the CSV analyzer worker failed to start.')
+    // Without this a clone failure on the posted File silently drops the job.
+    worker.onmessageerror = () => fail('the CSV analyzer could not read the posted file.')
+    try {
+      worker.postMessage({ type: 'analyze', payload: { file, sampleLimit: CSV_SAMPLE_LIMIT } })
+    } catch (error) {
+      fail(errorMessage(error))
+    }
   }, [flashToast])
 
   const buildCsvDataset = useCallback(async () => {
@@ -261,13 +303,24 @@ export default function App() {
         logger.info('import', `CSV build cancelled for ${pendingCsv.file.name}`)
         flashToast('CSV import cancelled.')
       } else {
-        logger.error('import', `CSV build failed: ${(error as Error).message}`)
-        flashToast(`CSV build failed: ${(error as Error).message}`)
+        logger.error('import', `CSV build failed: ${errorMessage(error)}`)
+        flashToast(`CSV build failed: ${errorMessage(error)}`)
       }
     } finally { setBuilding(false); setBusy(null); setProgress(null) }
   }, [pendingCsv, addDataset, flashToast])
 
   const cancelCsvBuild = useCallback(() => { cancelCsvRef.current = true }, [])
+
+  const reportUnhandled = useCallback((context: string) => (error: unknown) => {
+    logger.error('ui', `${context}: ${errorMessage(error)}`)
+    flashToast(`${context}: ${errorMessage(error)}`)
+    setBusy(null); setProgress(null)
+  }, [flashToast])
+
+  const onBuildCsv = useCallback(() => {
+    buildCsvDataset().catch(reportUnhandled('CSV build failed'))
+  }, [buildCsvDataset, reportUnhandled])
+
 
   const importKmlText = useCallback(async (name: string, text: string, sourceBytes?: number) => {
     try {
@@ -279,10 +332,13 @@ export default function App() {
       const checksum = await sha256Hex(new TextEncoder().encode(text))
       addDataset(makeDataset(name, 'kml', result, sourceBytes, checksum))
     } catch (error) {
-      logger.error('parser', `Failed to parse ${name}: ${(error as Error).message}`)
-      flashToast(`Failed to parse ${name}: ${(error as Error).message}`)
+      logger.error('parser', `Failed to parse ${name}: ${errorMessage(error)}`)
+      flashToast(`Failed to parse ${name}: ${errorMessage(error)}`)
     }
   }, [addDataset, flashToast])
+  const onImportOverlayAsTrack = useCallback((name: string, text: string, sourceBytes?: number) => {
+    importKmlText(name, text, sourceBytes).catch(reportUnhandled(`Import of ${name} failed`))
+  }, [importKmlText, reportUnhandled])
 
   const onMapOverlayStateChange = useCallback((next: MapOverlayState) => {
     setWorkspace((current) => ({ ...current, mapOverlays: next }))
@@ -307,7 +363,7 @@ export default function App() {
         await saveKmlLibraryFile(file)
         logger.success('import', `Saved ${file.name} to persistent KML/KMZ library`)
       } catch (error) {
-        logger.warn('import', `Could not save ${file.name} to KML/KMZ library: ${(error as Error).message}`)
+        logger.warn('import', `Could not save ${file.name} to KML/KMZ library: ${errorMessage(error)}`)
       }
     }
     if (ext === 'kmz') {
@@ -319,8 +375,8 @@ export default function App() {
         const result = await readKmlLibraryText(file.name)
         await importKmlText(file.name, result.text, file.size)
       } catch (error) {
-        logger.error('import', `Failed to read ${file.name} from the KML/KMZ library: ${(error as Error).message}`)
-        flashToast(`KMZ import failed: ${(error as Error).message}`)
+        logger.error('import', `Failed to read ${file.name} from the KML/KMZ library: ${errorMessage(error)}`)
+        flashToast(`KMZ import failed: ${errorMessage(error)}`)
       }
       return
     }
@@ -334,18 +390,29 @@ export default function App() {
         const resolvedFormat = resolveTextFormat(text)
         format = INPUT_FORMATS.find((f) => f.id === resolvedFormat) ?? format
       } catch (error) {
-        logger.warn('import', `Could not read ${file.name} for format detection: ${(error as Error).message}`)
+        logger.warn('import', `Could not read ${file.name} for format detection: ${errorMessage(error)}`)
       }
     }
 
     if (format.needsMapping) { analyzeCsv(file); return }
     setBusy(`Parsing ${file.name}`); setProgress(null)
     try { addDataset(await parseFileToDataset(file, format)) }
-    catch (error) { logger.error('import', `Failed to parse ${file.name}: ${(error as Error).message}`); flashToast(`Failed to parse ${file.name}: ${(error as Error).message}`) }
+    catch (error) { logger.error('import', `Failed to parse ${file.name}: ${errorMessage(error)}`); flashToast(`Failed to parse ${file.name}: ${errorMessage(error)}`) }
     finally { setBusy(null) }
   }, [analyzeCsv, addDataset, flashToast, importKmlText])
 
-  const onFiles = useCallback((files: FileList | null) => { if (files) for (const file of Array.from(files)) void ingestFile(file) }, [ingestFile])
+  const onFiles = useCallback((files: FileList | null) => {
+    if (!files) return
+    for (const file of Array.from(files)) {
+      // ingestFile handles its own parse errors; this catch exists so an
+      // unexpected throw cannot leave `busy` set with nothing on screen.
+      ingestFile(file).catch((error: unknown) => {
+        logger.error('import', `Import of ${file.name} failed: ${errorMessage(error)}`)
+        flashToast(`Import of ${file.name} failed: ${errorMessage(error)}`)
+        setBusy(null); setProgress(null)
+      })
+    }
+  }, [ingestFile, flashToast])
 
   const applyTransform = useCallback((points: TrackPoint[], summary: string, preserveSelection: boolean, suppliedRecord?: OperationRecord) => {
     if (!active) return
@@ -498,9 +565,9 @@ export default function App() {
           <section className="tab-content">
             {progress !== null && <div className="global-progress"><ProgressBar value={progress} label={busy ?? 'Working'} />{building && <button type="button" onClick={cancelCsvBuild}>Cancel</button>}</div>}
             {tab === 'import' && <ImportView dragActive={dragActive} setDragActive={setDragActive} onFiles={onFiles} openPicker={() => fileInputRef.current?.click()} />}
-            {tab === 'mapping' && pendingCsv && <MappingPanel analysis={pendingCsv.analysis} mapping={pendingCsv.mapping} onChange={(mapping) => setPendingCsv((current) => current ? { ...current, mapping } : current)} additionalHeaders={pendingCsv.additionalHeaders} onToggleAdditionalHeaders={(additionalHeaders) => setPendingCsv((current) => current ? { ...current, additionalHeaders } : current)} dataStartRow={pendingCsv.dataStartRow} onDataStartRowChange={(dataStartRow) => setPendingCsv((current) => current ? { ...current, dataStartRow } : current)} onBuild={buildCsvDataset} building={building} />}
+            {tab === 'mapping' && pendingCsv && <MappingPanel analysis={pendingCsv.analysis} mapping={pendingCsv.mapping} onChange={(mapping) => setPendingCsv((current) => current ? { ...current, mapping } : current)} additionalHeaders={pendingCsv.additionalHeaders} onToggleAdditionalHeaders={(additionalHeaders) => setPendingCsv((current) => current ? { ...current, additionalHeaders } : current)} dataStartRow={pendingCsv.dataStartRow} onDataStartRowChange={(dataStartRow) => setPendingCsv((current) => current ? { ...current, dataStartRow } : current)} onBuild={onBuildCsv} building={building} />}
             {tab === 'overview' && active && <StatsPanel dataset={active} bookmarks={bookmarks} onBookmarksChange={(next) => { setBookmarks(next); setProjectDirty(true) }} />}
-            {tab === 'map' && <MapView points={active?.points ?? []} channels={active?.channels ?? []} workspace={workspace.map} onWorkspaceChange={(map) => { setWorkspace((current) => ({ ...current, map })); setProjectDirty(true) }} otherTracks={otherTracks} overlayState={workspace.mapOverlays} onOverlayStateChange={onMapOverlayStateChange} onImportOverlayAsTrack={importKmlText} browserOverlayFiles={browserOverlayFiles} onBrowserOverlayFile={onBrowserOverlayFile} />}
+            {tab === 'map' && <MapView points={active?.points ?? []} channels={active?.channels ?? []} workspace={workspace.map} onWorkspaceChange={(map) => { setWorkspace((current) => ({ ...current, map })); setProjectDirty(true) }} otherTracks={otherTracks} overlayState={workspace.mapOverlays} onOverlayStateChange={onMapOverlayStateChange} onImportOverlayAsTrack={onImportOverlayAsTrack} browserOverlayFiles={browserOverlayFiles} onBrowserOverlayFile={onBrowserOverlayFile} />}
             {tab === 'charts' && active && <TimeSeriesChart points={active.points} channels={active.channels} />}
             {tab === 'table' && active && <DataTable points={active.points} channels={active.channels} />}
             {tab === 'compare' && <ComparisonPanel datasets={datasets} activeId={activeId} workspace={workspace.comparison} onWorkspaceChange={(comparison) => { setWorkspace((current) => ({ ...current, comparison })); setProjectDirty(true) }} onSelectReferenceSample={(datasetId, pointIndex) => { const reference = datasets.find((dataset) => dataset.id === datasetId); if (!reference) return; restorePointSelection(reference.points, pointIndex, null); setActiveId(datasetId) }} />}

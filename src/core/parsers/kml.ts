@@ -31,7 +31,7 @@ export function parseKml(text: string): ParseResult {
       warnings.push(`${trackName} has ${whens.length} timestamps for ${coords.length} coordinates; timestamps were paired by index.`)
     }
     for (let i = 0; i < coords.length; i++) {
-      const parts = coords[i].textContent?.trim().split(/\s+/) ?? []
+      const parts = coords[i]!.textContent?.trim().split(/\s+/) ?? []
       const lon = parseNumber(parts[0])
       const lat = parseNumber(parts[1])
       const ele = parseNumber(parts[2] ?? '')

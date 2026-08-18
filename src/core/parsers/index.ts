@@ -51,8 +51,8 @@ export function resolveTextFormat(text: string): SourceFormat {
   // Check for EAG header shape: 7 tab-separated fields on first line, and 11 fields on data rows
   const lines = text.trim().split(/\r?\n/)
   if (lines.length >= 2) {
-    const headerFields = lines[0].split('\t')
-    const firstDataFields = lines[1].split('\t')
+    const headerFields = lines[0]!.split('\t')
+    const firstDataFields = lines[1]!.split('\t')
     // EAG: header has 7 fields, data rows have 11 fields
     if (headerFields.length === 7 && firstDataFields.length === 11) {
       return 'eag'

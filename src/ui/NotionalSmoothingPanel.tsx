@@ -7,6 +7,7 @@ import { useMemo, useState } from 'react'
 import type { Dataset } from '../core/model'
 import { deriveNotionalSmoothedDataset } from '../core/derivations/notionalSmoothing'
 import { logger } from '../core/logger'
+import { errorMessage } from '../core/errors'
 
 interface Props {
   dataset: Dataset
@@ -24,7 +25,7 @@ export function NotionalSmoothingPanel({ dataset, onCreateDataset }: Props) {
       const { result } = deriveNotionalSmoothedDataset(dataset, options)
       return { gaps: result.gaps.length, inserted: result.insertedCount, error: null as string | null }
     } catch (error) {
-      return { gaps: 0, inserted: 0, error: (error as Error).message }
+      return { gaps: 0, inserted: 0, error: errorMessage(error) }
     }
   }, [dataset, gapThresholdMs, useCustomInterval, sampleIntervalMs])
 
@@ -35,7 +36,7 @@ export function NotionalSmoothingPanel({ dataset, onCreateDataset }: Props) {
       logger.success('derive', `Created ${derived.name} with ${result.insertedCount} notional point(s) across ${result.gaps.length} gap(s)`)
       onCreateDataset(derived)
     } catch (error) {
-      logger.error('derive', `Notional smoothing failed: ${(error as Error).message}`)
+      logger.error('derive', `Notional smoothing failed: ${errorMessage(error)}`)
     }
   }
 

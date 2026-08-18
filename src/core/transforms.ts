@@ -9,14 +9,29 @@ export interface TransformResult {
 
 export type UntimedPointPolicy = 'keep' | 'drop'
 
-function clone(points: TrackPoint[]): TrackPoint[] {
-  return points.map((p) => ({
+function clonePoint(p: TrackPoint): TrackPoint {
+  return {
     ...p,
     ext: p.ext ? { ...p.ext } : undefined,
     provenance: p.provenance
       ? { ...p.provenance, qualityFlags: p.provenance.qualityFlags ? [...p.provenance.qualityFlags] : undefined }
       : undefined,
-  }))
+  }
+}
+
+function clone(points: TrackPoint[]): TrackPoint[] {
+  return points.map(clonePoint)
+}
+
+/** Fills `into` with the defined elevations in `[from, to)`, reusing the array
+ *  so the rolling-window filters below allocate once instead of building a
+ *  slice, a map, and a filter per point. Ascending order is preserved. */
+function collectElevations(points: TrackPoint[], from: number, to: number, into: number[]): void {
+  into.length = 0
+  for (let i = from; i < to; i++) {
+    const ele = points[i]!.ele
+    if (ele !== undefined) into.push(ele)
+  }
 }
 
 export function sortByTime(points: TrackPoint[]): TransformResult {
@@ -41,20 +56,21 @@ export function dropInvalid(points: TrackPoint[]): TransformResult {
 export function dedupe(points: TrackPoint[], toleranceMeters = 0): TransformResult {
   const out: TrackPoint[] = []
   let removed = 0
+  let prev: TrackPoint | undefined
   for (const p of points) {
-    const prev = out[out.length - 1]
     if (prev && haversineMeters(prev.lat, prev.lon, p.lat, p.lon) <= toleranceMeters) {
       removed++
       continue
     }
-    out.push(clone([p])[0])
+    prev = clonePoint(p)
+    out.push(prev)
   }
   return { points: out, summary: `Removed ${removed} consecutive duplicate points (≤ ${toleranceMeters} m)` }
 }
 
 export function decimate(points: TrackPoint[], factor: number): TransformResult {
   const f = Math.max(1, Math.floor(factor))
-  const out = clone(points).filter((_, i) => i % f === 0)
+  const out = clone(points.filter((_, i) => i % f === 0))
   return { points: out, summary: `Decimated to every ${f}th point (${out.length} kept)` }
 }
 
@@ -70,10 +86,12 @@ export function simplify(points: TrackPoint[], epsilonMeters: number): Transform
 
   while (stack.length) {
     const [start, end] = stack.pop()!
+    const from = projected[start]!
+    const to = projected[end]!
     let maxDist = 0
     let index = -1
     for (let i = start + 1; i < end; i++) {
-      const d = perpendicularDistance(projected[i], projected[start], projected[end])
+      const d = perpendicularDistance(projected[i]!, from, to)
       if (d > maxDist) {
         maxDist = d
         index = i
@@ -85,7 +103,7 @@ export function simplify(points: TrackPoint[], epsilonMeters: number): Transform
     }
   }
 
-  const out = clone(points).filter((_, i) => keep[i] === 1)
+  const out = clone(points.filter((_, i) => keep[i] === 1))
   return { points: out, summary: `Simplified ${points.length} → ${out.length} points (ε=${epsilonMeters} m)` }
 }
 
@@ -114,26 +132,43 @@ export function smooth(points: TrackPoint[], window: number, targets: { coords: 
   const half = Math.floor(w / 2)
   const out = clone(points)
 
+  // Every window covering point j recomputed j's ECEF unit vector, so a window
+  // of w cost w trig evaluations per point. Computing each vector once cuts
+  // that to one. The window sums still accumulate in ascending j order over
+  // the same terms, so the result is bit-identical to the inline form.
+  const ecefX = new Float64Array(points.length)
+  const ecefY = new Float64Array(points.length)
+  const ecefZ = new Float64Array(points.length)
+  for (let i = 0; i < points.length; i++) {
+    const point = points[i]!
+    const lat = point.lat * Math.PI / 180
+    const lon = point.lon * Math.PI / 180
+    ecefX[i] = Math.cos(lat) * Math.cos(lon)
+    ecefY[i] = Math.cos(lat) * Math.sin(lon)
+    ecefZ[i] = Math.sin(lat)
+  }
+
   for (let i = 0; i < points.length; i++) {
     let x = 0, y = 0, z = 0, eleSum = 0, eleCount = 0, count = 0
-    for (let j = i - half; j <= i + half; j++) {
-      if (j < 0 || j >= points.length) continue
-      const lat = points[j].lat * Math.PI / 180
-      const lon = points[j].lon * Math.PI / 180
-      x += Math.cos(lat) * Math.cos(lon)
-      y += Math.cos(lat) * Math.sin(lon)
-      z += Math.sin(lat)
-      if (points[j].ele !== undefined) { eleSum += points[j].ele!; eleCount++ }
+    const first = Math.max(0, i - half)
+    const last = Math.min(points.length - 1, i + half)
+    for (let j = first; j <= last; j++) {
+      x += ecefX[j]!
+      y += ecefY[j]!
+      z += ecefZ[j]!
+      const ele = points[j]!.ele
+      if (ele !== undefined) { eleSum += ele; eleCount++ }
       count++
     }
+    const target = out[i]!
     if (targets.coords && count > 0) {
       const lon = Math.atan2(y / count, x / count)
       const hyp = Math.hypot(x / count, y / count)
       const lat = Math.atan2(z / count, hyp)
-      out[i].lat = lat * 180 / Math.PI
-      out[i].lon = lon * 180 / Math.PI
+      target.lat = lat * 180 / Math.PI
+      target.lon = lon * 180 / Math.PI
     }
-    if (targets.elevation && eleCount > 0 && out[i].ele !== undefined) out[i].ele = eleSum / eleCount
+    if (targets.elevation && eleCount > 0 && target.ele !== undefined) target.ele = eleSum / eleCount
   }
 
   const what = [targets.coords && 'position', targets.elevation && 'elevation'].filter(Boolean).join(' + ')
@@ -164,12 +199,10 @@ export function removeElevationOutliers(points: TrackPoint[], threshold = 4, win
   if (points.filter((p) => p.ele !== undefined).length < 5) return { points: clone(points), summary: 'Too few elevations for outlier removal' }
   const radius = Math.max(2, Math.floor(window / 2))
   let removed = 0
+  const local: number[] = []
   const out = points.filter((p, i) => {
     if (p.ele === undefined) return true
-    const local = points
-      .slice(Math.max(0, i - radius), Math.min(points.length, i + radius + 1))
-      .map((candidate) => candidate.ele)
-      .filter((value): value is number => value !== undefined)
+    collectElevations(points, Math.max(0, i - radius), Math.min(points.length, i + radius + 1), local)
     if (local.length < 5) return true
     const median = quantile(local, 0.5)
     const mad = quantile(local.map((value) => Math.abs(value - median)), 0.5)
@@ -195,16 +228,15 @@ export function medianFilterElevation(points: TrackPoint[], window: number): Tra
   const out = clone(points)
   let changed = 0
 
+  const local: number[] = []
   for (let i = 0; i < points.length; i++) {
-    if (points[i].ele === undefined) continue
-    const local = points
-      .slice(Math.max(0, i - half), Math.min(points.length, i + half + 1))
-      .map((candidate) => candidate.ele)
-      .filter((value): value is number => value !== undefined)
+    if (points[i]!.ele === undefined) continue
+    collectElevations(points, Math.max(0, i - half), Math.min(points.length, i + half + 1), local)
     if (local.length === 0) continue
     const median = quantile(local, 0.5)
-    if (out[i].ele !== median) changed++
-    out[i].ele = median
+    const target = out[i]!
+    if (target.ele !== median) changed++
+    target.ele = median
   }
 
   return { points: out, summary: `Applied median filter to elevation (window ${w}, ${changed} point(s) changed)` }
@@ -241,13 +273,11 @@ export function hampelFilterElevation(points: TrackPoint[], sigmaThreshold = 3, 
   const out = clone(points)
   let replaced = 0
 
+  const local: number[] = []
   for (let i = 0; i < out.length; i++) {
-    const current = out[i]
+    const current = out[i]!
     if (current.ele === undefined) continue
-    const local = points
-      .slice(Math.max(0, i - radius), Math.min(points.length, i + radius + 1))
-      .map((candidate) => candidate.ele)
-      .filter((value): value is number => value !== undefined)
+    collectElevations(points, Math.max(0, i - radius), Math.min(points.length, i + radius + 1), local)
     if (local.length < 5) continue
     const median = quantile(local, 0.5)
     const mad = quantile(local.map((value) => Math.abs(value - median)), 0.5)
@@ -350,7 +380,7 @@ export function dejitterTimestamps(points: TrackPoint[], options: DejitterTimest
       const targetIndex = lastTimedOutIndex!
       const previous = out[targetIndex]!
       out[targetIndex] = mergeAveraged(previous, point)
-      addFlag(out[targetIndex]!, 'time_dejittered')
+      addFlag(out[targetIndex], 'time_dejittered')
       continue
     }
     // 'nudge'
@@ -403,7 +433,13 @@ function quantile(values: number[], q: number): number {
   const pos = (sorted.length - 1) * q
   const base = Math.floor(pos)
   const rest = pos - base
-  return sorted[base + 1] !== undefined ? sorted[base] + rest * (sorted[base + 1] - sorted[base]) : sorted[base]
+  const lower = sorted[base]
+  // Every caller filters its window before calling, so an empty input is a
+  // programming error; returning `undefined` typed as a number would poison
+  // whatever arithmetic consumed it.
+  if (lower === undefined) throw new Error('quantile requires at least one value')
+  const upper = sorted[base + 1]
+  return upper !== undefined ? lower + rest * (upper - lower) : lower
 }
 
 export function withPoints(dataset: Dataset, points: TrackPoint[]): Dataset {

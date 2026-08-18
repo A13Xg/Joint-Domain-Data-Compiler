@@ -5,6 +5,7 @@ import { isValidWorkspaceDisplay, type WorkspaceDisplay } from '../../state/work
 import { migrateToVersion, PROJECT_MANIFEST_MIGRATORS } from './migrations'
 import type { FusionArtifact } from '../../core/fusion/artifact'
 import { validateFusionArtifact } from '../../core/fusion/artifact'
+import { errorMessage } from '../../core/errors'
 
 const CURRENT_MANIFEST_SCHEMA_VERSION = 2
 
@@ -105,10 +106,12 @@ export function validateProjectManifest(value: unknown): ProjectManifest {
   if (!isRecord(value.view)) throw new Error('view must be an object')
 
   const datasetIds = new Set<string>()
-  for (const dataset of value.datasets) {
+  const datasetEntries: ProjectDatasetEntry[] = []
+  for (const dataset of value.datasets as unknown[]) {
     validateDatasetEntry(dataset)
     if (datasetIds.has(dataset.id)) throw new Error(`Duplicate dataset id: ${dataset.id}`)
     datasetIds.add(dataset.id)
+    datasetEntries.push(dataset)
   }
 
   const artifactIds = new Set<string>()
@@ -133,7 +136,7 @@ export function validateProjectManifest(value: unknown): ProjectManifest {
     recipeIds.add(recipe.id)
   }
 
-  for (const dataset of value.datasets) {
+  for (const dataset of datasetEntries) {
     for (const recipeId of dataset.recipeIds) {
       if (!recipeIds.has(recipeId)) throw new Error(`Dataset ${dataset.id} references missing recipe ${recipeId}`)
     }
@@ -318,8 +321,4 @@ function omitReportPreferences(value: Record<string, unknown>): Record<string, u
   const copy = { ...value }
   delete copy.reportPreferences
   return copy
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }

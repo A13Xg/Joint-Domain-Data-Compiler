@@ -164,7 +164,7 @@ export function streamCsvFileToPoints(
           rawRowsSeen++
           const row: CsvRow = {}
           for (let i = 0; i < columnNames.length; i++) {
-            row[columnNames[i]] = raw[i] ?? ''
+            row[columnNames[i]!] = raw[i] ?? ''
           }
           const mapped = mapCsvRow(row, mapping, channelColumns, channelSet)
           if (mapped.point) points.push(mapped.point)

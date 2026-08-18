@@ -53,6 +53,7 @@ npm run dev:desktop
 
 ### Testing & Quality
 - `npm run check:all` — Run all checks: tests, type check, lint, build
+- `npm run check:full` — `check:all` plus the Playwright workflow tests
 - `npm test` — Run test suite (tests in `test/` directory via esbuild runner)
 - `npx tsc -b` — Type check (full project)
 - `npx eslint .` — Lint all files

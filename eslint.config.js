@@ -11,12 +11,15 @@ export default defineConfig([
     files: ['src/**/*.{ts,tsx}'],
     extends: [
       js.configs.recommended,
-      tseslint.configs.recommended,
+      tseslint.configs.recommendedTypeChecked,
       reactHooks.configs.flat.recommended,
       reactRefresh.configs.vite,
     ],
     languageOptions: {
       globals: globals.browser,
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+    },
+    rules: {
     },
   },
   {
@@ -26,6 +29,32 @@ export default defineConfig([
         'error',
         { varsIgnorePattern: '^(analyzeRawRows|carryMapping)$' },
       ],
+    },
+  },
+  // The main process, preload, and build/release scripts were previously
+  // outside every config block, so nothing in electron/ or scripts/ was linted
+  // at all — including the IPC surface.
+  {
+    files: ['electron/**/*.cjs', 'scripts/**/*.{mjs,cjs}'],
+    extends: [js.configs.recommended],
+    languageOptions: {
+      globals: globals.node,
+      sourceType: 'commonjs',
+    },
+  },
+  {
+    files: ['scripts/**/*.mjs'],
+    extends: [js.configs.recommended],
+    languageOptions: {
+      globals: globals.node,
+      sourceType: 'module',
+    },
+  },
+  {
+    files: ['benchmarks/**/*.ts'],
+    extends: [js.configs.recommended, tseslint.configs.recommended],
+    languageOptions: {
+      globals: globals.node,
     },
   },
   {

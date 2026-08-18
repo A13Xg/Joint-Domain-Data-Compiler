@@ -11,6 +11,7 @@ import { ComputeClient, type ComputeRunHandle } from '../compute/client'
 import { createGpxExportWorker, runGpxExport, shouldUseGpxExportWorker } from '../compute/gpxExportClient'
 import type { GpxBuildResult } from '../core/exporters/gpx'
 import type { EagExportOptions } from '../core/exporters/eag'
+import { errorMessage, isAbortError } from '../core/errors'
 
 type Target = ExportFormat | 'gpb'
 
@@ -56,7 +57,7 @@ export function ExportPanel({ dataset }: { dataset: Dataset }) {
       })
       return { text: result.text.slice(0, 1400), pointCount: result.pointCount, warnings: result.warnings }
     } catch (err) {
-      return { text: `Export error: ${(err as Error).message}`, pointCount: 0, warnings: [] }
+      return { text: `Export error: ${errorMessage(err)}`, pointCount: 0, warnings: [] }
     }
   }, [dataset, target, sortByTime, bom, includeExtensions, precision, trackName, eagOptions])
 
@@ -102,8 +103,8 @@ export function ExportPanel({ dataset }: { dataset: Dataset }) {
       const blob = new Blob([result.xml], { type: 'application/gpx+xml;charset=utf-8' })
       saveBlob(blob, `${trackName || 'track'}.gpx`, 'gpx', result.pointCount, warnings)
     } catch (err) {
-      if ((err as Error).name === 'AbortError') logger.warn('export', 'GPX export cancelled')
-      else logger.error('export', `Export failed: ${(err as Error).message}`)
+      if (isAbortError(err)) logger.warn('export', 'GPX export cancelled')
+      else logger.error('export', `Export failed: ${errorMessage(err)}`)
     } finally {
       activeGpxExportRef.current = null
       setGpxExportProgress(null)
@@ -134,7 +135,7 @@ export function ExportPanel({ dataset }: { dataset: Dataset }) {
       const fileName = `${trackName || 'track'}.${ext}`
       saveBlob(blob, fileName, target, preview.pointCount)
     } catch (err) {
-      logger.error('export', `Export failed: ${(err as Error).message}`)
+      logger.error('export', `Export failed: ${errorMessage(err)}`)
     }
   }
 

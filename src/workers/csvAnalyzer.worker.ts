@@ -4,6 +4,7 @@
 import Papa from 'papaparse'
 import { analyzeRawRows } from '../core/csvAnalysis'
 import { normalizeCsvAnalysisResult } from '../core/csvContract'
+import { errorMessage } from '../core/errors'
 
 interface AnalyzeMessage {
   type: 'analyze'
@@ -33,47 +34,63 @@ interface ErrorMessage {
   }
 }
 
-self.onmessage = (event: MessageEvent<AnalyzeMessage>) => {
-  if (event.data.type !== 'analyze') return
+function reportError(message: string): void {
+  self.postMessage({ type: 'error', payload: { message } } satisfies ErrorMessage)
+}
 
-  const { file, sampleLimit } = event.data.payload
+self.onmessage = (event: MessageEvent<AnalyzeMessage>) => {
+  const data = event.data
+  if (!data || typeof data !== 'object' || data.type !== 'analyze') return
+  const payload = data.payload
+  if (!payload || !(payload.file instanceof Blob)) {
+    reportError('The analyzer received no readable file.')
+    return
+  }
+
+  const { file, sampleLimit } = payload
   const rawRows: string[][] = []
   let delimiter = ','
 
-  Papa.parse<string[]>(file, {
-    header: false,
-    skipEmptyLines: 'greedy',
-    chunkSize: 1024 * 1024,
-    chunk: (result: Papa.ParseResult<string[]>, parser: Papa.Parser) => {
-      if (result.meta.delimiter) delimiter = result.meta.delimiter
+  // Papa surfaces synchronous setup failures by throwing rather than through
+  // its `error` callback; without this the caller waits on a reply that never
+  // comes.
+  try {
+    Papa.parse<string[]>(file, {
+      header: false,
+      skipEmptyLines: 'greedy',
+      chunkSize: 1024 * 1024,
+      chunk: (result: Papa.ParseResult<string[]>, parser: Papa.Parser) => {
+        if (result.meta.delimiter) delimiter = result.meta.delimiter
 
-      for (const row of result.data) {
-        if (Array.isArray(row) && rawRows.length < sampleLimit) rawRows.push(row)
-      }
+        for (const row of result.data) {
+          if (Array.isArray(row) && rawRows.length < sampleLimit) rawRows.push(row)
+        }
 
-      const progress = result.meta.cursor && file.size > 0
-        ? Math.min(100, (result.meta.cursor / file.size) * 100)
-        : 0
-      self.postMessage({
-        type: 'progress',
-        payload: { progress, sampled: rawRows.length },
-      } satisfies ProgressMessage)
+        const progress = result.meta.cursor && file.size > 0
+          ? Math.min(100, (result.meta.cursor / file.size) * 100)
+          : 0
+        self.postMessage({
+          type: 'progress',
+          payload: { progress, sampled: rawRows.length },
+        } satisfies ProgressMessage)
 
-      if (rawRows.length >= sampleLimit) parser.abort()
-    },
-    complete: () => {
-      try {
-        const analysis = normalizeCsvAnalysisResult(analyzeRawRows(rawRows, delimiter, 'single'))
-        self.postMessage({ type: 'complete', payload: analysis } satisfies CompleteMessage)
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        self.postMessage({ type: 'error', payload: { message } } satisfies ErrorMessage)
-      }
-    },
-    error: (error: Error) => {
-      self.postMessage({ type: 'error', payload: { message: error.message } } satisfies ErrorMessage)
-    },
-  })
+        if (rawRows.length >= sampleLimit) parser.abort()
+      },
+      complete: () => {
+        try {
+          const analysis = normalizeCsvAnalysisResult(analyzeRawRows(rawRows, delimiter, 'single'))
+          self.postMessage({ type: 'complete', payload: analysis } satisfies CompleteMessage)
+        } catch (error) {
+          reportError(errorMessage(error))
+        }
+      },
+      error: (error: unknown) => {
+        reportError(errorMessage(error))
+      },
+    })
+  } catch (error) {
+    reportError(errorMessage(error))
+  }
 }
 
 export {}

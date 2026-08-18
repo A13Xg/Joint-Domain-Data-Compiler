@@ -1,5 +1,6 @@
-import { ComputeClient, type WorkerLike } from '../src/compute/client.ts'
+import { ComputeClient, type WorkerEventType, type WorkerLike } from '../src/compute/client.ts'
 import type { ComputeOutboundMessage } from '../src/compute/protocol.ts'
+import { errorMessage } from '../src/core/errors.ts'
 
 let failures = 0
 function check(name: string, condition: boolean): void {
@@ -9,14 +10,23 @@ function check(name: string, condition: boolean): void {
 
 class FakeWorker implements WorkerLike {
   sent: unknown[] = []
-  listeners = new Set<(event: MessageEvent<ComputeOutboundMessage>) => void>()
+  listeners = new Map<WorkerEventType, Set<(event: MessageEvent<ComputeOutboundMessage>) => void>>()
   terminated = false
   postMessage(message: unknown): void { this.sent.push(message) }
-  addEventListener(_type: 'message', listener: (event: MessageEvent<ComputeOutboundMessage>) => void): void { this.listeners.add(listener) }
-  removeEventListener(_type: 'message', listener: (event: MessageEvent<ComputeOutboundMessage>) => void): void { this.listeners.delete(listener) }
+  addEventListener(type: WorkerEventType, listener: (event: MessageEvent<ComputeOutboundMessage>) => void): void {
+    const set = this.listeners.get(type) ?? new Set()
+    set.add(listener)
+    this.listeners.set(type, set)
+  }
+  removeEventListener(type: WorkerEventType, listener: (event: MessageEvent<ComputeOutboundMessage>) => void): void {
+    this.listeners.get(type)?.delete(listener)
+  }
   terminate(): void { this.terminated = true }
   emit(message: ComputeOutboundMessage): void {
-    for (const listener of this.listeners) listener({ data: message } as MessageEvent<ComputeOutboundMessage>)
+    this.dispatch('message', { data: message } as MessageEvent<ComputeOutboundMessage>)
+  }
+  dispatch(type: WorkerEventType, event: unknown): void {
+    for (const listener of this.listeners.get(type) ?? []) listener(event as MessageEvent<ComputeOutboundMessage>)
   }
 }
 
@@ -56,6 +66,52 @@ check('Dispose terminates worker', worker.terminated)
 let disposedRejected = false
 try { client.run('after-dispose', 1, {}) } catch { disposedRejected = true }
 check('Disposed clients reject new work', disposedRejected)
+
+// A worker that dies never sends a protocol message, so these paths are the
+// only thing standing between a failed worker and a promise that never settles.
+{
+  const dead = new FakeWorker()
+  const deadClient = new ComputeClient(dead)
+  const stranded = deadClient.run('never-answers', 1, {})
+  dead.dispatch('error', { message: 'Failed to fetch worker script' })
+  let rejected = ''
+  try { await stranded.promise } catch (error) { rejected = errorMessage(error) }
+  check('Worker load failure rejects in-flight requests', rejected.includes('Failed to fetch worker script'))
+  check('Worker load failure clears the pending map', deadClient.activeRequestCount === 0)
+}
+
+{
+  const garbled = new FakeWorker()
+  const garbledClient = new ComputeClient(garbled)
+  const stranded = garbledClient.run('undeserializable', 1, {})
+  garbled.dispatch('messageerror', {})
+  let rejected = false
+  try { await stranded.promise } catch { rejected = true }
+  check('messageerror rejects in-flight requests', rejected)
+}
+
+{
+  const noisy = new FakeWorker()
+  const noisyClient = new ComputeClient(noisy)
+  const request = noisyClient.run('malformed-reply', 1, {})
+  // A malformed frame must be ignored, not throw inside the listener and
+  // strand every other request sharing this worker.
+  noisy.dispatch('message', { data: null })
+  noisy.dispatch('message', { data: { type: 'failure', requestId: request.requestId } })
+  let message = ''
+  try { await request.promise } catch (error) { message = errorMessage(error) }
+  check('Failure frames with no error detail still reject with a readable message', message.includes('without a reported reason'))
+}
+
+{
+  const broken = new FakeWorker()
+  broken.postMessage = () => { throw new Error('worker channel closed') }
+  const brokenClient = new ComputeClient(broken)
+  const request = brokenClient.run('unsendable', 1, {})
+  let rejected = ''
+  try { await request.promise } catch (error) { rejected = errorMessage(error) }
+  check('postMessage failure rejects rather than hanging', rejected === 'worker channel closed')
+}
 
 console.log(`\n${failures === 0 ? 'ALL COMPUTE CLIENT CHECKS PASSED' : `${failures} COMPUTE CLIENT CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)

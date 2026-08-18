@@ -1,3 +1,3 @@
-import { attachComputeWorker, type WorkerScopeLike } from './workerRuntime'
+import { attachComputeWorker } from './workerRuntime'
 
-attachComputeWorker(self as unknown as WorkerScopeLike)
+attachComputeWorker(self)

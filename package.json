@@ -29,12 +29,12 @@
     "check:unit": "npm run lint && npm test",
     "check:web": "npm run build",
     "check:app-health": "npm run build && node scripts/check-app-health.mjs",
-    "check:e2e:ci": "npm run check:app-health",
     "check:e2e": "playwright test test/e2e/ci-smoke.spec.ts test/e2e/workbench-smoke.spec.ts",
     "check:desktop:linux": "node scripts/smoke-packaged.mjs",
     "check:desktop:win": "node scripts/smoke-packaged.mjs",
     "check:desktop:mac": "node scripts/smoke-packaged.mjs",
-    "check:all": "npm run check:unit && npm run check:web && node scripts/check-app-health.mjs",
+    "check:all": "npm run check:unit && npm run check:app-health",
+    "check:full": "npm run check:all && npm run check:e2e",
     "preview": "vite preview"
   },
   "build": {

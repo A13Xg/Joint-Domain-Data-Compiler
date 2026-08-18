@@ -65,6 +65,12 @@ function validateSeconds(value: unknown): ShiftTimeParams {
 }
 
 function validateEmptyParams(value: unknown): Record<string, never> {
-  if (value === undefined || (typeof value === 'object' && value !== null && Object.keys(value).length === 0)) return {}
+  if (value === undefined) return {}
+  // A plain object with no keys is the recorded form of "no parameters".
+  // Arrays, Dates, Maps, Sets, RegExps and Errors all report zero enumerable
+  // own keys too, so a key count alone would wave them through; the prototype
+  // check is what keeps a malformed recorded param out of a replay.
+  const prototype = typeof value === 'object' && value !== null ? Object.getPrototypeOf(value) as unknown : false
+  if ((prototype === Object.prototype || prototype === null) && Object.keys(value as object).length === 0) return {}
   throw new Error('standard kinematics does not accept parameters')
 }

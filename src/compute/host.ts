@@ -7,6 +7,7 @@ import type {
   ComputeRequest,
   ComputeTaskDefinition,
 } from './protocol'
+import { errorMessage } from '../core/errors'
 
 export type ComputeEmitter = (message: ComputeOutboundMessage) => void
 
@@ -20,7 +21,7 @@ export class ComputeTaskHost {
       throw new Error(`Compute task ${definition.id} must declare a positive integer version`)
     }
     if (this.tasks.has(definition.id)) throw new Error(`Compute task ${definition.id} is already registered`)
-    this.tasks.set(definition.id, definition as ComputeTaskDefinition)
+    this.tasks.set(definition.id, definition)
   }
 
   list(): ComputeTaskDefinition[] {
@@ -28,8 +29,19 @@ export class ComputeTaskHost {
   }
 
   async handle(message: ComputeInboundMessage, emit: ComputeEmitter): Promise<void> {
+    // The frame crossed a structured-clone boundary, so its declared type is a
+    // claim. Reading `.type` off a non-object would reject this promise with a
+    // TypeError the caller cannot attribute to any request.
+    if (!message || typeof message !== 'object' || typeof (message as { requestId?: unknown }).requestId !== 'string') {
+      return
+    }
     if (message.type === 'cancel') {
       this.cancel(message, emit)
+      return
+    }
+    const frame = message as { type?: unknown; requestId: string }
+    if (frame.type !== 'request') {
+      emit(failure(frame.requestId, 'UNKNOWN_MESSAGE', `Unsupported compute message type: ${String(frame.type)}`, false))
       return
     }
     await this.execute(message, emit)
@@ -93,17 +105,23 @@ export class ComputeTaskHost {
       emit({ type: 'success', requestId: message.requestId, result })
     } catch (error) {
       if (controller.signal.aborted) return
-      emit(failure(message.requestId, 'TASK_FAILED', errorMessage(error), true))
+      safeEmit(emit, failure(message.requestId, 'TASK_FAILED', errorMessage(error), true), message.requestId)
     } finally {
       this.active.delete(message.requestId)
     }
   }
 }
 
-function failure(requestId: string, code: string, message: string, retryable: boolean): ComputeFailure {
-  return { type: 'failure', requestId, error: { code, message, retryable } }
+/** Last-resort emit. If the failure frame itself cannot be posted the client
+ *  would wait forever, so fall back to a frame that is guaranteed cloneable. */
+function safeEmit(emit: ComputeEmitter, message: ComputeFailure, requestId: string): void {
+  try {
+    emit(message)
+  } catch {
+    emit(failure(requestId, 'EMIT_FAILED', 'Compute task failed and its error could not be transferred.', false))
+  }
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+function failure(requestId: string, code: string, message: string, retryable: boolean): ComputeFailure {
+  return { type: 'failure', requestId, error: { code, message, retryable } }
 }

@@ -14,6 +14,7 @@ import { getOperation } from '../core/recipes/registry'
 import { usePointSelection } from '../state/pointSelection'
 import { ComputeClient, type ComputeRunHandle } from '../compute/client'
 import { logger } from '../core/logger'
+import { errorMessage, isAbortError } from '../core/errors'
 
 interface Props {
   dataset: Dataset
@@ -58,7 +59,7 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
       const replayed = replayRecipe(replaySource, recipe)
       onReplay(replayed, `Replayed ${operationHistory.length} verified operation(s)`)
       setReplayError(null)
-    } catch (error) { setReplayError((error as Error).message) }
+    } catch (error) { setReplayError(errorMessage(error)) }
   }
   const replayableHistory = operationHistory.length > 0 && operationHistory.every((record) => getOperation(record.operationId)?.version === record.operationVersion)
   const saveRecipe = () => {
@@ -74,7 +75,7 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
     try {
       onReplay(replayRecipe(replaySource, recipe), `Replayed recipe “${recipe.name}”`)
       setReplayError(null)
-    } catch (error) { setReplayError((error as Error).message) }
+    } catch (error) { setReplayError(errorMessage(error)) }
   }
   const [resampleMaxGapSeconds, setResampleMaxGapSeconds] = useState(10)
   const [limitResampleGaps, setLimitResampleGaps] = useState(true)
@@ -104,7 +105,7 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
       for (const warning of result.warnings ?? []) logger.warn('transform', warning)
       onApply(result.points, result.summary, preserveSelection)
     } catch (error) {
-      logger.error('transform', `Transform failed: ${(error as Error).message}`)
+      logger.error('transform', `Transform failed: ${errorMessage(error)}`)
     }
   }
 
@@ -122,7 +123,7 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
       for (const warning of execution.record.warnings) logger.warn('transform', warning)
       onApply(execution.dataset.points, execution.record.summary, true, execution.record)
     } catch (error) {
-      logger.error('transform', `Transform failed: ${(error as Error).message}`)
+      logger.error('transform', `Transform failed: ${errorMessage(error)}`)
     }
   }
 
@@ -148,8 +149,8 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
       for (const warning of result.warnings ?? []) logger.warn('transform', warning)
       onApply(result.dataset.points, result.summary, false)
     } catch (error) {
-      if ((error as Error).name === 'AbortError') logger.warn('transform', 'Resampling cancelled')
-      else logger.error('transform', `Resampling failed: ${(error as Error).message}`)
+      if (isAbortError(error)) logger.warn('transform', 'Resampling cancelled')
+      else logger.error('transform', `Resampling failed: ${errorMessage(error)}`)
     } finally {
       activeResampleRef.current = null
       setResampleProgress(null)

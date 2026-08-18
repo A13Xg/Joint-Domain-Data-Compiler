@@ -48,6 +48,13 @@ export function parseGpx(text: string): ParseResult {
   }
 }
 
+// Leaf tags copied straight into `ext`, in the order they are written there.
+const EXTENSION_TAGS = ['sat', 'hdop', 'vdop', 'pdop', 'fix', 'geoidheight', 'magvar'] as const
+
+function trimmedText(el: Element): string | null {
+  return el.textContent?.trim() ?? null
+}
+
 function elementToPoint(el: Element, channelSet: Set<string>): TrackPoint | null {
   const lat = parseNumber(el.getAttribute('lat'))
   const lon = parseNumber(el.getAttribute('lon'))
@@ -56,30 +63,56 @@ function elementToPoint(el: Element, channelSet: Set<string>): TrackPoint | null
   const point: TrackPoint = { lat, lon }
   const ext: Record<string, number | string> = {}
 
-  const eleText = childText(el, 'ele')
+  // One pass over the children. Reading each field with its own scan rebuilt
+  // an array of this point's children twelve times over — twelve allocations
+  // and twelve linear scans per track point. `undefined` here means "no such
+  // child was seen", which is distinct from a child whose text is empty, so
+  // first-match-wins still behaves exactly as the per-field scans did.
+  let eleText: string | null | undefined
+  let timeText: string | null | undefined
+  let nameText: string | null | undefined
+  let descText: string | null | undefined
+  let cmtText: string | null | undefined
+  const extText: Array<string | null | undefined> = new Array<string | null | undefined>(EXTENSION_TAGS.length)
+
+  const children = el.children
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i]
+    if (!child) continue
+    switch (child.localName) {
+      case 'ele': if (eleText === undefined) eleText = trimmedText(child); break
+      case 'time': if (timeText === undefined) timeText = trimmedText(child); break
+      case 'name': if (nameText === undefined) nameText = trimmedText(child); break
+      case 'desc': if (descText === undefined) descText = trimmedText(child); break
+      case 'cmt': if (cmtText === undefined) cmtText = trimmedText(child); break
+      default: {
+        const index = EXTENSION_TAGS.indexOf(child.localName as (typeof EXTENSION_TAGS)[number])
+        if (index >= 0 && extText[index] === undefined) extText[index] = trimmedText(child)
+      }
+    }
+  }
+
   if (eleText) {
     const ele = parseNumber(eleText)
     if (ele !== null) point.ele = ele
   }
 
-  const timeText = childText(el, 'time')
   if (timeText) {
     const ms = Date.parse(timeText)
     if (!Number.isNaN(ms)) point.time = ms
   }
 
-  const name = childText(el, 'name')
-  if (name) point.name = name
-  const desc = childText(el, 'desc') ?? childText(el, 'cmt')
+  if (nameText) point.name = nameText
+  const desc = descText ?? cmtText
   if (desc) point.desc = desc
 
-  for (const tag of ['sat', 'hdop', 'vdop', 'pdop', 'fix', 'geoidheight', 'magvar']) {
-    const value = childText(el, tag)
-    if (value) {
-      const num = parseNumber(value)
-      ext[tag] = num ?? value
-      channelSet.add(tag)
-    }
+  for (let i = 0; i < EXTENSION_TAGS.length; i++) {
+    const value = extText[i]
+    if (!value) continue
+    const tag = EXTENSION_TAGS[i]!
+    const num = parseNumber(value)
+    ext[tag] = num ?? value
+    channelSet.add(tag)
   }
 
   // Pull any namespaced extension leaf nodes (TrackPointExtension, custom).
@@ -97,13 +130,4 @@ function elementToPoint(el: Element, channelSet: Set<string>): TrackPoint | null
 
   if (Object.keys(ext).length > 0) point.ext = ext
   return point
-}
-
-function childText(el: Element, tag: string): string | null {
-  for (const child of Array.from(el.children)) {
-    if (child.localName === tag) {
-      return child.textContent?.trim() ?? null
-    }
-  }
-  return null
 }

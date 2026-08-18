@@ -9,7 +9,7 @@ import { ComputeTaskHost } from '../src/compute/host.ts'
 import { gpxExportTask } from '../src/compute/tasks.ts'
 import type { ComputeOutboundMessage } from '../src/compute/protocol.ts'
 import type { TrackPoint } from '../src/core/model.ts'
-import { ComputeClient, type WorkerLike } from '../src/compute/client.ts'
+import { ComputeClient, type WorkerEventType, type WorkerLike } from '../src/compute/client.ts'
 import {
   GPX_EXPORT_TASK,
   GPX_EXPORT_TASK_VERSION,
@@ -148,13 +148,22 @@ host.register(gpxExportTask)
 
 class FakeWorker implements WorkerLike {
   sent: unknown[] = []
-  listeners = new Set<(event: MessageEvent<ComputeOutboundMessage>) => void>()
+  listeners = new Map<WorkerEventType, Set<(event: MessageEvent<ComputeOutboundMessage>) => void>>()
   postMessage(message: unknown): void { this.sent.push(message) }
-  addEventListener(_type: 'message', listener: (event: MessageEvent<ComputeOutboundMessage>) => void): void { this.listeners.add(listener) }
-  removeEventListener(_type: 'message', listener: (event: MessageEvent<ComputeOutboundMessage>) => void): void { this.listeners.delete(listener) }
+  addEventListener(type: WorkerEventType, listener: (event: MessageEvent<ComputeOutboundMessage>) => void): void {
+    const set = this.listeners.get(type) ?? new Set()
+    set.add(listener)
+    this.listeners.set(type, set)
+  }
+  removeEventListener(type: WorkerEventType, listener: (event: MessageEvent<ComputeOutboundMessage>) => void): void {
+    this.listeners.get(type)?.delete(listener)
+  }
   terminate(): void { /* no-op */ }
   emit(message: ComputeOutboundMessage): void {
-    for (const listener of this.listeners) listener({ data: message } as MessageEvent<ComputeOutboundMessage>)
+    this.dispatch('message', { data: message } as MessageEvent<ComputeOutboundMessage>)
+  }
+  dispatch(type: WorkerEventType, event: unknown): void {
+    for (const listener of this.listeners.get(type) ?? []) listener(event as MessageEvent<ComputeOutboundMessage>)
   }
 }
 

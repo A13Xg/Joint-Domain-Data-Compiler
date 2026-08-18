@@ -91,12 +91,12 @@ function dataNumericBaseline(rawRows: string[][]): number | null {
   const start = MAX_HEADER_ROWS
   const ratios: number[] = []
   for (let i = start; i < Math.min(rawRows.length, start + 50); i++) {
-    const r = rowNumericRatio(rawRows[i])
+    const r = rowNumericRatio(rawRows[i]!)
     if (r !== null) ratios.push(r)
   }
   if (ratios.length < 3) return null
   ratios.sort((a, b) => a - b)
-  return ratios[Math.floor(ratios.length / 2)]
+  return ratios[Math.floor(ratios.length / 2)]!
 }
 
 /** Walk up to MAX_HEADER_ROWS leading rows; count how many look like headers.
@@ -111,7 +111,7 @@ export function detectDataStartRow(rawRows: string[][]): number {
   const baseline = dataNumericBaseline(rawRows)
   let count = 0
   for (let i = 0; i < limit; i++) {
-    const ratio = rowNumericRatio(rawRows[i])
+    const ratio = rowNumericRatio(rawRows[i]!)
     if (ratio === null || ratio >= 0.5) break // blank or data-like: header block ends
     if (i > 0 && baseline !== null && baseline - ratio < 0.3) break
     count++
@@ -140,7 +140,7 @@ export function inferHeaderRowFromRows(rows: string[][]): HeaderInferenceResult 
     return { inferred: false, confidence: 'ambiguous', reasons: ['No rows available to sample.'] }
   }
 
-  const firstRow = sample[0]
+  const firstRow = sample[0]!
   const trimmedCells = firstRow.map((cell) => (cell ?? '').trim())
   const nonEmptyCells = trimmedCells.filter((cell) => cell.length > 0)
 

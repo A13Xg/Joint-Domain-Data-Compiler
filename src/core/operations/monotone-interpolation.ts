@@ -38,7 +38,7 @@ export function fitMonotoneCubic(xs: number[], ys: number[]): MonotoneCubicSplin
   // Initial tangent estimate: average of adjacent secants, but zero at any
   // local extremum (sign change or flat secant) so the limiter below has a
   // monotone starting point to work from.
-  const slopes: number[] = new Array(n)
+  const slopes: number[] = new Array<number>(n)
   slopes[0] = secants[0]!
   slopes[n - 1] = secants[n - 2]!
   for (let i = 1; i < n - 1; i++) {

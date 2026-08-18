@@ -22,12 +22,13 @@ export function parseEag(text: string, fileName?: string): ParseResult {
   if (headerFields.length !== 7) {
     warnings.push(`EAG header has ${headerFields.length} fields; expected 7. Proceeding without header metadata.`)
   } else {
-    meta['platformType'] = headerFields[0]
-    meta['recordVersion'] = headerFields[1]
-    meta['exerciseId'] = headerFields[2]
-    meta['missionId'] = headerFields[3]
-    meta['eag_field4'] = headerFields[4]
-    meta['platformName'] = headerFields[6]
+    // Fields 0-6 exist: the branch above rejects any header without exactly 7.
+    meta['platformType'] = headerFields[0]!
+    meta['recordVersion'] = headerFields[1]!
+    meta['exerciseId'] = headerFields[2]!
+    meta['missionId'] = headerFields[3]!
+    meta['eag_field4'] = headerFields[4]!
+    meta['platformName'] = headerFields[6]!
   }
 
   // Extract mission date from filename (YYYYMMDD or DDMMMYY pattern)
@@ -36,7 +37,7 @@ export function parseEag(text: string, fileName?: string): ParseResult {
     // Try YYYYMMDD first
     const yyyymmdMatch = fileName.match(/(\d{8})/)
     if (yyyymmdMatch) {
-      const yyyymmdd = yyyymmdMatch[1]
+      const yyyymmdd = yyyymmdMatch[1]!
       const year = parseInt(yyyymmdd.slice(0, 4), 10)
       const month = parseInt(yyyymmdd.slice(4, 6), 10)
       const day = parseInt(yyyymmdd.slice(6, 8), 10)
@@ -49,9 +50,9 @@ export function parseEag(text: string, fileName?: string): ParseResult {
     if (!missionDate) {
       const ddmmmyyMatch = fileName.match(/(\d{2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(\d{2})/i)
       if (ddmmmyyMatch) {
-        const day = parseInt(ddmmmyyMatch[1], 10)
-        const monthName = ddmmmyyMatch[2].toUpperCase()
-        const yy = parseInt(ddmmmyyMatch[3], 10)
+        const day = parseInt(ddmmmyyMatch[1]!, 10)
+        const monthName = ddmmmyyMatch[2]!.toUpperCase()
+        const yy = parseInt(ddmmmyyMatch[3]!, 10)
         const monthMap: Record<string, number> = {
           JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6,
           JUL: 7, AUG: 8, SEP: 9, OCT: 10, NOV: 11, DEC: 12,
@@ -118,9 +119,9 @@ export function parseEag(text: string, fileName?: string): ParseResult {
       // Extract HH:MM:SS.cc
       const hmsMatch = hmsStr.match(/(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,2}))?/)
       if (hmsMatch) {
-        const h = parseInt(hmsMatch[1], 10)
-        const m = parseInt(hmsMatch[2], 10)
-        const s = parseInt(hmsMatch[3], 10)
+        const h = parseInt(hmsMatch[1]!, 10)
+        const m = parseInt(hmsMatch[2]!, 10)
+        const s = parseInt(hmsMatch[3]!, 10)
         const cs = parseInt((hmsMatch[4] ?? '0').padEnd(2, '0'), 10) // centiseconds
         if (h >= 0 && h <= 23 && m >= 0 && m <= 59 && s >= 0 && s <= 59) {
           // Detect day rollover: if timeCounterMs went DOWN from previous, we crossed midnight

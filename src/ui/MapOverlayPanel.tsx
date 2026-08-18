@@ -23,6 +23,7 @@ import {
   type MapOverlayState,
   type OverlayCreationRejectionReason,
 } from '../state/mapOverlays'
+import { errorMessage as message } from '../core/errors'
 
 interface Props {
   /** Map-owned overlay state: which library files are shown, and how. */
@@ -37,10 +38,6 @@ interface Props {
 }
 
 interface StatusLine { icon: string; text: string; tone: 'ok' | 'warn' | 'error' }
-
-function message(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause)
-}
 
 function sourceKindFor(name: string, existing?: MapOverlaySourceKind): MapOverlaySourceKind {
   if (BUNDLED_KML_SEED_NAMES.has(name)) return 'bundled'

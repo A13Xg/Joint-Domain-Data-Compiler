@@ -45,13 +45,18 @@ export function validateFusionArtifact(value: unknown): asserts value is FusionA
     sourceIds.add(source.id); datasetIds.add(source.datasetId)
     if (value.sourceDatasetHashes !== undefined && typeof value.sourceDatasetHashes[source.id] !== 'string') throw new Error('Fusion artifact is missing a source dataset binding')
   }
-  for (const override of [...(value.pointOverrides ?? []), ...(value.intervalOverrides ?? [])]) {
+  // Array.isArray narrows `unknown` to `any[]`, which would leave every read
+  // below untyped inside the one function responsible for establishing the type.
+  const pointOverrides: unknown[] = value.pointOverrides ?? []
+  const intervalOverrides: unknown[] = value.intervalOverrides ?? []
+  for (const override of [...pointOverrides, ...intervalOverrides]) {
     if (!isRecord(override) || typeof override.entityId !== 'string' || override.entityId !== value.entityId || typeof override.sourceId !== 'string' || !sourceIds.has(override.sourceId)) throw new Error('Fusion artifact override references an invalid source or entity')
   }
-  for (const override of value.pointOverrides ?? []) {
-    if (typeof override.groupId !== 'string' || !override.groupId.trim()) throw new Error('Fusion artifact point override groupId is required')
+  for (const override of pointOverrides) {
+    if (!isRecord(override) || typeof override.groupId !== 'string' || !override.groupId.trim()) throw new Error('Fusion artifact point override groupId is required')
   }
-  for (const override of value.intervalOverrides ?? []) {
+  for (const override of intervalOverrides) {
+    if (!isRecord(override) || typeof override.startMs !== 'number' || typeof override.endMs !== 'number') throw new Error('Fusion artifact interval override range is invalid')
     if (!Number.isFinite(override.startMs) || !Number.isFinite(override.endMs) || override.startMs > override.endMs) throw new Error('Fusion artifact interval override range is invalid')
   }
   for (const decision of value.decisions) {

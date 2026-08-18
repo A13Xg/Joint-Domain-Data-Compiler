@@ -1,6 +1,6 @@
 import { generateSyntheticTrack } from './generate.ts'
 import type { Dataset } from '../src/core/model.ts'
-import { dedupe, sortByTime } from '../src/core/transforms.ts'
+import { dedupe, hampelFilterElevation, medianFilterElevation, simplify, smooth, sortByTime } from '../src/core/transforms.ts'
 import { standardKinematicsDerivation } from '../src/core/analytics/kinematics.ts'
 import { detectQualityEvents } from '../src/core/quality/events.ts'
 import { exportDataset } from '../src/core/exporters/index.ts'
@@ -45,10 +45,10 @@ function makeDataset(points: ReturnType<typeof generateSyntheticTrack>): Dataset
 export async function run(): Promise<void> {
   console.log('JDDC scale benchmark — Tranche 8 Task 8.1')
   console.log('Node', process.version, '| gc exposed:', typeof global.gc === 'function')
-  console.log('Covers: dataset construction, sortByTime, dedupe, standard-kinematics derivation, quality-event detection, chart/3D preparation, nearest-time comparison, GPX/GeoJSON/KML/GPB parse, GPX export, and project archive serialize/parse.')
+  console.log('Covers: dataset construction, sortByTime, dedupe, simplify, smooth, rolling median/Hampel elevation filters, standard-kinematics derivation, quality-event detection, chart/3D preparation, nearest-time comparison, GPX/GeoJSON/KML/GPB parse, GPX export, and project archive serialize/parse.')
   console.log('Does NOT cover (deferred): CSV/NMEA parser throughput and browser map rendering.\n')
 
-  const header = ['points', 'generate ms', 'sortByTime ms', 'dedupe ms', 'kinematics ms', 'quality-events ms', 'chart ms', '3D geometry ms', 'comparison ms', 'archive write ms', 'archive read ms', 'archive MB', 'gpx parse ms', 'geojson parse ms', 'kml parse ms', 'gpb parse ms', 'gpx export ms', 'heap MB (post-GC)']
+  const header = ['points', 'generate ms', 'sortByTime ms', 'dedupe ms', 'simplify ms', 'smooth w31 ms', 'median w11 ms', 'hampel w21 ms', 'kinematics ms', 'quality-events ms', 'chart ms', '3D geometry ms', 'comparison ms', 'archive write ms', 'archive read ms', 'archive MB', 'gpx parse ms', 'geojson parse ms', 'kml parse ms', 'gpb parse ms', 'gpx export ms', 'heap MB (post-GC)']
   console.log(header.join('  |  '))
 
   for (const size of sizesToRun) {
@@ -59,6 +59,12 @@ export async function run(): Promise<void> {
 
     const sortTime = timeMs(() => { sortByTime(dataset!.points) })
     const dedupeTime = timeMs(() => { dedupe(dataset!.points, 0) })
+    const simplifyTime = timeMs(() => { simplify(dataset!.points, 5) })
+    // Window 31 is where the per-point trig cost used to dominate; the median
+    // and Hampel filters are the sort-bound rolling-window pair.
+    const smoothTime = timeMs(() => { smooth(dataset!.points, 31, { coords: true, elevation: true }) })
+    const medianTime = timeMs(() => { medianFilterElevation(dataset!.points, 11) })
+    const hampelTime = timeMs(() => { hampelFilterElevation(dataset!.points, 3, 21) })
     const kinematicsTime = timeMs(() => { standardKinematicsDerivation.derive({ dataset: dataset!, points: dataset!.points }) })
     const qualityTime = timeMs(() => { detectQualityEvents(dataset!.points) })
     const chartTime = timeMs(() => { extractChartSeries(dataset!.points, 'elevation', 'time') })
@@ -94,6 +100,10 @@ export async function run(): Promise<void> {
       generateTime.toFixed(0),
       sortTime.toFixed(0),
       dedupeTime.toFixed(0),
+      simplifyTime.toFixed(0),
+      smoothTime.toFixed(0),
+      medianTime.toFixed(0),
+      hampelTime.toFixed(0),
       kinematicsTime.toFixed(0),
       qualityTime.toFixed(0),
       chartTime.toFixed(0),
@@ -112,6 +122,7 @@ export async function run(): Promise<void> {
 
     // Drop references before the next (larger) iteration so its heapBefore
     // reading reflects a clean baseline rather than this iteration's data.
+    // eslint-disable-next-line no-useless-assignment -- the assignment IS the effect: it releases the array for GC
     points = []
     dataset = null
   }

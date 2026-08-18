@@ -71,8 +71,8 @@ function decideGroup(
     override.entityId === group.entityId && group.groupTimeMs >= override.startMs && group.groupTimeMs <= override.endMs)
   const intervalOverrideCandidate = intervalOverride && group.candidates.find((c) => c.sourceId === intervalOverride.sourceId)
   if (intervalOverrideCandidate) {
-    const start = new Date(intervalOverride!.startMs).toISOString()
-    const end = new Date(intervalOverride!.endMs).toISOString()
+    const start = new Date(intervalOverride.startMs).toISOString()
+    const end = new Date(intervalOverride.endMs).toISOString()
     return finalize(group, intervalOverrideCandidate, `manual interval override (${start} – ${end}) selected source ${intervalOverrideCandidate.sourceId}`, 1)
   }
 

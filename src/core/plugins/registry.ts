@@ -103,7 +103,7 @@ function createStagingContext(staged: StagedRegistrations): PluginRegistrationCo
   return {
     registerParser: (definition) => staged.parsers.push(definition),
     registerExporter: (definition) => staged.exporters.push(definition),
-    registerOperation: (definition) => staged.operations.push(definition as OperationDefinition),
+    registerOperation: (definition) => staged.operations.push(definition),
     registerDerivation: (definition) => staged.derivations.push(definition),
     registerChartPreset: (definition) => staged.chartPresets.push(definition),
     registerReportSection: (definition) => staged.reportSections.push(definition),

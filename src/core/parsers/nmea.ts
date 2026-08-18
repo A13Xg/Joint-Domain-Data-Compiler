@@ -31,7 +31,7 @@ export function parseNmea(text: string): ParseResult {
     }
 
     const fields = body.split(',')
-    const type = fields[0].slice(2) // strip talker id (GP, GN, GL, ...)
+    const type = fields[0]!.slice(2) // strip talker id (GP, GN, GL, ...)
 
     if (type === 'RMC') {
       const time = nmeaTime(fields[1])

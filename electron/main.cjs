@@ -50,12 +50,21 @@ function createWindow() {
     event.preventDefault()
   })
 
-  if (isDev) {
-    window.loadURL(DEV_ORIGIN)
-    window.webContents.openDevTools({ mode: 'detach' })
-  } else {
-    window.loadFile(path.join(__dirname, '../dist/index.html'))
-  }
+  // loadURL/loadFile reject when the dev server is down or dist/ is missing;
+  // unawaited that is a blank window with no explanation anywhere.
+  const load = isDev
+    ? window.loadURL(DEV_ORIGIN)
+    : window.loadFile(path.join(__dirname, '../dist/index.html'))
+  load.catch((error) => {
+    reportFatal(isDev ? `Could not load the dev server at ${DEV_ORIGIN}` : 'Could not load the packaged renderer', error)
+  })
+  if (isDev) window.webContents.openDevTools({ mode: 'detach' })
+
+  window.webContents.on('render-process-gone', (_event, details) => {
+    reportFatal('The renderer process stopped', new Error(`${details.reason}${details.exitCode ? ` (exit ${details.exitCode})` : ''}`))
+  })
+
+  return window
 }
 
 function kmlLibraryDir() {
@@ -85,7 +94,9 @@ function libraryPath(name) {
 
 function dosDateTimeToMs(date, time) {
   const day = date & 0x1f
-  const month = ((date >> 5) & 0x0f) - 1
+  // A zero month field is out of spec; clamping keeps it from rolling the
+  // reported timestamp back into the previous year.
+  const month = Math.min(11, Math.max(0, ((date >> 5) & 0x0f) - 1))
   const year = ((date >> 9) & 0x7f) + 1980
   const second = (time & 0x1f) * 2
   const minute = (time >> 5) & 0x3f
@@ -93,45 +104,75 @@ function dosDateTimeToMs(date, time) {
   return Date.UTC(year, month, day || 1, hour, minute, second)
 }
 
+// Every offset and length below is read FROM the archive being parsed, so all of
+// them are untrusted. Node's Buffer readers throw ERR_OUT_OF_RANGE on a bad
+// offset — a message that says nothing about which file is broken — so bounds
+// are checked explicitly and reported as a KMZ problem.
+function readU16(bytes, offset) {
+  if (offset < 0 || offset + 2 > bytes.length) throw new Error('KMZ archive is truncated or its index is corrupt')
+  return bytes.readUInt16LE(offset)
+}
+
+function readU32(bytes, offset) {
+  if (offset < 0 || offset + 4 > bytes.length) throw new Error('KMZ archive is truncated or its index is corrupt')
+  return bytes.readUInt32LE(offset)
+}
+
 function firstKmlFromKmz(bytes) {
   const eocdMinSize = 22
+  if (!Buffer.isBuffer(bytes)) throw new Error('KMZ payload must be binary data')
+  if (bytes.length < eocdMinSize) throw new Error('KMZ archive is too small to be a valid ZIP')
   for (let eocd = bytes.length - eocdMinSize; eocd >= Math.max(0, bytes.length - 65557); eocd--) {
-    if (bytes.readUInt32LE(eocd) !== 0x06054b50) continue
-    const entries = bytes.readUInt16LE(eocd + 10)
-    const centralOffset = bytes.readUInt32LE(eocd + 16)
+    if (readU32(bytes, eocd) !== 0x06054b50) continue
+    const entries = readU16(bytes, eocd + 10)
+    const centralOffset = readU32(bytes, eocd + 16)
+    if (centralOffset >= bytes.length) throw new Error('KMZ central directory offset is outside the archive')
     let cursor = centralOffset
     for (let i = 0; i < entries; i++) {
-      if (bytes.readUInt32LE(cursor) !== 0x02014b50) break
-      const method = bytes.readUInt16LE(cursor + 10)
-      const modifiedTime = bytes.readUInt16LE(cursor + 12)
-      const modifiedDate = bytes.readUInt16LE(cursor + 14)
-      const compressedSize = bytes.readUInt32LE(cursor + 20)
-      const uncompressedSize = bytes.readUInt32LE(cursor + 24)
-      const nameLen = bytes.readUInt16LE(cursor + 28)
-      const extraLen = bytes.readUInt16LE(cursor + 30)
-      const commentLen = bytes.readUInt16LE(cursor + 32)
-      const localOffset = bytes.readUInt32LE(cursor + 42)
+      if (cursor + 46 > bytes.length) throw new Error('KMZ central directory is truncated')
+      if (readU32(bytes, cursor) !== 0x02014b50) break
+      const method = readU16(bytes, cursor + 10)
+      const modifiedTime = readU16(bytes, cursor + 12)
+      const modifiedDate = readU16(bytes, cursor + 14)
+      const compressedSize = readU32(bytes, cursor + 20)
+      const uncompressedSize = readU32(bytes, cursor + 24)
+      const nameLen = readU16(bytes, cursor + 28)
+      const extraLen = readU16(bytes, cursor + 30)
+      const commentLen = readU16(bytes, cursor + 32)
+      const localOffset = readU32(bytes, cursor + 42)
+      if (cursor + 46 + nameLen > bytes.length) throw new Error('KMZ entry name is truncated')
       const entryName = bytes.subarray(cursor + 46, cursor + 46 + nameLen).toString('utf8')
       if (entryName.toLowerCase().endsWith('.kml')) {
         if (uncompressedSize > MAX_KML_LIBRARY_BYTES) throw new Error('Embedded KML exceeds safety limit')
-        if (bytes.readUInt32LE(localOffset) !== 0x04034b50) throw new Error('KMZ local file header is invalid')
-        const localNameLen = bytes.readUInt16LE(localOffset + 26)
-        const localExtraLen = bytes.readUInt16LE(localOffset + 28)
+        if (readU32(bytes, localOffset) !== 0x04034b50) throw new Error('KMZ local file header is invalid')
+        const localNameLen = readU16(bytes, localOffset + 26)
+        const localExtraLen = readU16(bytes, localOffset + 28)
         const start = localOffset + 30 + localNameLen + localExtraLen
         if (start > bytes.length || compressedSize > bytes.length - start) throw new Error('KMZ compressed entry is truncated')
         const payload = bytes.subarray(start, start + compressedSize)
-        const content = method === 0
-          ? payload
-          : method === 8
-            ? zlib.inflateRawSync(payload, { maxOutputLength: MAX_KML_LIBRARY_BYTES })
-            : null
-        if (!content) throw new Error(`Unsupported KMZ compression method ${method}`)
+        let content
+        if (method === 0) {
+          content = payload
+        } else if (method === 8) {
+          try {
+            content = zlib.inflateRawSync(payload, { maxOutputLength: MAX_KML_LIBRARY_BYTES })
+          } catch (error) {
+            throw new Error(
+              `KMZ embedded KML could not be decompressed: ${error instanceof Error ? error.message : String(error)}`,
+              { cause: error },
+            )
+          }
+        } else {
+          throw new Error(`Unsupported KMZ compression method ${method}`)
+        }
         if (content.length > MAX_KML_LIBRARY_BYTES || content.length !== uncompressedSize) {
           throw new Error('KMZ embedded KML size is invalid or exceeds safety limit')
         }
         return { text: content.toString('utf8'), entryName, modifiedAt: dosDateTimeToMs(modifiedDate, modifiedTime) }
       }
-      cursor += 46 + nameLen + extraLen + commentLen
+      const next = cursor + 46 + nameLen + extraLen + commentLen
+      if (next <= cursor) throw new Error('KMZ central directory entry has an invalid length')
+      cursor = next
     }
   }
   throw new Error('KMZ archive does not contain a .kml entry')
@@ -189,7 +230,10 @@ function registerKmlLibraryIpc() {
 
   ipcMain.handle(IPC_CHANNELS.reveal, async () => {
     const dir = ensureKmlLibraryDir()
-    await shell.openPath(dir)
+    // openPath resolves with an error STRING instead of rejecting, so an
+    // unchecked call makes "Reveal" look like a no-op when it fails.
+    const failure = await shell.openPath(dir)
+    if (failure) throw new Error(`Could not open the KML/KMZ library folder: ${failure}`)
     return dir
   })
 }
@@ -208,6 +252,19 @@ function registerDiagnosticIpc() {
   })
 }
 
+// A throw anywhere in startup used to surface only as an unhandled rejection on
+// a console no packaged user ever sees, leaving a process running with no
+// window. Show it and exit non-zero instead.
+function reportFatal(context, error) {
+  const message = error instanceof Error ? (error.stack || error.message) : String(error)
+  console.error(`[main] ${context}: ${message}`)
+  try {
+    dialog.showErrorBox('Joint Domain Data Compiler failed to start', `${context}\n\n${message}`)
+  } catch {
+    // dialog is unavailable before `ready`; the console line above is the readout.
+  }
+}
+
 app.whenReady().then(() => {
   // The workbench owns its visible navigation and commands. Remove Electron's
   // default File/Edit/View/Window menu in both development and packaged builds.
@@ -217,8 +274,25 @@ app.whenReady().then(() => {
   createWindow()
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (BrowserWindow.getAllWindows().length === 0) {
+      try {
+        createWindow()
+      } catch (error) {
+        reportFatal('Could not reopen the window', error)
+      }
+    }
   })
+}).catch((error) => {
+  reportFatal('Startup failed', error)
+  app.exit(1)
+})
+
+process.on('uncaughtException', (error) => {
+  reportFatal('Unexpected main-process error', error)
+})
+
+process.on('unhandledRejection', (reason) => {
+  reportFatal('Unhandled main-process rejection', reason)
 })
 
 app.on('window-all-closed', () => {

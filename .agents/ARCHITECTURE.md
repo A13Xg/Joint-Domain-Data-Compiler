@@ -278,8 +278,9 @@ has a schema.
 ## 12. Verifying a change
 
 ```bash
-npm run check:all     # lint + 62 test harnesses + build + app health
+npm run check:all     # lint + 63 test harnesses + build + app health
 npm run check:e2e     # 10 Playwright workflow tests (needs chromium)
+npm run check:full    # check:all + check:e2e (desktop smoke still needs build:desktop:*)
 npx tsc -b            # types only, fastest feedback
 ```
 

@@ -21,7 +21,23 @@ function formatParams(params: unknown): string {
   if (typeof params !== 'object' || Array.isArray(params)) return JSON.stringify(params)
   const entries = Object.entries(params as Record<string, unknown>)
   if (entries.length === 0) return '—'
-  return entries.map(([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`).join(', ')
+  return entries.map(([key, value]) => `${key}: ${formatParamValue(value)}`).join(', ')
+}
+
+/** Operation params are replayed from a project file, so a value can be any
+ *  JSON shape. Never let one render as "[object Object]" — this panel is the
+ *  audit trail for what was actually applied to the data. */
+function formatParamValue(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean' || value === null) return String(value)
+  if (value === undefined) return '—'
+  try {
+    // JSON.stringify returns undefined for functions and symbols; neither
+    // belongs in a recorded param, so label it rather than stringify it.
+    return JSON.stringify(value) ?? '[unrepresentable]'
+  } catch {
+    return '[unserializable]'
+  }
 }
 
 /** Human-readable label for a scope's affected range, when the operation recorded one. */

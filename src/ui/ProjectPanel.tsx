@@ -24,6 +24,7 @@ import {
   type ProjectArchive,
   type ProjectDatasetHistory,
 } from '../persistence/project/archive'
+import { errorMessage } from '../core/errors'
 
 interface Props {
   datasets: Dataset[]
@@ -237,10 +238,6 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 function safeName(value: string): string {
   return value.replace(/[^a-z0-9._-]+/gi, '-').replace(/^-+|-+$/g, '') || 'jddc-project'
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 function downloadBlob(blob: Blob, filename: string): void {

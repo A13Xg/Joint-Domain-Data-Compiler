@@ -5,13 +5,13 @@
  *  compiles a rules map into a single validate function that can be reused
  *  across renders (e.g. in TransformPanel) without re-allocating rule objects.
  *
- *  `value` is typed `any` (rather than `unknown`) because rules and the values
- *  map are matched up by field name across arbitrary form shapes; callers get
- *  precise types back via `ValidationResult`, which only reports pass/fail. */
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ *  `value` is typed `unknown` because rules and the values map are matched up
+ *  by field name across arbitrary form shapes; every rule narrows the value
+ *  itself before testing it, and callers get pass/fail back via
+ *  `ValidationResult`. */
 
 export interface ValidationRule {
-  validate: (value: any) => boolean
+  validate: (value: unknown) => boolean
   message: string
 }
 
@@ -25,12 +25,12 @@ export interface ValidationResult {
  *  first failing rule per field, collecting that rule's message as the error. */
 export function createValidator(
   rules: Record<string, ValidationRule[]>,
-): (values: Record<string, any>) => ValidationResult {
-  return (values: Record<string, any>): ValidationResult => {
+): (values: Record<string, unknown>) => ValidationResult {
+  return (values: Record<string, unknown>): ValidationResult => {
     const errors: Record<string, string> = {}
 
     for (const field of Object.keys(rules)) {
-      const fieldRules = rules[field]
+      const fieldRules = rules[field]!
       const value = values[field]
 
       for (const rule of fieldRules) {
@@ -45,7 +45,7 @@ export function createValidator(
   }
 }
 
-function isEmpty(value: any): boolean {
+function isEmpty(value: unknown): boolean {
   if (value === null || value === undefined) return true
   if (typeof value === 'string') return value.trim().length === 0
   if (typeof value === 'number') return Number.isNaN(value)
@@ -55,31 +55,31 @@ function isEmpty(value: any): boolean {
 export const validators = {
   /** Fails when the value is null/undefined, an empty (whitespace-only) string, or NaN. */
   required: (fieldName: string): ValidationRule => ({
-    validate: (value: any) => !isEmpty(value),
+    validate: (value: unknown) => !isEmpty(value),
     message: `${fieldName} is required`,
   }),
 
   /** Fails when the value is not a finite number, or is below `min`. */
   minValue: (min: number): ValidationRule => ({
-    validate: (value: any) => typeof value === 'number' && Number.isFinite(value) && value >= min,
+    validate: (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= min,
     message: `Must be at least ${min}`,
   }),
 
   /** Fails when the value is not a finite number, or is above `max`. */
   maxValue: (max: number): ValidationRule => ({
-    validate: (value: any) => typeof value === 'number' && Number.isFinite(value) && value <= max,
+    validate: (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value <= max,
     message: `Must be at most ${max}`,
   }),
 
   /** Fails when the value is not a finite number greater than zero. */
   positive: (): ValidationRule => ({
-    validate: (value: any) => typeof value === 'number' && Number.isFinite(value) && value > 0,
+    validate: (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value > 0,
     message: 'Must be a positive number',
   }),
 
   /** Fails when the value is not an integer (whole finite number). */
   integer: (): ValidationRule => ({
-    validate: (value: any) => typeof value === 'number' && Number.isInteger(value),
+    validate: (value: unknown) => typeof value === 'number' && Number.isInteger(value),
     message: 'Must be a whole number',
   }),
 }

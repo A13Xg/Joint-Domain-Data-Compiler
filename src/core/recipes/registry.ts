@@ -8,7 +8,7 @@ export function registerOperation<TParams>(definition: OperationDefinition<TPara
     throw new Error(`Operation ${definition.id} must declare a positive integer version`)
   }
   if (operations.has(definition.id)) throw new Error(`Operation ${definition.id} is already registered`)
-  operations.set(definition.id, definition as OperationDefinition)
+  operations.set(definition.id, definition)
 }
 
 export function getOperation(id: string): OperationDefinition | null {

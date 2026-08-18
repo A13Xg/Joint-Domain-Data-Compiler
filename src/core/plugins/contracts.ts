@@ -5,7 +5,10 @@ import type { OperationDefinition } from '../recipes/model'
 export interface ParserPluginDefinition {
   id: string
   version: number
-  sourceFormat: SourceFormat | string
+  /** A built-in SourceFormat, or a plugin-defined format id. Widened to
+   *  `string` deliberately — `SourceFormat | string` collapsed to `string`
+   *  anyway and read as if it constrained something. */
+  sourceFormat: SourceFormat | (string & {})
   extensions: string[]
   binary: boolean
   parse(input: string | ArrayBuffer, fileName: string): Promise<ParseResult> | ParseResult

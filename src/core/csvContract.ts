@@ -18,7 +18,7 @@ function normalizeColumn(value: unknown, index: number): DetectedColumn {
     return typeof item.field === 'string' && typeof item.score === 'number' && Number.isFinite(item.score)
   }) as DetectedColumn['candidates'] : []
   const statsRaw = raw.stats && typeof raw.stats === 'object' ? raw.stats as Record<string, unknown> : {}
-  const ratio = (key: string) => typeof statsRaw[key] === 'number' && Number.isFinite(statsRaw[key]) ? statsRaw[key] as number : 0
+  const ratio = (key: string) => typeof statsRaw[key] === 'number' && Number.isFinite(statsRaw[key]) ? statsRaw[key] : 0
   const headers = stringArray(raw.headerCandidates)
   return {
     name,

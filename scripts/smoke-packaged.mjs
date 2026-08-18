@@ -124,8 +124,10 @@ function stopPackagedApp(processHandle) {
     spawnSync('taskkill', ['/pid', String(processHandle.pid), '/t', '/f'], { stdio: 'ignore' })
     return
   }
-  try { process.kill(-processHandle.pid, 'SIGTERM') } catch {}
+  // ESRCH here just means the app already exited on its own, which is the
+  // outcome this function wants anyway.
+  try { process.kill(-processHandle.pid, 'SIGTERM') } catch { /* already gone */ }
   setTimeout(() => {
-    try { process.kill(-processHandle.pid, 'SIGKILL') } catch {}
+    try { process.kill(-processHandle.pid, 'SIGKILL') } catch { /* already gone */ }
   }, 1_000).unref()
 }
