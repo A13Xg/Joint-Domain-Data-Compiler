@@ -204,6 +204,7 @@ jobs:
       id-token: write
       attestations: write
       artifact-metadata: write
+      actions: write
     steps:
       - name: Check out release verifier
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -260,3 +261,21 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # The packaged installers now live as release assets (uploaded above),
+      # which is the durable copy. Deleting the Actions-artifact copy here
+      # instead of waiting out its 1-day retention keeps them from ever
+      # counting against the account's Actions storage quota.
+      - name: Delete transient platform artifacts
+        if: always()
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/actions/artifacts?per_page=100" --paginate \
+            | jq -r '.artifacts[] | select(.name | startswith("release-")) | select(.name | endswith("-${{ github.sha }}")) | .id' \
+            | while read -r artifact_id; do
+                gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$artifact_id" \
+                  && echo "Deleted artifact $artifact_id" \
+                  || echo "Failed to delete artifact $artifact_id (non-fatal)"
+              done
