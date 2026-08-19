@@ -108,6 +108,10 @@
       "category": "public.app-category.utilities"
     }
   },
+  "overrides": {
+    "@electron/asar": "^4.3.0",
+    "@electron/get": "^5.1.0"
+  },
   "dependencies": {
     "leaflet": "^1.9.4",
     "papaparse": "^5.5.3",

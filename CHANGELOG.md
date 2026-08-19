@@ -44,6 +44,15 @@ Versioning; release tags use the `vX.Y.Z` form.
 - Runtime production dependencies audit with zero high or critical findings.
 - Electron IPC payloads, navigation, saved files, and packaged paths are covered by focused
   allow-list, traversal, type, and byte-limit tests.
+- `@electron/asar` (`^4.3.0`) and `@electron/get` (`^5.1.0`) are pinned via `package.json`
+  `overrides`, removing the deprecated `boolean`/`global-agent`/`roarr` chain and moving asar
+  packing off `glob@7`/`inflight`.
+- `rimraf@2.6.3`, `glob@7.2.3`, and `inflight@1.0.6` remain, reachable only through `temp` via
+  `electron-winstaller`/`electron-builder-squirrel-windows` — a required peer of `app-builder-lib`
+  loaded solely for the Squirrel.Windows target, which this project does not build. No newer
+  `temp` exists, and `temp` calls `rimraf` with the legacy callback API that `rimraf@4+` dropped,
+  so overriding it would break Squirrel support rather than fix a live code path. `npm audit`
+  remains at zero vulnerabilities.
 
 ## 0.1.0
 
