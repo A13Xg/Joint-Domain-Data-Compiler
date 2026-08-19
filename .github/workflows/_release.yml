@@ -204,7 +204,6 @@ jobs:
       id-token: write
       attestations: write
       artifact-metadata: write
-      actions: write
     steps:
       - name: Check out release verifier
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -262,12 +261,30 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # The packaged installers now live as release assets (uploaded above),
-      # which is the durable copy. Deleting the Actions-artifact copy here
-      # instead of waiting out its 1-day retention keeps them from ever
-      # counting against the account's Actions storage quota.
+  # A separate, always-run job rather than a step inside `publish`: if any
+  # platform in the `package` matrix fails, `publish` is skipped entirely
+  # (its default `needs` requires success), which would otherwise leave the
+  # artifacts uploaded by the platforms that DID succeed sitting unclean.
+  # `if: always()` here means this still runs whether `package` partially
+  # failed, `publish` failed, or everything succeeded -- the only case with
+  # nothing to clean up is `setup` failing before any artifact ever existed.
+  # Depending on `publish` (not just `package`) avoids a race with its
+  # "Download platform artifacts" step, which needs these to still exist.
+  cleanup-artifacts:
+    name: Delete transient platform artifacts
+    needs: [setup, package, publish]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      # The packaged installers live on as release assets (uploaded by the
+      # `publish` job above); that's the durable copy. Deleting the
+      # Actions-artifact copy here instead of waiting out its 1-day
+      # retention keeps it from ever counting against the account's
+      # Actions storage quota.
       - name: Delete transient platform artifacts
-        if: always()
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
