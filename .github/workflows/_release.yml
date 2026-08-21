@@ -313,9 +313,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Delete all release-* artifacts (old runs that may still be consuming quota)
           gh api "repos/${{ github.repository }}/actions/artifacts?per_page=100" --paginate \
-            | jq -r '.artifacts[] | select(.name | startswith("release-")) | .id' \
+            | jq -r '.artifacts[] | select(.name | startswith("release-")) | select(.name | endswith("-${{ github.sha }}")) | .id' \
             | while read -r artifact_id; do
                 gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$artifact_id" \
                   && echo "Deleted artifact $artifact_id" \
