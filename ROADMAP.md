@@ -3,7 +3,7 @@
 This document outlines the planned development direction for Joint Domain Data Compiler. Features are organized by phase and priority.
 
 **Current Release:** v0.2.0 (in development)  
-**Latest Stable:** v0.1.0
+**Latest Stable:** v0.1.1
 
 ---
 

@@ -18,7 +18,13 @@ Versioning; release tags use the `vX.Y.Z` form.
 - Native packaged-application smoke definitions for Linux, Windows, and macOS.
 - Release artifact manifest verification, CycloneDX SBOMs, and GitHub/Sigstore provenance
   attestations.
-- A reviewed Electron Fuse V1 policy and a shared, tested six-operation IPC security contract.
+- A reviewed Electron Fuse V1 policy and a shared, tested nine-operation IPC security contract.
+- Desktop builds now keep a bounded, oldest-pruned local safety-net copy of every imported and
+  exported file in a dedicated archive folder (independent of wherever the OS puts downloads),
+  reachable from the Project tab's "Open archive folder" button.
+- The release workflow's build-verification job now runs the full lint/unit-test suite and the
+  Chromium end-to-end smoke tests before packaging installers, closing a gap where a tag push
+  could publish a release without either gate passing.
 
 ### Changed
 
@@ -38,6 +44,10 @@ Versioning; release tags use the `vX.Y.Z` form.
 - Linked selection now survives index-stable transforms and clears only when an operation
   reorders or removes points.
 - Restored project identity is retained in report names and exported filenames.
+- Project manifests, HTML reports, and diagnostic bundles now report the actual package version
+  (previously hand-typed as a stale `0.1.0` in three places in `ProjectPanel.tsx`).
+- Removed three stray files (an empty `npm`, an empty `joint-domain-data-compiler@0.1.0`, and a
+  transient `.jddc-driver-state.json` runtime-state file) that had been accidentally committed.
 
 ### Security
 

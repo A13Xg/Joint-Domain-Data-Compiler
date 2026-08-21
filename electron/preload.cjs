@@ -8,12 +8,14 @@ const { contextBridge, ipcRenderer } = require('electron')
 // than shared, so this file stays a single, self-contained module the
 // sandboxed loader can actually load. Keep in sync with IPC_CHANNELS there.
 const IPC_CHANNELS = Object.freeze({
+  archiveFile: 'file-archive:save',
   list: 'kml-library:list',
   save: 'kml-library:save',
   readText: 'kml-library:read-text',
   remove: 'kml-library:remove',
   reseed: 'kml-library:reseed',
   reveal: 'kml-library:reveal',
+  revealArchive: 'file-archive:reveal',
   saveDiagnostics: 'diagnostics:save',
 })
 
@@ -30,5 +32,9 @@ contextBridge.exposeInMainWorld('jointDomainCompiler', {
   },
   diagnostics: {
     save: (text) => ipcRenderer.invoke(IPC_CHANNELS.saveDiagnostics, text),
+  },
+  fileArchive: {
+    save: (direction, name, bytes) => ipcRenderer.invoke(IPC_CHANNELS.archiveFile, direction, name, bytes),
+    reveal: () => ipcRenderer.invoke(IPC_CHANNELS.revealArchive),
   },
 })

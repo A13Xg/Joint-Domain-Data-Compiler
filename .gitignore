@@ -18,6 +18,13 @@ playwright-report
 test-results
 *.local
 
+# Transient PID/port state written by .agents/.claude/skills/run-desktop's
+# driver while an app instance it launched is running.
+.jddc-driver-state.json
+# Local file-archive safety-net copies of imports/exports (dev mode only;
+# packaged builds write into the OS userData directory instead).
+.jddc-archive
+
 # AI tooling lives in .agents/ and is tracked deliberately, but exclude
 # machine-specific settings and system paths.
 !.agents/**

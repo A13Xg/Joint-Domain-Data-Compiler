@@ -1,17 +1,23 @@
 const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require('electron')
+const crypto = require('crypto')
 const fs = require('fs')
 const path = require('path')
 const { pathToFileURL } = require('url')
 const zlib = require('zlib')
 const { seedKmlLibrary } = require('./kml-seed.cjs')
 const {
+  ARCHIVE_DIRECTIONS,
   DEV_ORIGIN,
   IPC_CHANNELS,
+  MAX_ARCHIVE_FILE_BYTES,
+  MAX_ARCHIVE_TOTAL_BYTES,
   MAX_KML_LIBRARY_BYTES,
   diagnosticBundleText,
   ipcBytes,
   isAllowedAppUrl,
+  resolveChildPath,
   resolveLibraryPath,
+  safeArchiveName,
 } = require('./security.cjs')
 
 const isDev = !app.isPackaged
@@ -90,6 +96,42 @@ function ensureKmlLibraryDir() {
 function libraryPath(name) {
   const dir = ensureKmlLibraryDir()
   return resolveLibraryPath(dir, name)
+}
+
+// A safety-net duplicate of every dataset a user imports or exports, kept
+// outside the OS Downloads folder so it survives a misplaced/overwritten
+// download. Mirrors kmlLibraryDir()'s override/dev/packaged resolution.
+function fileArchiveBaseDir() {
+  const configured = process.env.JDDC_ARCHIVE_DIR
+  if (configured) return path.resolve(configured)
+  if (isDev) return path.resolve(process.cwd(), '.jddc-archive')
+  return path.join(app.getPath('userData'), 'archive')
+}
+
+function fileArchiveDir(direction) {
+  if (!ARCHIVE_DIRECTIONS.includes(direction)) throw new Error(`Invalid archive direction: ${direction}`)
+  const dir = path.join(fileArchiveBaseDir(), direction)
+  fs.mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+// Oldest-first pruning keeps the archive a bounded safety net instead of an
+// unbounded copy of every file the app ever touches.
+function pruneFileArchiveDir(dir, maxTotalBytes) {
+  const entries = fs.readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => {
+      const filePath = path.join(dir, entry.name) // nosemgrep
+      const stat = fs.statSync(filePath)
+      return { filePath, bytes: stat.size, mtimeMs: stat.mtimeMs }
+    })
+    .sort((a, b) => a.mtimeMs - b.mtimeMs)
+  let total = entries.reduce((sum, entry) => sum + entry.bytes, 0)
+  for (const entry of entries) {
+    if (total <= maxTotalBytes) break
+    fs.rmSync(entry.filePath, { force: true })
+    total -= entry.bytes
+  }
 }
 
 function dosDateTimeToMs(date, time) {
@@ -238,6 +280,28 @@ function registerKmlLibraryIpc() {
   })
 }
 
+function registerFileArchiveIpc() {
+  ipcMain.handle(IPC_CHANNELS.archiveFile, async (_event, direction, name, bytes) => {
+    const dir = fileArchiveDir(direction)
+    const buffer = ipcBytes(bytes, MAX_ARCHIVE_FILE_BYTES)
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const unique = crypto.randomUUID().slice(0, 8)
+    const fileName = `${stamp}_${unique}_${safeArchiveName(name)}`
+    const filePath = resolveChildPath(dir, fileName)
+    fs.writeFileSync(filePath, buffer)
+    pruneFileArchiveDir(dir, MAX_ARCHIVE_TOTAL_BYTES)
+    return { path: filePath, bytes: buffer.byteLength }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.revealArchive, async () => {
+    const dir = fileArchiveBaseDir()
+    fs.mkdirSync(dir, { recursive: true })
+    const failure = await shell.openPath(dir)
+    if (failure) throw new Error(`Could not open the archive folder: ${failure}`)
+    return dir
+  })
+}
+
 function registerDiagnosticIpc() {
   ipcMain.handle(IPC_CHANNELS.saveDiagnostics, async (_event, text) => {
     const content = diagnosticBundleText(text)
@@ -270,6 +334,7 @@ app.whenReady().then(() => {
   // default File/Edit/View/Window menu in both development and packaged builds.
   Menu.setApplicationMenu(null)
   registerKmlLibraryIpc()
+  registerFileArchiveIpc()
   registerDiagnosticIpc()
   createWindow()
 

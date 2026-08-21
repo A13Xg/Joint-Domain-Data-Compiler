@@ -12,6 +12,7 @@ import { createGpxExportWorker, runGpxExport, shouldUseGpxExportWorker } from '.
 import type { GpxBuildResult } from '../core/exporters/gpx'
 import type { EagExportOptions } from '../core/exporters/eag'
 import { errorMessage, isAbortError } from '../core/errors'
+import { archiveFile } from '../desktop/fileArchive'
 
 type Target = ExportFormat | 'gpb'
 
@@ -70,6 +71,7 @@ export function ExportPanel({ dataset }: { dataset: Dataset }) {
     a.download = fileName
     a.click()
     URL.revokeObjectURL(url)
+    void archiveFile('outputs', fileName, blob)
     for (const w of warnings) logger.warn('export', w)
     logger.success('export', `Exported ${pointCount.toLocaleString()} points to ${fileName}`, {
       format,

@@ -15,6 +15,7 @@ import { buildComparisonCsv } from '../core/analytics/comparisonReport'
 import type { WorkspaceState } from '../state/workspace'
 import { logger } from '../core/logger'
 import { errorMessage } from '../core/errors'
+import { archiveFile } from '../desktop/fileArchive'
 
 interface ComparisonResult {
   samples: RelativePointSample[]
@@ -142,4 +143,4 @@ function Metric({ label, value, title }: { label: string; value: string; title?:
 
 function mean(values: number[]): number { return values.reduce((sum, value) => sum + value, 0) / values.length }
 function format(value: number | undefined): string { if (value === undefined) return 'n/a'; if (Math.abs(value) >= 1000) return value.toFixed(0); if (Math.abs(value) >= 10) return value.toFixed(1); return value.toFixed(2) }
-function downloadComparison(samples: readonly RelativePointSample[], referenceId: string, targetId: string, drift: ClockDriftEstimate | undefined): void { const url = URL.createObjectURL(new Blob([buildComparisonCsv(samples, drift)], { type: 'text/csv;charset=utf-8' })); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `jddc-comparison-${referenceId.slice(0, 8)}-${targetId.slice(0, 8)}.csv`; anchor.click(); URL.revokeObjectURL(url) }
+function downloadComparison(samples: readonly RelativePointSample[], referenceId: string, targetId: string, drift: ClockDriftEstimate | undefined): void { const blob = new Blob([buildComparisonCsv(samples, drift)], { type: 'text/csv;charset=utf-8' }); const filename = `jddc-comparison-${referenceId.slice(0, 8)}-${targetId.slice(0, 8)}.csv`; const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = filename; anchor.click(); URL.revokeObjectURL(url); void archiveFile('outputs', filename, blob) }

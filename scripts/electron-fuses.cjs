@@ -28,14 +28,18 @@ function fuseConfigForPlatform(platform) {
 
 function packagedExecutablePath(context) {
   const productFilename = context.packager.appInfo.productFilename
+  // These are host filesystem paths handed to @electron/fuses, not paths inside the
+  // packaged app, so they must always use the host separator. Using path.win32 for
+  // win32 targets breaks cross-compilation: packaging Windows from Linux yields
+  // appOutDir="/repo/release/win-unpacked" and would produce "\repo\release\...".
   if (context.electronPlatformName === 'darwin') {
-    return path.posix.join(context.appOutDir, `${productFilename}.app`, 'Contents', 'MacOS', productFilename)
+    return path.join(context.appOutDir, `${productFilename}.app`, 'Contents', 'MacOS', productFilename)
   }
   if (context.electronPlatformName === 'win32') {
-    return path.win32.join(context.appOutDir, `${productFilename}.exe`)
+    return path.join(context.appOutDir, `${productFilename}.exe`)
   }
   const executableName = context.packager.executableName || productFilename
-  return path.posix.join(context.appOutDir, executableName)
+  return path.join(context.appOutDir, executableName)
 }
 
 async function applyElectronFuses(context) {

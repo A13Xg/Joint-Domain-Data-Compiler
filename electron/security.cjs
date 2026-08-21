@@ -3,13 +3,24 @@ const path = require('path')
 const DEV_ORIGIN = 'http://localhost:5173'
 const MAX_KML_LIBRARY_BYTES = 50 * 1024 * 1024
 const MAX_DIAGNOSTIC_BUNDLE_BYTES = 5 * 1024 * 1024
+// A shadow copy of an import/export can legitimately be as large as the
+// biggest format budget in src/core/parsers/limits.ts (CSV, 500 MB); this cap
+// only needs to sit above that so a large-but-legitimate file isn't silently
+// skipped, while still refusing an unbounded payload.
+const MAX_ARCHIVE_FILE_BYTES = 512 * 1024 * 1024
+// Total bytes retained per archive direction (inputs/outputs) before the
+// oldest files are pruned. This is a safety-net cache, not primary storage.
+const MAX_ARCHIVE_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
+const ARCHIVE_DIRECTIONS = Object.freeze(['inputs', 'outputs'])
 const IPC_CHANNELS = Object.freeze({
+  archiveFile: 'file-archive:save',
   list: 'kml-library:list',
   save: 'kml-library:save',
   readText: 'kml-library:read-text',
   remove: 'kml-library:remove',
   reseed: 'kml-library:reseed',
   reveal: 'kml-library:reveal',
+  revealArchive: 'file-archive:reveal',
   saveDiagnostics: 'diagnostics:save',
 })
 
@@ -43,12 +54,21 @@ function resolveLibraryPath(directory, name) {
   return resolveChildPath(directory, safe)
 }
 
-function ipcBytes(value) {
+// Unlike safeLibraryName, the archive mirrors whatever a user imports or
+// exports (csv, gpx, gpb, ...), so it sanitizes a basename without
+// restricting the extension.
+function safeArchiveName(name) {
+  if (typeof name !== 'string') throw new Error('Archived filename must be a string')
+  const base = path.basename(name).replace(/[^a-z0-9._ -]+/gi, '_').trim()
+  return base || 'file'
+}
+
+function ipcBytes(value, maxBytes = MAX_KML_LIBRARY_BYTES) {
   let bytes
   if (value instanceof ArrayBuffer) bytes = new Uint8Array(value)
   else if (ArrayBuffer.isView(value)) bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
-  else throw new Error('KML/KMZ payload must be binary data')
-  if (bytes.byteLength > MAX_KML_LIBRARY_BYTES) throw new Error('KML/KMZ file exceeds safety limit')
+  else throw new Error('Payload must be binary data')
+  if (bytes.byteLength > maxBytes) throw new Error('File exceeds safety limit')
   return Buffer.from(bytes)
 }
 
@@ -70,13 +90,18 @@ function diagnosticBundleText(value) {
 }
 
 module.exports = {
+  ARCHIVE_DIRECTIONS,
   DEV_ORIGIN,
   IPC_CHANNELS,
+  MAX_ARCHIVE_FILE_BYTES,
+  MAX_ARCHIVE_TOTAL_BYTES,
   MAX_DIAGNOSTIC_BUNDLE_BYTES,
   MAX_KML_LIBRARY_BYTES,
   diagnosticBundleText,
   ipcBytes,
   isAllowedAppUrl,
+  resolveChildPath,
   resolveLibraryPath,
+  safeArchiveName,
   safeLibraryName,
 }

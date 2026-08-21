@@ -1,8 +1,9 @@
-import { mkdirSync, readdirSync, rmSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { buildSync } from 'esbuild'
 
+const packageJson = JSON.parse(readFileSync('package.json', 'utf8'))
 const testDirectory = 'test'
 const outputDirectory = '.test-build/all'
 const tests = readdirSync(testDirectory)
@@ -26,6 +27,9 @@ for (const testFile of tests) {
       format: 'esm',
       outfile: output,
       logLevel: 'silent',
+      // Mirrors vite.config.ts's `define` so test/*.tsx files that transitively
+      // import components referencing __APP_VERSION__ (e.g. ProjectPanel) bundle.
+      define: { __APP_VERSION__: JSON.stringify(packageJson.version) },
       // src/**/*.tsx components rely on the automatic JSX runtime (tsconfig.app.json
       // sets "jsx": "react-jsx", same as the Vite build), so bundling test/*.tsx files
       // that import them needs to match; esbuild's own tsconfig auto-discovery only

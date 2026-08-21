@@ -25,6 +25,10 @@ export interface JointDomainCompilerDesktopApi {
   diagnostics?: {
     save: (text: string) => Promise<string | null>
   }
+  fileArchive?: {
+    save: (direction: 'inputs' | 'outputs', name: string, bytes: ArrayBuffer) => Promise<{ path: string; bytes: number }>
+    reveal: () => Promise<string>
+  }
 }
 
 declare global {

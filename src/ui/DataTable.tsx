@@ -3,6 +3,7 @@ import type { TrackPoint } from '../core/model'
 import { epochMsToIso } from '../core/format'
 import { detectQualityEvents, eventSourceIndices } from '../core/quality/events'
 import { usePointSelection } from '../state/pointSelection'
+import { archiveFile } from '../desktop/fileArchive'
 
 const ROW_HEIGHT = 26
 const OVERSCAN = 8
@@ -136,12 +137,15 @@ function downloadRows(rows: Array<{ point: TrackPoint; index: number }>, columns
   const header = ['source_index', ...columns.map((column) => column.label)]
   const body = rows.map(({ point, index }) => [String(index), ...columns.map((column) => csvCell(fmtCell(column.get(point))))].join(','))
   const csv = `${header.map(csvCell).join(',')}\n${body.join('\n')}\n`
-  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const filename = `jddc-visible-rows-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`
+  const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = `jddc-visible-rows-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`
+  anchor.download = filename
   anchor.click()
   window.setTimeout(() => URL.revokeObjectURL(url), 0)
+  void archiveFile('outputs', filename, blob)
 }
 
 function csvCell(value: string): string {

@@ -85,19 +85,23 @@ This document captures strategic decisions, architectural trade-offs, and long-t
 
 ### Electron + IPC Security
 
-**Decision:** Sandbox Electron renderer; expose only 5 safe KML/KMZ IPC operations.
+**Decision:** Sandbox Electron renderer; expose only a small, explicit set of IPC operations (see `electron/security.cjs`'s `IPC_CHANNELS`, tested for drift in `test/electron-integration.ts`).
 
 **IPC Operations:**
-1. `kml-library:query` — List loaded overlays (read-only)
-2. `kml-library:add` — Import KML/KMZ from disk (with path validation)
-3. `kml-library:remove` — Delete overlay entry
-4. `kml-library:reset` — Clear all overlays
-5. `kml-library:export` — Save library to disk (path restricted)
+1. `kml-library:list` — List persisted KML/KMZ library entries (read-only)
+2. `kml-library:save` — Import a KML/KMZ file into the library (with path validation)
+3. `kml-library:read-text` — Read a library entry's text (KMZ is unzipped in-process)
+4. `kml-library:remove` — Delete a library entry
+5. `kml-library:reseed` — Restore missing bundled seed files
+6. `kml-library:reveal` — Open the library folder in the OS file manager
+7. `file-archive:save` — Write a duplicate copy of an imported/exported file into a bounded local archive
+8. `file-archive:reveal` — Open the archive folder in the OS file manager
+9. `diagnostics:save` — Save a diagnostic bundle via a native save dialog
 
 **Security model:**
 - Renderer has no Node integration; all file I/O goes through main process
-- IPC payloads are type-checked and size-limited (100 MB max for archived libraries)
-- Paths are resolved relative to user's home directory; no traversal allowed
+- IPC payloads are type-checked and size-limited (50 MB max for KML/KMZ library files, 512 MB max for archived import/export copies, 5 MB max for diagnostic bundles)
+- Paths are resolved relative to the app's userData directory; no traversal allowed
 - Preload script is minimal and audited
 
 **Fuse V1 policy:**

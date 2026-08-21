@@ -25,6 +25,7 @@ import {
   type ProjectDatasetHistory,
 } from '../persistence/project/archive'
 import { errorMessage } from '../core/errors'
+import { archiveFile, isDesktopArchiveAvailable, revealFileArchive } from '../desktop/fileArchive'
 
 interface Props {
   datasets: Dataset[]
@@ -75,7 +76,7 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
     fusionArtifacts,
     projectName: projectName.trim() || undefined,
     notes: projectNotes,
-    applicationVersion: '0.1.0',
+    applicationVersion: __APP_VERSION__,
   }), [datasets, activeId, activeTab, activeSelection.pointIndex, activeSelection.indexRange, projectName, projectNotes, workspace, datasetDisplay, bookmarks, operationRecords, namedRecipes, fusionArtifacts])
 
   const archive = useMemo(() => createProjectArchive({ manifest, datasets, histories }), [manifest, datasets, histories])
@@ -115,7 +116,7 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
     const html = buildHtmlAnalysisReport({
       title: options.title,
       generatedAt: Date.now(),
-      applicationVersion: '0.1.0',
+      applicationVersion: __APP_VERSION__,
       datasets,
       bookmarks,
       operationRecords,
@@ -144,7 +145,7 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
     try {
       const desktop = window.jointDomainCompiler
       const text = serializeDiagnosticBundle(buildDiagnosticBundle({
-        appVersion: '0.1.0',
+        appVersion: __APP_VERSION__,
         platform: desktop ? `electron-${desktop.platform}` : 'web',
         packaged: Boolean(desktop && window.location.protocol === 'file:'),
         datasets: datasets.map((dataset) => ({
@@ -219,6 +220,13 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
         <Metric label="active dataset" value={datasets.find((dataset) => dataset.id === activeId)?.name ?? 'none'} />
         <Metric label="active tab" value={activeTab} />
       </div>
+      {isDesktopArchiveAvailable() && (
+        <>
+          <h3>Local file archive</h3>
+          <p className="muted small">Every imported and exported file is also copied into a local archive folder as a safety net, independent of where downloads land. Oldest copies are pruned automatically once the archive grows large.</p>
+          <button type="button" onClick={() => { void revealFileArchive().catch((cause: unknown) => setError(errorMessage(cause))) }}>Open archive folder</button>
+        </>
+      )}
       <h3>Diagnostics</h3>
       <p className="muted small">Export app/workspace configuration, dataset summaries, and the most recent application logs for a bug report. Raw trajectory points and KML/KMZ library files are excluded. Review the JSON and your optional note before sharing it.</p>
       <label className="field">
@@ -247,6 +255,7 @@ function downloadBlob(blob: Blob, filename: string): void {
   anchor.download = filename
   anchor.click()
   window.setTimeout(() => URL.revokeObjectURL(url), 0)
+  void archiveFile('outputs', filename, blob)
 }
 
 const EMPTY_POINTS: Dataset['points'] = []

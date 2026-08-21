@@ -5,12 +5,14 @@ import { join, resolve } from 'node:path'
 const {
   DEV_ORIGIN,
   IPC_CHANNELS,
+  MAX_ARCHIVE_FILE_BYTES,
   MAX_DIAGNOSTIC_BUNDLE_BYTES,
   MAX_KML_LIBRARY_BYTES,
   diagnosticBundleText,
   ipcBytes,
   isAllowedAppUrl,
   resolveLibraryPath,
+  safeArchiveName,
   safeLibraryName,
 } = createRequire(import.meta.url)(resolve(process.cwd(), 'electron/security.cjs'))
 
@@ -24,7 +26,7 @@ function rejects(fn: () => unknown): boolean {
 }
 
 check('IPC channel names are unique', new Set(Object.values(IPC_CHANNELS)).size === Object.keys(IPC_CHANNELS).length)
-check('IPC surface exposes only the expected seven operations', Object.keys(IPC_CHANNELS).sort().join(',') === 'list,readText,remove,reseed,reveal,save,saveDiagnostics')
+check('IPC surface exposes only the expected nine operations', Object.keys(IPC_CHANNELS).sort().join(',') === 'archiveFile,list,readText,remove,reseed,reveal,revealArchive,save,saveDiagnostics')
 check('Exact development origin is allowed', isAllowedAppUrl(DEV_ORIGIN, true))
 check('Development origin paths are allowed', isAllowedAppUrl(`${DEV_ORIGIN}/index.html`, true))
 check('Lookalike development origins are blocked', !isAllowedAppUrl(`${DEV_ORIGIN}.attacker.invalid`, true))
@@ -41,10 +43,17 @@ const libraryDirectory = resolve(process.cwd(), '.test-build', 'jddc-library')
 check('Resolved library path remains inside its directory', resolveLibraryPath(libraryDirectory, '../track.kml') === join(libraryDirectory, 'track.kml'))
 check('Sibling path prefix traversal is reduced into the library', resolveLibraryPath(libraryDirectory, '../jddc-library-escape/track.kml') === join(libraryDirectory, 'track.kml'))
 
+check('Archived filename is reduced to a sanitized basename', safeArchiveName('../../track 1.csv') === 'track 1.csv')
+check('Empty archived filename falls back to a safe default', safeArchiveName('') === 'file')
+check('Non-string archive filename is rejected', rejects(() => safeArchiveName({})))
+
 const mainProcessSource = readFileSync(resolve(process.cwd(), 'electron/main.cjs'), 'utf8')
 check('Desktop app removes Electron default menu bar', /Menu\.setApplicationMenu\(null\)/.test(mainProcessSource))
 check('KMZ decompression has a bounded output limit', mainProcessSource.includes('inflateRawSync(payload, { maxOutputLength: MAX_KML_LIBRARY_BYTES })'))
 check('Bundled seed reset has an explicit IPC handler', mainProcessSource.includes('IPC_CHANNELS.reseed') && mainProcessSource.includes('seedKmlLibrary(kmlSeedDirectory(), dir)'))
+check('File archive registers its IPC handlers at startup', mainProcessSource.includes('registerFileArchiveIpc()'))
+check('File archive writes are size-bounded', mainProcessSource.includes('ipcBytes(bytes, MAX_ARCHIVE_FILE_BYTES)'))
+check('File archive prunes oldest entries after every write', mainProcessSource.includes('pruneFileArchiveDir(dir, MAX_ARCHIVE_TOTAL_BYTES)'))
 
 // preload.cjs runs under webPreferences.sandbox: true (set in main.cjs), whose
 // restricted module loader only resolves 'electron' and Node built-ins — a
@@ -64,6 +73,8 @@ check('ArrayBuffer IPC payload is accepted', ipcBytes(new Uint8Array([1, 2, 3]).
 check('Typed-array view bounds are preserved', ipcBytes(new Uint8Array([9, 1, 2, 8]).subarray(1, 3)).equals(Buffer.from([1, 2])))
 check('Text IPC payload is rejected', rejects(() => ipcBytes('not binary')))
 check('Oversized IPC payload is rejected before writing', rejects(() => ipcBytes(new Uint8Array(MAX_KML_LIBRARY_BYTES + 1))))
+check('Custom IPC payload limit is honored', rejects(() => ipcBytes(new Uint8Array(10), 5)))
+check('Archive file limit sits above the largest import format budget', MAX_ARCHIVE_FILE_BYTES >= 500 * 1024 * 1024)
 
 const validDiagnosticBundle = JSON.stringify({ schemaVersion: 1, generatedAt: 1 })
 check('Valid diagnostic JSON is accepted', diagnosticBundleText(validDiagnosticBundle) === validDiagnosticBundle)

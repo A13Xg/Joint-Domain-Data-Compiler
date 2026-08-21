@@ -142,5 +142,10 @@
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12",
     "wait-on": "^9.0.10"
+  },
+  "homepage": "https://github.com/A13Xg/Joint-Domain-Data-Compiler",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/A13Xg/Joint-Domain-Data-Compiler.git"
   }
 }

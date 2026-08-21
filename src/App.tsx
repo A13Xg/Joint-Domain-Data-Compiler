@@ -33,6 +33,7 @@ import type { FusionArtifact } from './core/fusion/artifact'
 import { operationRecordsFromManifest } from './persistence/project/manifest'
 import { parseKml } from './core/parsers/kml'
 import { isDesktopKmlLibraryAvailable, readKmlLibraryText, saveKmlLibraryFile } from './desktop/kmlLibrary'
+import { archiveFile } from './desktop/fileArchive'
 import { insertDataset } from './core/ids'
 import { DEFAULT_WORKSPACE_STATE, normalizeWorkspaceState, type WorkspaceState } from './state/workspace'
 import type { MapOverlayState } from './state/mapOverlays'
@@ -365,6 +366,10 @@ export default function App() {
       } catch (error) {
         logger.warn('import', `Could not save ${file.name} to KML/KMZ library: ${errorMessage(error)}`)
       }
+    } else {
+      // KML/KMZ already gets a durable copy via the persistent library above;
+      // every other imported format is archived here instead.
+      void archiveFile('inputs', file.name, file)
     }
     if (ext === 'kmz') {
       if (!isDesktopKmlLibraryAvailable()) {
