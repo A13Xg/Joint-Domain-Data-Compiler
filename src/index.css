@@ -547,6 +547,81 @@ code { font-family: var(--mono); background: var(--bg-3); padding: 1px 5px; bord
 .error-boundary-card { background: var(--bg-1); border: 1px solid var(--red); border-radius: var(--radius); padding: 28px; max-width: 560px; }
 .error-boundary-card h2 { margin: 0 0 12px; color: var(--red); }
 
+/* ---------- Track Health Panel ---------- */
+.track-health-panel {
+  display: flex; flex-direction: column; gap: 12px;
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px;
+  font-size: 13px;
+}
+.health-header {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px;
+}
+.health-header h3 {
+  margin: 0; font-size: 14px; font-weight: 600;
+  color: var(--text);
+}
+.health-score-badge {
+  display: flex; flex-direction: column; align-items: center;
+  border: 2px solid; border-radius: 8px;
+  padding: 8px 16px; gap: 2px;
+}
+.health-number {
+  font-size: 22px; font-weight: 700;
+}
+.health-label {
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.3px;
+  color: var(--text-dim);
+}
+.health-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.health-metric {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.metric-name {
+  font-size: 12px; font-weight: 500;
+  color: var(--text-dim);
+}
+.metric-bar {
+  height: 6px; background: var(--bg-3);
+  border-radius: 3px; overflow: hidden;
+}
+.metric-fill {
+  height: 100%; border-radius: 3px;
+  transition: width 0.3s ease;
+}
+.metric-value {
+  font-size: 11px; font-weight: 600;
+  color: var(--text);
+}
+.health-meta {
+  display: flex; gap: 12px;
+  margin-top: 4px; padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.meta-item {
+  color: var(--text-dim);
+}
+.meta-item strong {
+  color: var(--text);
+}
+.meta-item.warn {
+  color: var(--amber);
+}
+.meta-item.warn strong {
+  color: var(--amber);
+}
+
+/* ---------- Overview Panels ---------- */
+.overview-panels {
+  display: flex; flex-direction: column; gap: 16px;
+}
+
 /* ---------- Scrollbars ---------- */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
