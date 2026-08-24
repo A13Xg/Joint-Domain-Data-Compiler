@@ -24,14 +24,16 @@ function calculateTrackHealth(points: TrackPoint[]): TrackHealthScore {
 
   // Calculate metrics
   const pointCount = points.length
-  const timespan = hasTimestamps && points[0]?.time && points[points.length - 1]?.time
-    ? (points[points.length - 1].time - points[0].time) / 1000 // seconds
+  const firstPoint = points[0]
+  const lastPoint = points[points.length - 1]
+  const timespan = hasTimestamps && firstPoint?.time !== undefined && lastPoint?.time !== undefined
+    ? (lastPoint.time - firstPoint.time) / 1000 // seconds
     : 0
 
   const invalidPoints = points.filter((p) => !Number.isFinite(p.lat) || !Number.isFinite(p.lon)).length
-  const duplicateTimestamps = qualityEvents.filter((e) => e.type === 'duplicate-timestamp').length
-  const gapEvents = qualityEvents.filter((e) => e.type === 'gap').length
-  const jumpEvents = qualityEvents.filter((e) => e.type === 'jump').length
+  const duplicateTimestamps = qualityEvents.filter((e) => e.kind === 'duplicate-timestamp').length
+  const gapEvents = qualityEvents.filter((e) => e.kind === 'gap').length
+  const jumpEvents = qualityEvents.filter((e) => e.kind === 'coordinate-jump').length
 
   // Metrics with weights (0-1 scale, 0 = good, 1 = bad)
   const metrics: HealthMetric[] = [
