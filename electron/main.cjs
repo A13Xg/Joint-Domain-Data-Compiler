@@ -4,7 +4,7 @@ const fs = require('fs')
 const path = require('path')
 const { pathToFileURL } = require('url')
 const zlib = require('zlib')
-const { seedKmlLibrary } = require('./kml-seed.cjs')
+const { seedKmlLibrary, fetchKmlFromRemote } = require('./kml-seed.cjs')
 const {
   ARCHIVE_DIRECTIONS,
   DEV_ORIGIN,
@@ -86,15 +86,39 @@ function kmlSeedDirectory() {
     : path.join(process.resourcesPath, 'kml-seed')
 }
 
-function ensureKmlLibraryDir() {
+// Remote overlay repositories for lazy loading
+const REMOTE_KML_OVERLAYS = {
+  'Special_Use_Airspace.kml': 'https://raw.githubusercontent.com/A13Xg/Joint-Domain-Data-Compiler/data/KML-KMZ/Special_Use_Airspace.kml',
+}
+
+// Ensure KML library directory exists and fetch missing overlays from remote
+async function ensureKmlLibraryDir() {
   const dir = kmlLibraryDir()
   fs.mkdirSync(dir, { recursive: true })
+
+  // Seed from local directory if dev mode or if bundled seed is available
   seedKmlLibrary(kmlSeedDirectory(), dir)
+
+  // Fetch missing overlays from remote (non-blocking, continues on error)
+  if (!isDev) {
+    for (const [fileName, remoteUrl] of Object.entries(REMOTE_KML_OVERLAYS)) {
+      const filePath = path.join(dir, fileName)
+      if (!fs.existsSync(filePath)) {
+        const result = await fetchKmlFromRemote(filePath, remoteUrl)
+        if (result.success) {
+          console.log(`[KML] Fetched ${fileName} (${result.bytes} bytes)`)
+        } else {
+          console.warn(`[KML] Failed to fetch ${fileName}: ${result.error}`)
+        }
+      }
+    }
+  }
+
   return dir
 }
 
 function libraryPath(name) {
-  const dir = ensureKmlLibraryDir()
+  const dir = kmlLibraryDir()
   return resolveLibraryPath(dir, name)
 }
 
@@ -222,7 +246,7 @@ function firstKmlFromKmz(bytes) {
 
 function registerKmlLibraryIpc() {
   ipcMain.handle(IPC_CHANNELS.list, async () => {
-    const dir = ensureKmlLibraryDir()
+    const dir = await ensureKmlLibraryDir()
     return fs.readdirSync(dir, { withFileTypes: true })
       .filter((entry) => entry.isFile() && /\.km?l$/i.test(entry.name))
       .map((entry) => {
@@ -256,22 +280,42 @@ function registerKmlLibraryIpc() {
     return true
   })
 
-  // Explicit "Reset bundled seed" action. Copies any bundled KML/KMZ seed
-  // files that are missing from the library folder back in, without
-  // overwriting user files (see `kml-seed.cjs`). This is idempotent and
-  // returns the filenames it actually restored, if any. Previously this
-  // button relied only on the side effect of `ensureKmlLibraryDir` running
-  // inside the `list` handler above; that coupling still exists (every
-  // handler in this file re-seeds via `ensureKmlLibraryDir`/`libraryPath`),
-  // but this channel makes reseeding an explicit, directly callable action.
+  // Explicit "Fetch overlays" action. Fetches bundled/remote KML/KMZ files
+  // that are missing from the library folder. In dev mode, copies from local
+  // KML-KMZ/ directory; in production, fetches from remote GitHub repo.
+  // Non-blocking: continues on network errors. Returns status of fetch attempt.
   ipcMain.handle(IPC_CHANNELS.reseed, async () => {
     const dir = kmlLibraryDir()
     fs.mkdirSync(dir, { recursive: true })
-    return seedKmlLibrary(kmlSeedDirectory(), dir)
+
+    const results = { local: [], remote: [], failed: [] }
+
+    // Try local seed first (dev mode or if somehow bundled)
+    const localSeeded = seedKmlLibrary(kmlSeedDirectory(), dir)
+    results.local = localSeeded
+
+    // Try remote fetch for any still-missing overlays
+    if (!isDev) {
+      for (const [fileName, remoteUrl] of Object.entries(REMOTE_KML_OVERLAYS)) {
+        if (!localSeeded.includes(fileName)) {
+          const filePath = path.join(dir, fileName)
+          if (!fs.existsSync(filePath)) {
+            const result = await fetchKmlFromRemote(filePath, remoteUrl)
+            if (result.success) {
+              results.remote.push(fileName)
+            } else {
+              results.failed.push({ file: fileName, error: result.error })
+            }
+          }
+        }
+      }
+    }
+
+    return results
   })
 
   ipcMain.handle(IPC_CHANNELS.reveal, async () => {
-    const dir = ensureKmlLibraryDir()
+    const dir = await ensureKmlLibraryDir()
     // openPath resolves with an error STRING instead of rejecting, so an
     // unchecked call makes "Reveal" look like a no-op when it fails.
     const failure = await shell.openPath(dir)
@@ -329,13 +373,20 @@ function reportFatal(context, error) {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // The workbench owns its visible navigation and commands. Remove Electron's
   // default File/Edit/View/Window menu in both development and packaged builds.
   Menu.setApplicationMenu(null)
   registerKmlLibraryIpc()
   registerFileArchiveIpc()
   registerDiagnosticIpc()
+
+  // Fetch KML overlays in background (non-blocking startup)
+  // This ensures they're cached locally before the user opens the map
+  ensureKmlLibraryDir().catch((error) => {
+    console.warn('[KML] Background fetch failed:', error.message)
+  })
+
   createWindow()
 
   app.on('activate', () => {

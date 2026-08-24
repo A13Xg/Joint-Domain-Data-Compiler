@@ -2,10 +2,11 @@ export type MapOverlaySourceKind = 'bundled' | 'library' | 'project'
 export type MapOverlayStatus = 'ready' | 'missing' | 'error'
 
 /**
- * Filenames copied idempotently into the persistent KML/KMZ library on first
- * run (see `electron/kml-seed.cjs`). Overlays whose `sourceKey` matches one of
- * these are labeled "bundled" in the Map Overlays panel even though they live
- * in the same library folder as user-uploaded files.
+ * Filenames that are bundled seed overlays, fetched lazily from remote on first
+ * use or via the "Fetch Overlays" action (see `electron/kml-seed.cjs`).
+ * Overlays whose `sourceKey` matches one of these are labeled "bundled" in the
+ * Map Overlays panel even though they live in the same library folder as
+ * user-uploaded files.
  */
 export const BUNDLED_KML_SEED_NAMES: ReadonlySet<string> = new Set(['Special_Use_Airspace.kml'])
 
