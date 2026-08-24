@@ -575,28 +575,76 @@ code { font-family: var(--mono); background: var(--bg-3); padding: 1px 5px; bord
   text-transform: uppercase; letter-spacing: 0.3px;
   color: var(--text-dim);
 }
-.health-grid {
-  display: grid; grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
+.health-header-right {
+  display: flex; align-items: center; gap: 10px;
 }
-.health-metric {
+.health-rescan {
+  font-size: 12px; padding: 5px 10px;
+}
+.health-status {
   display: flex; flex-direction: column; gap: 6px;
+  padding: 8px 10px; border-radius: var(--radius);
+  font-size: 12px;
 }
-.metric-name {
-  font-size: 12px; font-weight: 500;
-  color: var(--text-dim);
+.health-status-scanning {
+  background: var(--bg-3); color: var(--text-dim);
 }
-.metric-bar {
-  height: 6px; background: var(--bg-3);
-  border-radius: 3px; overflow: hidden;
+.health-status-error,
+.health-status-blocked {
+  border: 1px solid #ef4444; color: #ef4444;
 }
-.metric-fill {
-  height: 100%; border-radius: 3px;
-  transition: width 0.3s ease;
+.health-status-error button {
+  align-self: flex-start; font-size: 12px;
 }
-.metric-value {
+.health-checks {
+  display: flex; flex-direction: column; gap: 8px;
+}
+/* A scan in flight leaves the previous result readable but visibly stale. */
+.health-checks.is-stale {
+  opacity: 0.5;
+}
+.health-check {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 8px 10px; border-radius: var(--radius);
+  background: var(--bg-3);
+  border-left: 3px solid var(--border);
+}
+.health-check-pass { border-left-color: #10b981; }
+.health-check-fail { border-left-color: #ef4444; }
+.health-check-na { border-left-color: var(--border); opacity: 0.7; }
+.check-header {
+  display: flex; align-items: center; gap: 8px;
+}
+.check-label {
+  font-weight: 600; flex: 1;
+}
+.check-badge {
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.3px;
+  padding: 2px 6px; border-radius: 3px;
+  background: var(--bg-2);
+}
+.badge-pass { color: #10b981; }
+.badge-fail { color: #ef4444; }
+.badge-na { color: var(--text-dim); }
+.check-points {
   font-size: 11px; font-weight: 600;
-  color: var(--text);
+  color: var(--text-dim); font-variant-numeric: tabular-nums;
+}
+.check-summary {
+  font-size: 12px; color: var(--text-dim);
+}
+.check-details {
+  margin: 2px 0 0; padding-left: 16px;
+  font-size: 11px; color: var(--text-dim);
+}
+.check-flags {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  margin-top: 4px;
+}
+.flag-chip {
+  font-size: 11px; padding: 3px 8px;
+  border-radius: 10px;
 }
 .health-meta {
   display: flex; gap: 12px;

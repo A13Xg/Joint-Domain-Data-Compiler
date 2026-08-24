@@ -25,6 +25,9 @@ Versioning; release tags use the `vX.Y.Z` form.
 - The release workflow's build-verification job now runs the full lint/unit-test suite and the
   Chromium end-to-end smoke tests before packaging installers, closing a gap where a tag push
   could publish a release without either gate passing.
+- A Track Health Scan that grades a loaded track against six pass/fail checks and lets the
+  operator drill into each failure, with the offending samples highlighted on the map and the
+  time-series chart.
 
 ### Changed
 
@@ -48,6 +51,9 @@ Versioning; release tags use the `vX.Y.Z` form.
   (previously hand-typed as a stale `0.1.0` in three places in `ProjectPanel.tsx`).
 - Removed three stray files (an empty `npm`, an empty `joint-domain-data-compiler@0.1.0`, and a
   transient `.jddc-driver-state.json` runtime-state file) that had been accidentally committed.
+- Windows packaging now clears `release/` before packing. Building over a previous run's output
+  let `electron-builder` reuse a stale `app.asar` whose hash no longer matched the header the
+  fuses hook embeds, so the packaged app aborted at launch on an integrity violation.
 
 ### Security
 

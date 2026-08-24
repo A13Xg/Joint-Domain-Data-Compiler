@@ -3,6 +3,10 @@ import { extractChartSeries, type ChartXAxis } from '../visualization/charts/ser
 import { fixedRateResampleOperation, type ResampleParams } from '../core/operations/resample'
 import { buildGpxChunked } from '../core/compute/gpxExport'
 import type { GpxExportOptions } from '../core/exporters/gpx'
+import { computeTrackHealth } from '../core/quality/trackHealth'
+import { DEFAULT_TRACK_HEALTH_CONFIG, type TrackHealthConfig } from '../core/quality/trackHealthConfig'
+import type { TrackHealthReport } from '../core/quality/trackHealthTypes'
+import type { SourceFormat } from '../core/model'
 import type { ComputeTaskDefinition } from './protocol'
 
 interface ChartSeriesPayload {
@@ -106,7 +110,46 @@ export const gpxExportTask: ComputeTaskDefinition<GpxExportPayload, Awaited<Retu
   },
 }
 
-export const PRODUCTION_COMPUTE_TASKS = [chartSeriesTask, fixedRateResampleTask, gpxExportTask] as const
+export interface TrackHealthScanPayload {
+  points: TrackPoint[]
+  sourceFormat: SourceFormat
+  warnings: string[]
+  datasetId: string
+  config?: TrackHealthConfig
+}
+
+export const trackHealthScanTask: ComputeTaskDefinition<TrackHealthScanPayload, TrackHealthReport> = {
+  id: 'track-health-scan',
+  version: 1,
+  validatePayload(payload: unknown): TrackHealthScanPayload {
+    const value = record(payload, 'track health scan payload')
+    return {
+      points: points(value.points),
+      sourceFormat: sourceFormat(value.sourceFormat),
+      warnings: stringArray(value.warnings, 'warnings'),
+      datasetId: nonEmptyString(value.datasetId, 'datasetId'),
+      config: value.config === undefined ? undefined : trackHealthConfig(value.config),
+    }
+  },
+  run(payload, context) {
+    if (context.signal.aborted) throw new Error('Track health scan cancelled')
+    const dataset = {
+      id: payload.datasetId,
+      name: 'health-scan',
+      sourceFormat: payload.sourceFormat,
+      points: payload.points,
+      warnings: payload.warnings,
+      channels: [],
+      createdAt: 0,
+    }
+    return computeTrackHealth(dataset, payload.config ?? DEFAULT_TRACK_HEALTH_CONFIG, (completed, total, message) => {
+      if (context.signal.aborted) return
+      context.reportProgress({ completed, total, message })
+    })
+  },
+}
+
+export const PRODUCTION_COMPUTE_TASKS = [chartSeriesTask, fixedRateResampleTask, gpxExportTask, trackHealthScanTask] as const
 
 function record(value: unknown, field: string): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(`${field} must be an object`)
@@ -162,4 +205,36 @@ function gpxOptions(value: unknown): GpxExportOptions {
 function boolean(value: unknown, field: string): boolean {
   if (typeof value !== 'boolean') throw new Error(`${field} must be a boolean`)
   return value
+}
+
+// Accepts a partial override and layers it over the defaults, so a future settings menu can
+// send only the values it changed. Every override must be a finite number; anything else is
+// rejected rather than silently coerced into the scan's thresholds.
+function trackHealthConfig(value: unknown): TrackHealthConfig {
+  const raw = record(value, 'config')
+  const merged = structuredClone(DEFAULT_TRACK_HEALTH_CONFIG) as unknown as Record<string, Record<string, number>>
+  for (const [section, overrides] of Object.entries(raw)) {
+    const target = merged[section]
+    if (!target) throw new Error(`config.${section} is not a known track health section`)
+    for (const [key, override] of Object.entries(record(overrides, `config.${section}`))) {
+      if (!(key in target)) throw new Error(`config.${section}.${key} is not a known track health setting`)
+      if (typeof override !== 'number' || !Number.isFinite(override)) throw new Error(`config.${section}.${key} must be a finite number`)
+      target[key] = override
+    }
+  }
+  return merged as unknown as TrackHealthConfig
+}
+
+function sourceFormat(value: unknown): SourceFormat {
+  const validFormats = ['csv', 'gpx', 'geojson', 'kml', 'nmea', 'gpb', 'eag', 'unknown']
+  if (typeof value !== 'string' || !validFormats.includes(value)) throw new Error(`sourceFormat must be one of ${validFormats.join(', ')}`)
+  return value as SourceFormat
+}
+
+function stringArray(value: unknown, field: string): string[] {
+  if (!Array.isArray(value)) throw new Error(`${field} must be an array`)
+  for (const item of value) {
+    if (typeof item !== 'string') throw new Error(`${field} must contain only strings`)
+  }
+  return value as string[]
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { LatLngTuple } from 'leaflet'
 import { CircleMarker, MapContainer, Polygon, Polyline, TileLayer, Tooltip, useMap } from 'react-leaflet'
 import type { TrackPoint } from '../core/model'
@@ -43,6 +43,17 @@ function FitBounds({ positions, request }: { positions: LatLngTuple[]; request: 
   useEffect(() => {
     if (positions.length > 0) map.fitBounds(positions, { padding: [28, 28], maxZoom: 16 })
   }, [map, positions, request])
+  return null
+}
+
+// Recentres on an incoming drill-down. Rendered only while a jump is pending, and reports back
+// once handled so re-entering the map tab later does not replay a stale request.
+function JumpToSelection({ positions, onHandled }: { positions: LatLngTuple[]; onHandled: () => void }) {
+  const map = useMap()
+  useEffect(() => {
+    if (positions.length > 0) map.fitBounds(positions, { padding: [28, 28], maxZoom: 16 })
+    onHandled()
+  }, [map, positions, onHandled])
   return null
 }
 
@@ -121,7 +132,7 @@ function groupBySegment(points: TrackPoint[]): TrackPoint[][] {
 
 type BasemapStatus = 'unknown' | 'loaded' | 'error'
 
-export function MapView({ points, channels, workspace, onWorkspaceChange, otherTracks = [], overlayState, onOverlayStateChange, onImportOverlayAsTrack, browserOverlayFiles, onBrowserOverlayFile }: {
+export function MapView({ points, channels, workspace, onWorkspaceChange, otherTracks = [], overlayState, onOverlayStateChange, onImportOverlayAsTrack, browserOverlayFiles, onBrowserOverlayFile, jumpRequested = false, onJumpHandled }: {
   points: TrackPoint[]
   channels: string[]
   workspace: WorkspaceState['map']
@@ -132,6 +143,8 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
   onImportOverlayAsTrack: (name: string, text: string, sourceBytes?: number) => void
   browserOverlayFiles: Record<string, { entry: KmlLibraryEntry; text: string }>
   onBrowserOverlayFile: (entry: KmlLibraryEntry, text: string | null) => void
+  jumpRequested?: boolean
+  onJumpHandled?: () => void
 }) {
   const { displayMode: mode, colorBy, basemap, maxGapMinutes } = workspace
   const [fitRequest, setFitRequest] = useState(0)
@@ -159,6 +172,18 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
   )
   const renderedSelection = useMemo(() => downsample(selectedValid, MAX_RENDER_POINTS), [selectedValid])
   const positions = useMemo<LatLngTuple[]>(() => rendered.map(({ point }) => [point.lat, point.lon]), [rendered])
+  const handleJumpHandled = useCallback(() => onJumpHandled?.(), [onJumpHandled])
+  const jumpTargetPositions = useMemo<LatLngTuple[]>(() => {
+    if (indexRange) {
+      const inRange = valid.filter(({ index }) => index >= indexRange.start && index <= indexRange.end)
+      return inRange.map(({ point }) => [point.lat, point.lon])
+    }
+    if (pointIndex !== null) {
+      const p = points[pointIndex]
+      return p && isValidLat(p.lat) && isValidLon(p.lon) ? [[p.lat, p.lon]] : []
+    }
+    return []
+  }, [indexRange, pointIndex, points, valid])
   const qualityEvents = useMemo(() => detectQualityEvents(points, { ...DEFAULT_QUALITY_EVENT_CONFIG, gapMs: Math.max(1, maxGapMinutes * 60_000) }), [points, maxGapMinutes])
   const pathBreakIndices = useMemo(() => new Set(qualityEvents.filter((event) => event.kind === 'gap' || event.kind === 'coordinate-jump').map((event) => event.endIndex)), [qualityEvents])
   const qualityMarkers = useMemo(() => qualityEvents.filter((event) => (event.kind === 'gap' || event.kind === 'coordinate-jump') && isValidLat(points[event.endIndex]?.lat ?? NaN) && isValidLon(points[event.endIndex]?.lon ?? NaN)), [qualityEvents, points])
@@ -274,6 +299,7 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
           {positions.length > 0 && <CircleMarker center={positions[0]!} radius={6} pathOptions={{ color: '#16a34a', fillColor: '#16a34a', fillOpacity: 0.9, weight: 1 }}><Tooltip>start</Tooltip></CircleMarker>}
           {positions.length > 0 && <CircleMarker center={positions[positions.length - 1]!} radius={6} pathOptions={{ color: '#dc2626', fillColor: '#dc2626', fillOpacity: 0.9, weight: 1 }}><Tooltip>end</Tooltip></CircleMarker>}
           <FitBounds positions={fitPositions} request={fitRequest} />
+          {jumpRequested && <JumpToSelection positions={jumpTargetPositions} onHandled={handleJumpHandled} />}
           <InvalidateSizeOnResize />
         </MapContainer>
       </div>

@@ -20,7 +20,7 @@ class FakeScope implements WorkerScopeLike {
 
 const scope = new FakeScope()
 const runtime = attachComputeWorker(scope)
-check('Registers production tasks', runtime.host.list().map((task) => task.id).join(',') === 'chart-series,fixed-rate-resample,gpx-export')
+check('Registers production tasks', runtime.host.list().map((task) => task.id).join(',') === 'chart-series,fixed-rate-resample,gpx-export,track-health-scan')
 
 scope.send({
   type: 'request',

@@ -225,6 +225,10 @@ const VALID_TASK_PAYLOADS: Record<string, unknown[]> = {
     params: { rateHz: 1, interpolation: 'linear' },
   }],
   'gpx-export': [{ points: [{ lat: 1, lon: 2 }] }, { points: [{ lat: 1, lon: 2 }], datasetName: 'track' }],
+  'track-health-scan': [
+    { points: [{ lat: 1, lon: 2 }], sourceFormat: 'gpx', warnings: [], datasetId: 'ds-1' },
+    { points: [{ lat: 1, lon: 2, ele: 10, time: 0 }], sourceFormat: 'csv', warnings: ['a warning'], datasetId: 'ds-2' },
+  ],
 }
 
 for (const task of PRODUCTION_COMPUTE_TASKS) {

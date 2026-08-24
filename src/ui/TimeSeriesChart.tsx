@@ -53,7 +53,7 @@ const CHART_TYPE_LABELS: Record<string, string> = {
   area: 'Area',
 }
 
-export function TimeSeriesChart({ points, channels }: { points: TrackPoint[]; channels: string[] }) {
+export function TimeSeriesChart({ points, channels, jumpRequested = false, onJumpHandled }: { points: TrackPoint[]; channels: string[]; jumpRequested?: boolean; onJumpHandled?: () => void }) {
   const available = useMemo(() => ['elevation', ...channels], [channels])
   const [selected, setSelected] = useState<string[]>(() => available.includes('elevation') ? ['elevation'] : available.slice(0, 1))
   const [xAxis, setXAxis] = useState<ChartXAxis>('time')
@@ -189,6 +189,35 @@ export function TimeSeriesChart({ points, channels }: { points: TrackPoint[]; ch
     () => indexRange ? calculateRangeStatistics(points, indexRange, selected) : null,
     [points, indexRange, selected],
   )
+
+  // Zoom to an incoming drill-down target. Adjusted during render (React's documented pattern
+  // for reacting to a changed prop) rather than in an effect, so the zoom lands in the same
+  // commit instead of a visible extra render — the same approach as the chart-type recovery above.
+  const [jumpApplied, setJumpApplied] = useState(jumpRequested)
+  if (jumpRequested !== jumpApplied) {
+    setJumpApplied(jumpRequested)
+    if (jumpRequested && xDomain) {
+      const target = indexRange
+        ? { lo: pointX(points[indexRange.start], indexRange.start, effectiveX), hi: pointX(points[indexRange.end], indexRange.end, effectiveX) }
+        : pointIndex !== null
+          ? (() => {
+              const x = pointX(points[pointIndex], pointIndex, effectiveX)
+              return x === null ? null : { lo: x, hi: x }
+            })()
+          : null
+      if (target && target.lo !== null && target.hi !== null) {
+        const totalSpan = xDomain.hi - xDomain.lo
+        const targetSpan = Math.max(target.hi - target.lo, totalSpan * 0.02)
+        const padding = Math.max(targetSpan * 0.5, totalSpan * 0.05)
+        setZoomedDomain({ lo: Math.max(xDomain.lo, target.lo - padding), hi: Math.min(xDomain.hi, target.hi + padding) })
+      }
+    }
+  }
+
+  // Report the jump as consumed so re-entering the charts tab later does not replay it.
+  useEffect(() => {
+    if (jumpRequested) onJumpHandled?.()
+  }, [jumpRequested, onJumpHandled])
 
   const width = 900
   const height = 320

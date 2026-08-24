@@ -109,6 +109,9 @@ export default function App() {
   const [building, setBuilding] = useState(false)
   const [dragActive, setDragActive] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  // A drill-down from the health panel: the target view consumes this and clears it, so
+  // re-entering that tab later never replays an old jump.
+  const [pendingJump, setPendingJump] = useState<'map' | 'charts' | null>(null)
   const cancelCsvRef = useRef(false)
   const csvWorkerRef = useRef<Worker | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -122,6 +125,12 @@ export default function App() {
       setProjectDirty(true)
     }
   }, [])
+
+  const handleHealthDrillDown = useCallback((target: { preferredTab: 'map' | 'charts' }) => {
+    setTab(target.preferredTab)
+    setPendingJump(target.preferredTab)
+  }, [])
+  const clearPendingJump = useCallback(() => setPendingJump(null), [])
 
   useEffect(() => {
     if (!projectDirty) return
@@ -572,9 +581,9 @@ export default function App() {
             {progress !== null && <div className="global-progress"><ProgressBar value={progress} label={busy ?? 'Working'} />{building && <button type="button" onClick={cancelCsvBuild}>Cancel</button>}</div>}
             {tab === 'import' && <ImportView dragActive={dragActive} setDragActive={setDragActive} onFiles={onFiles} openPicker={() => fileInputRef.current?.click()} />}
             {tab === 'mapping' && pendingCsv && <MappingPanel analysis={pendingCsv.analysis} mapping={pendingCsv.mapping} onChange={(mapping) => setPendingCsv((current) => current ? { ...current, mapping } : current)} additionalHeaders={pendingCsv.additionalHeaders} onToggleAdditionalHeaders={(additionalHeaders) => setPendingCsv((current) => current ? { ...current, additionalHeaders } : current)} dataStartRow={pendingCsv.dataStartRow} onDataStartRowChange={(dataStartRow) => setPendingCsv((current) => current ? { ...current, dataStartRow } : current)} onBuild={onBuildCsv} building={building} />}
-            {tab === 'overview' && active && <div className="overview-panels"><TrackHealthPanel dataset={active} /><StatsPanel dataset={active} bookmarks={bookmarks} onBookmarksChange={(next) => { setBookmarks(next); setProjectDirty(true) }} /></div>}
-            {tab === 'map' && <MapView points={active?.points ?? []} channels={active?.channels ?? []} workspace={workspace.map} onWorkspaceChange={(map) => { setWorkspace((current) => ({ ...current, map })); setProjectDirty(true) }} otherTracks={otherTracks} overlayState={workspace.mapOverlays} onOverlayStateChange={onMapOverlayStateChange} onImportOverlayAsTrack={onImportOverlayAsTrack} browserOverlayFiles={browserOverlayFiles} onBrowserOverlayFile={onBrowserOverlayFile} />}
-            {tab === 'charts' && active && <TimeSeriesChart points={active.points} channels={active.channels} />}
+            {tab === 'overview' && active && <div className="overview-panels"><TrackHealthPanel dataset={active} onDrillDown={handleHealthDrillDown} /><StatsPanel dataset={active} bookmarks={bookmarks} onBookmarksChange={(next) => { setBookmarks(next); setProjectDirty(true) }} /></div>}
+            {tab === 'map' && <MapView points={active?.points ?? []} channels={active?.channels ?? []} workspace={workspace.map} onWorkspaceChange={(map) => { setWorkspace((current) => ({ ...current, map })); setProjectDirty(true) }} otherTracks={otherTracks} overlayState={workspace.mapOverlays} onOverlayStateChange={onMapOverlayStateChange} onImportOverlayAsTrack={onImportOverlayAsTrack} browserOverlayFiles={browserOverlayFiles} onBrowserOverlayFile={onBrowserOverlayFile} jumpRequested={pendingJump === 'map'} onJumpHandled={clearPendingJump} />}
+            {tab === 'charts' && active && <TimeSeriesChart points={active.points} channels={active.channels} jumpRequested={pendingJump === 'charts'} onJumpHandled={clearPendingJump} />}
             {tab === 'table' && active && <DataTable points={active.points} channels={active.channels} />}
             {tab === 'compare' && <ComparisonPanel datasets={datasets} activeId={activeId} workspace={workspace.comparison} onWorkspaceChange={(comparison) => { setWorkspace((current) => ({ ...current, comparison })); setProjectDirty(true) }} onSelectReferenceSample={(datasetId, pointIndex) => { const reference = datasets.find((dataset) => dataset.id === datasetId); if (!reference) return; restorePointSelection(reference.points, pointIndex, null); setActiveId(datasetId) }} />}
             {tab === 'scene3d' && active && <Trajectory3dPanel dataset={active} datasets={datasets} workspace={workspace.scene3d} onWorkspaceChange={(scene3d) => { setWorkspace((current) => ({ ...current, scene3d })); setProjectDirty(true) }} />}
