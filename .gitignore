@@ -14,9 +14,15 @@ release
 .test-build
 .screenshots
 .worktrees
+playwright
 playwright-report
 test-results
 *.local
+.parcel-cache
+.cache
+build/
+.env.local
+.env.*.local
 
 # Transient PID/port state written by .agents/.claude/skills/run-desktop's
 # driver while an app instance it launched is running.
