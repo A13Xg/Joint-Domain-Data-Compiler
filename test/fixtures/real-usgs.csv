@@ -1,0 +1,9 @@
+time,latitude,longitude,depth_km,magnitude,place,usgs_event_id
+2026-07-26T18:19:40.684Z,29.9365,-42.8052,10,5.4,northern Mid-Atlantic Ridge,us7000t3in
+2026-07-26T18:15:31.398Z,-23.4795,179.8773,535.429,4.6,south of the Fiji Islands,us7000t3il
+2026-07-26T17:29:13.394Z,-28.0972,-66.7262,157.114,4.5,"53 km N of Arauco, Argentina",us7000t3ia
+2026-07-26T12:36:17.467Z,24.8852,121.8508,93.836,4.7,"15 km ESE of Pinglin, Taiwan",us7000t3gt
+2026-07-26T10:57:37.061Z,-10.007,123.4402,10,5.3,"25 km NW of Kupang, Indonesia",us7000t3g4
+2026-07-26T09:26:55.020Z,11.2364,-86.8076,35,4.6,"68 km SSW of Masachapa, Nicaragua",us7000t3fs
+2026-07-26T08:35:18.849Z,51.4994,-173.306,10,5.8,"99 km SE of Atka, Alaska",us7000t3fm
+2026-07-26T02:13:46.744Z,4.7907,-72.7547,12.362,4.7,"18 km ESE of Monterrey, Colombia",us7000t3eb

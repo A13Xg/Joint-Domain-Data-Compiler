@@ -1,0 +1,49 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+release
+.test-build
+.screenshots
+.worktrees
+playwright
+playwright-report
+test-results
+*.local
+.parcel-cache
+.cache
+build/
+.env.local
+.env.*.local
+
+# Transient PID/port state written by .agents/.claude/skills/run-desktop's
+# driver while an app instance it launched is running.
+.jddc-driver-state.json
+# Local file-archive safety-net copies of imports/exports (dev mode only;
+# packaged builds write into the OS userData directory instead).
+.jddc-archive
+
+# AI tooling lives in .agents/ and is tracked deliberately, but exclude
+# machine-specific settings and system paths.
+!.agents/**
+.agents/.claude/settings.local.json
+.agents/.codex/settings.local.json
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

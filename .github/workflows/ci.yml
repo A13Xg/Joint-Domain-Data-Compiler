@@ -1,0 +1,50 @@
+name: Quality Gates
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests and build verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      # xmllint backs the GPX/KML schema assertions in test/validate.ts.
+      # Without it those checks silently skip rather than fail.
+      - name: Install GPX schema validator
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint and run regression suite
+        run: npm run check:unit
+
+      - name: Build web application
+        run: npm run check:web
+
+      - name: Verify the built application is intact
+        run: node scripts/check-app-health.mjs
+
+      - name: Audit shipped runtime dependencies
+        run: npm audit --omit=dev --audit-level=high
