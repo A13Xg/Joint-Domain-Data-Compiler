@@ -83,7 +83,9 @@ ECEF coordinates are computed from geodetic (lat/lon/height) using WGS84 transfo
 ## Test Coverage
 
 - **parser-fixtures.ts**: Valid and malformed EAG parsing with header cross-checks and channel preservation
-- **eag-geographic.ts**: Geographic sanity checks on 6 real NATO range files (99.3% of 145.7K points in Nevada/West-Coast region) and synthetic midnight-crossing scenarios
+- **eag-geographic.ts**: Exact ECEF→geodetic recovery of known WGS-84 waypoints from synthetic
+  fixtures (tolerance 3e-5 degrees and 2 m, against reference values computed independently of
+  `src/core/geodesy.ts`), across both filename date encodings, plus a midnight-crossing scenario
 
 ## References
 

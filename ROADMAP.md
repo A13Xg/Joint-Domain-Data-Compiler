@@ -10,6 +10,11 @@ This document outlines the planned development direction for Joint Domain Data C
 ## Phase 1: Visualization & UI Polish (Current)
 
 ### Visualization Enhancements
+- [ ] **Settings page** — Modular, expandable settings scaffolding: browser storage on the web
+  build, a local config file on desktop. Must take new settings without restructuring.
+- [ ] **Configurable downsampling** — Expose the visualization point budget as a setting. Below
+  the budget every point is drawn; at or above it, sample every `length / budget`-th point.
+  Applies to every line-chart and point-rendering surface.
 - [ ] **Multi-pane chart layouts** — Allow side-by-side axis scales and custom channel grouping
 - [ ] **Statistical plot types** — Histograms, probability plots, Lissajous curves for trajectory analysis
 - [ ] **Chart image export** — High-quality PNG/SVG export with annotations preserved
@@ -17,12 +22,15 @@ This document outlines the planned development direction for Joint Domain Data C
 - [ ] **Playback controls refinement** — Timestamp-accurate scrubbing with linked cursor in all views
 
 ### Comparison Module
-- [ ] **Drift estimation** — Automatic clock-skew detection and correction workflows
+- [x] **Drift estimation** — Clock-skew detection shipped in 0.1.1 (`estimateClockDrift`, surfaced in
+  the Comparison panel and exported with the comparison CSV). Automatic *correction* workflows
+  remain open.
 - [ ] **Multi-track comparison visualization** — Side-by-side trajectory divergence heatmaps
 - [ ] **Richer comparison reports** — Statistical tables, divergence histograms in HTML export
 
 ### Transform Workflows
-- [ ] **Recipe UI** — Named, reusable transform sequences with parameter templates
+- [x] **Recipe UI** — Shipped in 0.1.1: transform sequences can be named, saved, listed, replayed,
+  and deleted from the Transform tab. Parameter templating remains open.
 - [ ] **Advanced filters** — Kalman smoothing, spline interpolation, cross-track error analysis
 - [ ] **Memory-efficient undo** — Compress operation snapshots instead of storing full datasets
 
@@ -74,6 +82,10 @@ This document outlines the planned development direction for Joint Domain Data C
 ## Known Limitations & Future Improvements
 
 ### Visualization
+- **Constraint:** The Transform tab does not scroll on short viewports
+  - **Timeline:** Phase 1
+  - **Impact:** Cards below the fold are unreachable at small window heights.
+
 - **Constraint:** No per-chart-type rendering fork (scatter/area types render as line chart)
   - **Timeline:** Phase 1 follow-up
   - **Impact:** Chart validator provides clear feedback; users see expected vs. actual
@@ -87,6 +99,12 @@ This document outlines the planned development direction for Joint Domain Data C
   - **Impact:** Keeps dependencies lean; performance limits ~100k points with optimizations
 
 ### Data Handling
+- **Constraint:** A CSV import whose rows cannot all be timed succeeds with only a log warning
+  - **Timeline:** Phase 1
+  - **Impact:** Missing time is not a cosmetic gap — it disables the time axis, playback, and
+    every time-based metric. The condition needs a prominent flag in the import surface, not a
+    log line that scrolls away.
+
 - **Constraint:** DOM parser capped at 100k points (memory limit)
   - **Timeline:** Stable; larger datasets use GPB or chunked export
   - **Impact:** CSV mapping UI respects limit; clear error messaging
@@ -196,5 +214,6 @@ See `ONBOARDING.md` for developer workflow, branch strategy, and CI/CD practices
 | Version | Release Date | Highlights |
 |---------|--------------|-----------|
 | 0.1.0   | 2026-08-14   | Initial local-first baseline: import, linked visualization, transforms, project save/export |
-| 0.2.0   | TBD          | HTML analysis reports, Electron packaging, SBOMs, build-provenance attestations |
+| 0.1.1   | 2026-08-26   | HTML analysis reports, Electron packaging with SBOMs and provenance, Track Health Scan, repair/undo workflows, bundled map overlays |
+| 0.2.0   | TBD          | Configurable settings, richer comparison reporting, chart image export |
 | 1.0.0   | TBD          | Production-ready: mobile support, multi-user collaboration, advanced analysis |
