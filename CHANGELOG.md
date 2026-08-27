@@ -3,10 +3,17 @@
 Notable user-facing and operational changes are recorded here. This project follows Semantic
 Versioning; release tags use the `vX.Y.Z` form.
 
-## Unreleased
+## 0.1.12 - 2026-08-27
 
 ### Added
 
+- A packaged-ASAR integrity gate (`npm run check:asar`, `scripts/verify-asar-integrity.mjs`)
+  that re-runs Electron's own startup validation at build time -- archive header against the
+  hash embedded in the executable or `Info.plist`, then every file and every integrity block
+  against the bytes actually stored. It is wired into `build:desktop`, `build:desktop:linux`,
+  and `build:desktop:win` themselves, so a packaging regression fails the build command that
+  produced it -- no installer is ever handed to the smoke test, the artifact upload, or the
+  publish job. The packaged smoke launch re-runs it afterwards as a second line of defence.
 - Automatic Actions-run housekeeping. Quality Gates and every release workflow now end with a
   non-blocking `prune` job that deletes runs belonging to workflow files that no longer exist,
   plus its own history beyond the 30 most recent. A manual **Prune Workflow Runs** workflow
@@ -14,6 +21,25 @@ Versioning; release tags use the `vX.Y.Z` form.
 
 ### Fixed
 
+- **The packaged Windows and macOS applications now start.** 0.1.1's installer and portable
+  builds exited immediately with no window and no process in the task manager. Electron
+  validates every byte it reads out of `app.asar` against the per-file `integrity` block
+  recorded in the archive header, and on a mismatch it prints one line to a console no packaged
+  user ever sees and calls `process.exit(1)`. `@electron/asar` 4.1.2-4.3.0 -- pulled in over
+  electron-builder's own 3.4.1 by a `package.json` `overrides` entry -- hashes small files by
+  re-reading the source path from disk instead of the bytes electron-builder streams into the
+  archive. Every `package.json` electron-builder rewrites while packing (the app's own, plus one
+  per runtime dependency) therefore carried the hash of its pre-rewrite content, and the app
+  died on the very first read of `app.asar/package.json` at startup. Dropping the override
+  restores 3.4.1 and the archives now verify clean. Linux was never affected: it has no
+  embedded-integrity fuse.
+- The previous release's attempt at this -- clearing `release/` before a Windows pack, blamed on
+  a stale `app.asar` -- treated a symptom. `release/` is now cleared before every desktop build
+  regardless, but the integrity mismatch was produced fresh on every build, including on a clean
+  CI runner.
+- `win.icon` and `linux.icon` pointed at `images/Img1.png`, which has never existed in this
+  repository. electron-builder silently fell back to `build/icon.png`; both entries now name
+  that file, so the configuration says what the build actually does.
 - Release publishing no longer races its own cleanup. `cleanup-artifacts` declared
   `needs: [setup, package]`, so it unblocked alongside `publish` rather than after it and could
   delete the platform artifacts before they were downloaded, failing the run with
@@ -22,6 +48,14 @@ Versioning; release tags use the `vX.Y.Z` form.
   longer collides case-insensitively with the packaging step's `SHA256SUMS-Windows.txt`.
 - Publishing a release with no downloaded platform artifacts now fails with that reason stated
   rather than a bare `find` error about a missing directory.
+
+### Changed
+
+- The packaged-application launch check is a hard release gate. It was advisory
+  (`continue-on-error: true`), and on 0.1.1 it correctly reported `Packaged application exited
+  early with code 1` for both Windows and macOS -- and the release published anyway. Its Linux
+  dependency install is likewise no longer allowed to fail into a silent skip.
+- Removed a stray zero-byte `playwright` file from the repository root.
 
 ## 0.1.1
 

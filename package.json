@@ -1,7 +1,7 @@
 {
   "name": "joint-domain-data-compiler",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.12",
   "description": "Local-first trajectory and TSPI workbench for importing, analyzing, transforming, comparing, visualizing, saving, and exporting track data.",
   "desktopName": "JointDomainDataCompiler",
   "author": {
@@ -16,9 +16,10 @@
     "electron": "wait-on tcp:5173 && electron .",
     "build": "tsc -b && vite build",
     "build:web": "npm run build",
-    "build:desktop": "npm run build && electron-builder --publish never",
-    "build:desktop:linux": "npm run build && electron-builder --linux AppImage deb --publish never",
-    "build:desktop:win": "node -e \"require('fs').rmSync('release',{recursive:true,force:true})\" && npm run build && electron-builder --win nsis portable --x64 --publish never",
+    "clean:release": "node -e \"require('fs').rmSync('release',{recursive:true,force:true})\"",
+    "build:desktop": "npm run clean:release && npm run build && electron-builder --publish never && npm run check:asar",
+    "build:desktop:linux": "npm run clean:release && npm run build && electron-builder --linux AppImage deb --publish never && npm run check:asar",
+    "build:desktop:win": "npm run clean:release && npm run build && electron-builder --win nsis portable --x64 --publish never && npm run check:asar",
     "test": "node scripts/run-tests.mjs",
     "test:e2e": "playwright test",
     "test:e2e:ci": "playwright test test/e2e/ci-smoke.spec.ts",
@@ -30,9 +31,10 @@
     "check:web": "npm run build",
     "check:app-health": "npm run build && node scripts/check-app-health.mjs",
     "check:e2e": "playwright test test/e2e/ci-smoke.spec.ts test/e2e/workbench-smoke.spec.ts",
-    "check:desktop:linux": "node scripts/smoke-packaged.mjs",
-    "check:desktop:win": "node scripts/smoke-packaged.mjs",
-    "check:desktop:mac": "node scripts/smoke-packaged.mjs",
+    "check:asar": "node scripts/verify-asar-integrity.mjs",
+    "check:desktop:linux": "npm run check:asar && node scripts/smoke-packaged.mjs",
+    "check:desktop:win": "npm run check:asar && node scripts/smoke-packaged.mjs",
+    "check:desktop:mac": "npm run check:asar && node scripts/smoke-packaged.mjs",
     "check:all": "npm run check:unit && npm run check:app-health",
     "check:full": "npm run check:all && npm run check:e2e",
     "preview": "vite preview"
@@ -67,7 +69,7 @@
         }
       ],
       "category": "Utility",
-      "icon": "images/Img1.png",
+      "icon": "build/icon.png",
       "syncDesktopName": true,
       "maintainer": "A13Xg <a13xg@users.noreply.github.com>"
     },
@@ -86,7 +88,7 @@
           ]
         }
       ],
-      "icon": "images/Img1.png",
+      "icon": "build/icon.png",
       "executableName": "JointDomainDataCompiler"
     },
     "nsis": {
@@ -110,7 +112,6 @@
     }
   },
   "overrides": {
-    "@electron/asar": "^4.3.0",
     "@electron/get": "^5.1.0"
   },
   "dependencies": {

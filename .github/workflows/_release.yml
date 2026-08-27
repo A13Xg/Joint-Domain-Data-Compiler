@@ -131,6 +131,10 @@ jobs:
         timeout-minutes: 5
         run: npm ci
 
+      # The build commands end in `npm run check:asar`, which re-runs Electron's
+      # own startup ASAR validation against what was just packed. A packaging
+      # regression fails the build step itself, so no installer reaches the
+      # smoke launch, the artifact upload, or the publish job below.
       - name: Build and package app (Linux/macOS, with timeout)
         if: runner.os != 'Windows'
         timeout-minutes: 30
@@ -154,15 +158,22 @@ jobs:
           }
           npm run build:desktop:win
 
+      # A hard step, not best-effort: without xvfb and GTK the Linux smoke test
+      # below cannot run at all, and a smoke test that quietly skips itself is
+      # what let a non-starting 0.1.1 reach users.
       - name: Install Linux packaged-smoke dependencies (with timeout)
         if: runner.os == 'Linux'
         timeout-minutes: 5
-        continue-on-error: true
-        run: sudo apt-get update && sudo apt-get install -y xvfb libgtk-3-0 2>&1 || echo "Linux smoke dependencies unavailable; smoke test will be skipped"
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgtk-3-0
 
-      - name: Launch packaged application (smoke test, with timeout)
+      # The second release gate. It re-verifies the packaged ASAR against the
+      # integrity data Electron checks at startup, then launches the packaged
+      # binary and waits for the React workbench to mount. It ran on 0.1.1,
+      # correctly reported "Packaged application exited early with code 1" on
+      # Windows and macOS, and published anyway because it was advisory. Nothing
+      # ships past a red verdict here.
+      - name: Verify and launch packaged application (release gate, with timeout)
         timeout-minutes: 10
-        continue-on-error: true
         run: ${{ matrix.smoke_command }}
 
       - name: Verify Windows executables
