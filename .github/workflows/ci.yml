@@ -48,3 +48,17 @@ jobs:
 
       - name: Audit shipped runtime dependencies
         run: npm audit --omit=dev --audit-level=high
+
+  # Housekeeping, not a gate: runs after the verdict is in, never blocks it.
+  # Restricted to pushes because a pull_request event from a fork gets a
+  # read-only token, and pruning from a PR run serves no purpose anyway.
+  prune:
+    name: Prune old runs
+    needs: [test]
+    if: always() && github.event_name == 'push'
+    uses: ./.github/workflows/_prune-runs.yml
+    with:
+      keep: '30'
+    permissions:
+      contents: read
+      actions: write

@@ -1,0 +1,47 @@
+name: Prune Workflow Runs
+
+# Manual entry point for housekeeping the Actions history. The prune job wired
+# into Quality Gates and the release workflows keeps things tidy going forward;
+# this is for one-off sweeps, where `scope: all` reaches every workflow rather
+# than only the one that happens to be running.
+
+on:
+  workflow_dispatch:
+    inputs:
+      keep:
+        description: 'Most recent completed runs to retain per workflow'
+        required: false
+        type: string
+        default: '30'
+      scope:
+        description: 'Prune only this workflow, or every workflow'
+        required: false
+        type: choice
+        options: [current, all]
+        default: all
+      max_deletes:
+        description: 'Ceiling on deletions for this invocation'
+        required: false
+        type: string
+        default: '400'
+      dry_run:
+        description: 'Report what would be deleted without deleting it'
+        required: false
+        type: choice
+        options: ['true', 'false']
+        default: 'true'
+
+permissions:
+  contents: read
+
+jobs:
+  prune:
+    uses: ./.github/workflows/_prune-runs.yml
+    with:
+      keep: ${{ inputs.keep }}
+      scope: ${{ inputs.scope }}
+      max_deletes: ${{ inputs.max_deletes }}
+      dry_run: ${{ inputs.dry_run }}
+    permissions:
+      contents: read
+      actions: write

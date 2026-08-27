@@ -291,6 +291,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # Housekeeping, mirroring the prune job on Quality Gates. Depends on
+  # `publish` so a release run prunes only after its own artifacts are safely
+  # attached, and `if: always()` so a failed release still tidies up.
+  prune:
+    name: Prune old runs
+    needs: [setup, publish]
+    if: always()
+    uses: ./.github/workflows/_prune-runs.yml
+    with:
+      keep: '30'
+    permissions:
+      contents: read
+      actions: write
+
   # A separate, always-run job rather than a step inside `publish`: if any
   # platform in the `package` matrix fails, `publish` is skipped entirely
   # (its default `needs` requires success), which would otherwise leave the

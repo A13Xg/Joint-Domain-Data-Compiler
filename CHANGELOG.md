@@ -5,7 +5,23 @@ Versioning; release tags use the `vX.Y.Z` form.
 
 ## Unreleased
 
-Nothing yet.
+### Added
+
+- Automatic Actions-run housekeeping. Quality Gates and every release workflow now end with a
+  non-blocking `prune` job that deletes runs belonging to workflow files that no longer exist,
+  plus its own history beyond the 30 most recent. A manual **Prune Workflow Runs** workflow
+  covers one-off sweeps across every workflow at once, and defaults to a dry run.
+
+### Fixed
+
+- Release publishing no longer races its own cleanup. `cleanup-artifacts` declared
+  `needs: [setup, package]`, so it unblocked alongside `publish` rather than after it and could
+  delete the platform artifacts before they were downloaded, failing the run with
+  `find: 'release-bundle': No such file or directory`.
+- A partial (single-platform) release writes `SHA256SUMS-partial-<platforms>.txt`, which no
+  longer collides case-insensitively with the packaging step's `SHA256SUMS-Windows.txt`.
+- Publishing a release with no downloaded platform artifacts now fails with that reason stated
+  rather than a bare `find` error about a missing directory.
 
 ## 0.1.1
 

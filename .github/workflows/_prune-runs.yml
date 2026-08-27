@@ -1,0 +1,66 @@
+name: Reusable Run Pruning
+
+# Shared implementation behind the prune job that every build workflow ends
+# with, and behind the manual Prune Workflow Runs entry point. Deletes runs
+# belonging to workflow files that no longer exist, plus the tail of a
+# workflow's own history beyond `keep`.
+
+on:
+  workflow_call:
+    inputs:
+      keep:
+        description: 'Most recent completed runs to retain per workflow'
+        required: false
+        type: string
+        default: '30'
+      scope:
+        description: '`current` prunes only the calling workflow; `all` prunes every workflow'
+        required: false
+        type: string
+        default: 'current'
+      max_deletes:
+        description: 'Ceiling on deletions per invocation, so a backlog drains across runs'
+        required: false
+        type: string
+        default: '150'
+      min_age_hours:
+        description: 'Never delete runs younger than this, so concurrent siblings survive'
+        required: false
+        type: string
+        default: '24'
+      dry_run:
+        description: 'Report what would be deleted without deleting it'
+        required: false
+        type: string
+        default: 'false'
+
+permissions:
+  contents: read
+
+jobs:
+  prune:
+    name: Prune old workflow runs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      # The script decides what counts as an orphan by listing the workflow
+      # files that still exist, so it needs the tree, not just itself.
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Never fail a build over housekeeping: a rate limit or a permissions
+      # change should leave the release or CI verdict untouched.
+      - name: Prune old workflow runs
+        continue-on-error: true
+        timeout-minutes: 8
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PRUNE_KEEP: ${{ inputs.keep }}
+          PRUNE_SCOPE: ${{ inputs.scope }}
+          PRUNE_MAX_DELETES: ${{ inputs.max_deletes }}
+          PRUNE_MIN_AGE_HOURS: ${{ inputs.min_age_hours }}
+          PRUNE_DRY_RUN: ${{ inputs.dry_run }}
+        run: node scripts/prune-workflow-runs.mjs
