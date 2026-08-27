@@ -248,6 +248,12 @@ jobs:
         env:
           PLATFORM_CSV: ${{ needs.setup.outputs.platform_csv }}
         run: |
+          # The package jobs upload one artifact per platform; if none of them
+          # arrived, fail with that fact rather than a bare `find: no such file`.
+          if [ ! -d release-bundle ] || [ -z "$(ls -A release-bundle)" ]; then
+            echo "No platform artifacts were downloaded for ${GITHUB_SHA}. Nothing to publish."
+            exit 1
+          fi
           mkdir -p release
           find release-bundle -maxdepth 1 -type f -exec cp {} release/ \;
           (
@@ -266,7 +272,7 @@ jobs:
         shell: bash
         env:
           PLATFORM_CSV: ${{ needs.setup.outputs.platform_csv }}
-        run: mv release/SHA256SUMS.txt "release/SHA256SUMS-${PLATFORM_CSV//,/-}.txt"
+        run: mv release/SHA256SUMS.txt "release/SHA256SUMS-partial-${PLATFORM_CSV//,/-}.txt"
 
       - name: Attest release artifact provenance
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
@@ -296,7 +302,7 @@ jobs:
   # "Download platform artifacts" step, which needs these to still exist.
   cleanup-artifacts:
     name: Delete transient platform artifacts
-    needs: [setup, package]
+    needs: [setup, package, publish]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

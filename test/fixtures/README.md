@@ -46,16 +46,15 @@ trajectories.
 `20250506_RANGE_SYNTH.txt` and `06MAY25_RANGE_SYNTH.txt` hold the same synthetic
 eight-point range track under the two filename date encodings `parseEag` supports
 (`YYYYMMDD` and `DDMMMYY`), so neither branch of its mission-date extraction goes
-uncovered. Their ECEF triples were generated from known geodetic waypoints across the
-Nevada/West-Coast test airspace using an independent WGS-84 implementation, and the
-waypoints are recorded in `eag-expected.json`.
+uncovered. Their ECEF triples were generated from known geodetic waypoints spread across the
+western United States using an independent WGS-84 implementation, and the waypoints
+are recorded in `eag-expected.json`.
 
 `test/eag-geographic.ts` asserts the parser recovers each waypoint to within 3e-5 degrees
 and 2 m. That reference is deliberately not produced by `src/core/geodesy.ts` — checking a
 conversion against its own inverse would prove nothing about its correctness.
 
-These replace a corpus of real range recordings that was removed before this repository
-was made public.
+These replace a test corpus that was retired before this repository was made public.
 
 ## Manual smoke test
 

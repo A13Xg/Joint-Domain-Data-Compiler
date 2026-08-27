@@ -5,6 +5,10 @@ Versioning; release tags use the `vX.Y.Z` form.
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.1.1
+
 ### Added
 
 - A self-contained, print-ready HTML analysis report with dataset statistics, reference and
@@ -81,15 +85,20 @@ Versioning; release tags use the `vX.Y.Z` form.
 
 ### Removed
 
-- The `file-test/actual/` corpus of real range recordings, ahead of this repository being
-  made public. `test/eag-geographic.ts` no longer checks that ≥95% of real points land in a
+- The retired test corpus, ahead of this repository being made public.
+  `test/eag-geographic.ts` no longer checks that ≥95% of real points land in a
   bounding box; it now checks that the ECEF→geodetic conversion recovers known WGS-84
   waypoints to within 3e-5 degrees and 2 m, against reference values computed outside
   `src/core/geodesy.ts`. Both filename date encodings the EAG parser supports stay covered.
 
 ### Changed
 
-- Test fixtures moved from `file-test/` to `test/fixtures/`, with one shared definition of
+- Documentation consolidated for the public release: the duplicate `Roadmap.md` was folded into
+  `ROADMAP.md` (the two spellings collided on case-insensitive checkouts, so Windows and macOS
+  clones could not resolve both), the version history and Phase 1 status were brought up to
+  date, and the `README.md`/`docs/EAG-TSPI.md` descriptions of EAG test coverage were corrected
+  to describe the synthetic fixtures actually in use.
+- Test fixtures now live in `test/fixtures/`, with one shared definition of
   the fixture root in `test/helpers/fixtures.ts`. Three unreferenced fixtures were dropped,
   one of them a byte-for-byte duplicate, along with a midnight-crossing assertion that
   accepted both of its own outcomes.

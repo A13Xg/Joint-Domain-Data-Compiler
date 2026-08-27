@@ -228,10 +228,12 @@ performance coverage remains a roadmap priority.
 
 ## Test data
 
-`test/fixtures/` contains a documented USGS-derived sample corpus with valid and malformed fixtures
-for every supported import format, plus comparison inputs. EAG TSPI test data includes 6 real
-flight-path samples from NATO range instrumentation (145.7K points total) spanning Nevada and
-West-Coast airspace, plus synthetic midnight-crossing test cases.
+`test/fixtures/` contains a documented, public-domain USGS-derived sample corpus with valid and
+malformed fixtures for every supported import format, plus comparison inputs. EAG TSPI coverage
+uses synthetic fixtures with known WGS-84 waypoints: `test/eag-geographic.ts` asserts that the
+ECEF→geodetic conversion recovers them to within 3e-5 degrees and 2 m, against reference values
+computed independently of `src/core/geodesy.ts`, across both filename date encodings the parser
+supports and across a midnight crossing.
 
 ## Branch workflow
 
