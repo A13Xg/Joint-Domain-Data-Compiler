@@ -18,6 +18,11 @@ playwright
 playwright-report
 test-results
 *.local
+
+# Source data files dropped into the repo root for local analysis. Root-anchored
+# on purpose: test/fixtures/*.csv are tracked sample data and must stay visible.
+/*.csv
+/*.CSV
 .parcel-cache
 .cache
 # `build/` is electron-builder's buildResources directory: generated icon

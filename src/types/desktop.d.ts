@@ -29,6 +29,8 @@ export interface JointDomainCompilerDesktopApi {
     save: (direction: 'inputs' | 'outputs', name: string, bytes: ArrayBuffer) => Promise<{ path: string; bytes: number }>
     reveal: () => Promise<string>
   }
+  /** Hands the unsaved-changes flag to the main process, which owns the close prompt. */
+  setUnsavedChanges?: (dirty: boolean) => void
 }
 
 declare global {

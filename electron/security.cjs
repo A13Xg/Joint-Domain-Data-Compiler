@@ -22,6 +22,7 @@ const IPC_CHANNELS = Object.freeze({
   reveal: 'kml-library:reveal',
   revealArchive: 'file-archive:reveal',
   saveDiagnostics: 'diagnostics:save',
+  setUnsavedChanges: 'window:set-unsaved-changes',
 })
 
 function isAllowedAppUrl(url, isDev, packagedRendererUrl) {

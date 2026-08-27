@@ -7,6 +7,7 @@ import {
   convertElevationToMeters,
   parseCoordinate,
   parseNumber,
+  parseRangeTimeToEpochMs,
   parseTimeToEpochMs,
   type ElevationUnit,
   type TimeFormat,
@@ -46,6 +47,8 @@ interface RowMappingResult {
   point: TrackPoint | null
   badCoord: boolean
   badTime: boolean
+  /** Row carried an IRIG/range timestamp, which supplies no year (see rangeTimeWarning). */
+  rangeTime: boolean
 }
 
 /** Map a single already-split CSV row into a TrackPoint. Pure and allocation-light
@@ -55,19 +58,28 @@ function mapCsvRow(row: CsvRow, mapping: CsvMapping, channelColumns: string[], c
   const lat = parseCoordinate(row[mapping.latitude])
   const lon = parseCoordinate(row[mapping.longitude])
   if (lat === null || lon === null) {
-    return { point: null, badCoord: true, badTime: false }
+    return { point: null, badCoord: true, badTime: false, rangeTime: false }
   }
   const point: TrackPoint = { lat, lon }
   let badTime = false
+  let rangeTime = false
 
   if (mapping.elevation) {
     const ele = parseNumber(row[mapping.elevation])
     if (ele !== null) point.ele = convertElevationToMeters(ele, mapping.elevationUnit)
   }
   if (mapping.timestamp) {
-    const ms = parseTimeToEpochMs(row[mapping.timestamp], mapping.timeFormat)
-    if (ms !== null) point.time = ms
-    else if (row[mapping.timestamp]?.trim()) badTime = true
+    const raw = row[mapping.timestamp]
+    const ms = parseTimeToEpochMs(raw, mapping.timeFormat)
+    if (ms !== null) {
+      point.time = ms
+      // Range time carries no year, so the import anchors it to the current one.
+      // Recorded here rather than inferred from mapping.timeFormat so the 'auto'
+      // path, which is how these files actually arrive, is covered too.
+      if (typeof raw === 'string' && parseRangeTimeToEpochMs(raw) !== null) rangeTime = true
+    } else if (raw?.trim()) {
+      badTime = true
+    }
   }
   if (mapping.name && row[mapping.name]) point.name = row[mapping.name]
   if (mapping.description && row[mapping.description]) point.desc = row[mapping.description]
@@ -82,7 +94,19 @@ function mapCsvRow(row: CsvRow, mapping: CsvMapping, channelColumns: string[], c
   }
   if (Object.keys(ext).length > 0) point.ext = ext
 
-  return { point, badCoord: false, badTime }
+  return { point, badCoord: false, badTime, rangeTime }
+}
+
+/**
+ * IRIG/range timestamps (`DDD:HH:MM:SS`) name a day and a time but never a year,
+ * so the import anchors them to the current UTC year. Inter-sample deltas — what
+ * every downstream analytic actually consumes — are exact either way, but the
+ * absolute date reaches GPX/KML exports, so the assumption is stated rather than
+ * left for someone to discover in an exported file.
+ */
+function rangeTimeWarning(rows: number): string {
+  return `${rows} row(s) used IRIG/range timestamps (DDD:HH:MM:SS), which carry no year. `
+    + `Dates were anchored to ${new Date().getUTCFullYear()}; relative timing is unaffected.`
 }
 
 export function buildPointsFromCsvRows(
@@ -95,17 +119,20 @@ export function buildPointsFromCsvRows(
   const points: TrackPoint[] = []
   let badCoords = 0
   let badTimes = 0
+  let rangeTimes = 0
 
   for (const row of rows) {
     const result = mapCsvRow(row, mapping, channelColumns, channelSet)
     if (result.point) points.push(result.point)
     if (result.badCoord) badCoords++
     if (result.badTime) badTimes++
+    if (result.rangeTime) rangeTimes++
   }
 
   const warnings: string[] = []
   if (badCoords > 0) warnings.push(`${badCoords} rows skipped (unparseable latitude/longitude).`)
   if (badTimes > 0) warnings.push(`${badTimes} rows had timestamps that could not be parsed.`)
+  if (rangeTimes > 0) warnings.push(rangeTimeWarning(rangeTimes))
 
   return { points, warnings, channels: Array.from(channelSet) }
 }
@@ -149,6 +176,7 @@ export function streamCsvFileToPoints(
     let rawRowsSeen = 0
     let badCoords = 0
     let badTimes = 0
+    let rangeTimes = 0
 
     Papa.parse<string[]>(file, {
       header: false,
@@ -170,6 +198,7 @@ export function streamCsvFileToPoints(
           if (mapped.point) points.push(mapped.point)
           if (mapped.badCoord) badCoords++
           if (mapped.badTime) badTimes++
+          if (mapped.rangeTime) rangeTimes++
         }
 
         // Reject before calling parser.abort(): abort() synchronously invokes
@@ -196,6 +225,7 @@ export function streamCsvFileToPoints(
         const warnings: string[] = []
         if (badCoords > 0) warnings.push(`${badCoords} rows skipped (unparseable latitude/longitude).`)
         if (badTimes > 0) warnings.push(`${badTimes} rows had timestamps that could not be parsed.`)
+        if (rangeTimes > 0) warnings.push(rangeTimeWarning(rangeTimes))
         resolve({ points, warnings, channels: Array.from(channelSet) })
       },
       error: (err: Error) => reject(err),

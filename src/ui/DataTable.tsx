@@ -8,6 +8,8 @@ import { SelectionChip } from './SelectionChip'
 
 const ROW_HEIGHT = 26
 const OVERSCAN = 8
+const INDEX_COL_WIDTH = 60
+const MIN_COL_WIDTH = 110
 
 type SortDir = 'asc' | 'desc' | null
 
@@ -25,6 +27,10 @@ export function DataTable({ points, channels }: { points: TrackPoint[]; channels
   const [rangeOnly, setRangeOnly] = useState(false)
   const [flaggedOnly, setFlaggedOnly] = useState(false)
   const viewportRef = useRef<HTMLDivElement>(null)
+  const headerRef = useRef<HTMLDivElement>(null)
+  // Set immediately before this grid's own rows publish a hover, and consumed by
+  // the follow-selection effect below. See that effect for why.
+  const selfDrivenHoverRef = useRef(false)
   const viewportHeight = 460
   const { pointIndex, hoverIndex, indexRange, selectPoint, setHoverIndex, clearPointSelection, clearRangeSelection, clearHover } = usePointSelection(points)
   const activeRangeOnly = rangeOnly && indexRange !== null
@@ -70,11 +76,41 @@ export function DataTable({ points, channels }: { points: TrackPoint[]; channels
     })
   }, [filtered, sortKey, sortDir, columns])
 
+  // Follows a selection made in another panel — hovering the map, the chart, or
+  // the 3D scene scrubs this grid to the matching row — and arrow-key navigation.
+  //
+  // It must NOT follow a hover this grid produced itself. Each row publishes its
+  // index on mouseenter, so recentring on that scrolls new rows under a
+  // stationary cursor, which fires the next mouseenter, which scrolls again: the
+  // grid ran away on its own the moment the pointer neared the top or bottom
+  // edge. The ref marks those self-driven updates so they are consumed here
+  // instead of acted on, leaving cross-panel and keyboard following intact.
   useEffect(() => {
+    if (selfDrivenHoverRef.current) {
+      selfDrivenHoverRef.current = false
+      return
+    }
     const targetIndex = pointIndex ?? hoverIndex
     if (targetIndex === null || sortKey || query || activeRangeOnly) return
-    viewportRef.current?.scrollTo({ top: Math.max(0, targetIndex * ROW_HEIGHT - viewportHeight / 2), behavior: pointIndex !== null ? 'smooth' : 'auto' })
+    const viewport = viewportRef.current
+    if (!viewport) return
+
+    // A row already on screen needs no scroll at all. Recentring one regardless
+    // is what made cross-panel hover jump the grid on every sample.
+    // Rows start below the sticky header inside the same scroll content.
+    const rowTop = (headerRef.current?.offsetHeight ?? 0) + targetIndex * ROW_HEIGHT
+    const visibleTop = viewport.scrollTop
+    const visibleBottom = visibleTop + viewportHeight - ROW_HEIGHT
+    if (pointIndex === null && rowTop >= visibleTop && rowTop <= visibleBottom) return
+
+    viewport.scrollTo({ top: Math.max(0, rowTop - viewportHeight / 2), behavior: pointIndex !== null ? 'smooth' : 'auto' })
   }, [pointIndex, hoverIndex, sortKey, query, activeRangeOnly])
+
+  // `1fr` still stretches the columns when the grid fits, while minWidth gives
+  // the grid an intrinsic width to overflow (and therefore scroll) past when it
+  // does not. Header and rows share both so the two stay in register.
+  const gridTemplate = `${INDEX_COL_WIDTH}px repeat(${columns.length}, minmax(${MIN_COL_WIDTH}px, 1fr))`
+  const gridMinWidth = INDEX_COL_WIDTH + columns.length * MIN_COL_WIDTH
 
   const total = sorted.length
   const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
@@ -110,12 +146,19 @@ export function DataTable({ points, channels }: { points: TrackPoint[]; channels
         {pointIndex !== null && <SelectionChip label={`selected #${pointIndex}`} onJump={() => scrollToSelection(pointIndex)} jumpTitle="Scroll to this row" onClear={clearPointSelection} clearLabel="Clear point selection" />}
         {indexRange && <SelectionChip label={`range ${indexRange.start}–${indexRange.end}`} tone="range" onJump={() => scrollToSelection(indexRange.start)} jumpTitle="Scroll to the start of this range" onClear={() => { setRangeOnly(false); clearRangeSelection() }} clearLabel="Clear range selection" />}
       </div>
-      <div className="grid-header" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(110px, 1fr))` }}>
-        <div className="grid-cell grid-idx">#</div>
-        {columns.map((column) => <button key={column.key} type="button" className="grid-cell grid-th" onClick={() => toggleSort(column.key)}>{column.label}{sortKey === column.key && <span className="sort-arrow">{sortDir === 'asc' ? '▲' : '▼'}</span>}</button>)}
-      </div>
+      {/* Header and rows share one scroll container so a grid wider than the
+          panel scrolls both together and the labels stay over their columns
+          instead of being clipped at the right edge. Keeping the header in a
+          separate synced element cannot hold alignment: only the body reserves
+          a vertical scrollbar, so the two scrollports differ in width and the
+          header runs out of travel first. Sticky keeps it pinned vertically. */}
       <div ref={viewportRef} className="grid-viewport mono" style={{ height: viewportHeight }} onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}>
-        <div style={{ height: total * ROW_HEIGHT, position: 'relative' }}>
+        <div style={{ minWidth: gridMinWidth }}>
+          <div ref={headerRef} className="grid-header" style={{ gridTemplateColumns: gridTemplate }}>
+            <div className="grid-cell grid-idx">#</div>
+            {columns.map((column) => <button key={column.key} type="button" className="grid-cell grid-th" onClick={() => toggleSort(column.key)}>{column.label}{sortKey === column.key && <span className="sort-arrow">{sortDir === 'asc' ? '▲' : '▼'}</span>}</button>)}
+          </div>
+          <div style={{ height: total * ROW_HEIGHT, position: 'relative' }}>
           {slice.map(({ point, index }, offset) => {
             const selected = pointIndex === index
             const hovered = hoverIndex === index
@@ -123,12 +166,13 @@ export function DataTable({ points, channels }: { points: TrackPoint[]; channels
             const flagged = flaggedIndices.has(index)
             const eventKinds = qualityEvents.filter((event) => event.startIndex <= index && event.endIndex >= index).map((event) => event.kind).join(', ')
             return (
-              <div key={index} className={`grid-row${selected ? ' selected' : ''}${hovered ? ' hovered' : ''}${inRange ? ' in-range' : ''}${flagged ? ' quality-flagged' : ''}`} title={eventKinds ? `Quality events: ${eventKinds}` : undefined} onMouseEnter={() => setHoverIndex(index)} onMouseLeave={clearHover} onClick={() => selectPoint(selected ? null : index)} style={{ position: 'absolute', top: (startIndex + offset) * ROW_HEIGHT, height: ROW_HEIGHT, gridTemplateColumns: `60px repeat(${columns.length}, minmax(110px, 1fr))`, cursor: 'pointer' }}>
+              <div key={index} className={`grid-row${selected ? ' selected' : ''}${hovered ? ' hovered' : ''}${inRange ? ' in-range' : ''}${flagged ? ' quality-flagged' : ''}`} title={eventKinds ? `Quality events: ${eventKinds}` : undefined} onMouseEnter={() => { selfDrivenHoverRef.current = true; setHoverIndex(index) }} onMouseLeave={clearHover} onClick={() => { selfDrivenHoverRef.current = true; selectPoint(selected ? null : index) }} style={{ position: 'absolute', top: (startIndex + offset) * ROW_HEIGHT, height: ROW_HEIGHT, gridTemplateColumns: gridTemplate, cursor: 'pointer' }}>
                 <div className="grid-cell grid-idx">{flagged ? '⚠ ' : ''}{index}</div>
                 {columns.map((column) => <div key={column.key} className="grid-cell" title={fmtCell(column.get(point))}>{fmtCell(column.get(point))}</div>)}
               </div>
-            )
-          })}
+              )
+            })}
+          </div>
         </div>
       </div>
     </div>

@@ -166,7 +166,18 @@ export default function App() {
   }, [])
   const clearPendingJump = useCallback(() => setPendingJump(null), [])
 
+  // Unsaved-changes guard. In a browser a cancelled `beforeunload` raises the
+  // native "Leave site?" prompt; in Electron it raises nothing and silently
+  // cancels the close, so the window button and the taskbar's "Close window"
+  // appear dead. The desktop build therefore hands the flag to the main
+  // process, which owns the confirmation as a real modal (see main.cjs), and
+  // only the web build keeps the listener.
   useEffect(() => {
+    const desktop = window.jointDomainCompiler
+    if (desktop?.setUnsavedChanges) {
+      desktop.setUnsavedChanges(projectDirty)
+      return
+    }
     if (!projectDirty) return
     const warnBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault()

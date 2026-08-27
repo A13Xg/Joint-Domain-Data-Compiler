@@ -11,6 +11,7 @@
 // single implementation shared by both the quick preview and the full
 // analyzer, instead of two divergent copies.
 import Papa from 'papaparse'
+import { parseRangeTimeToEpochMs } from '../format'
 
 /** Multi-row header BLOCK detection (csvAnalysis.analyzeRawRows) never looks
  *  past this many leading rows when sizing the header block. */
@@ -52,11 +53,20 @@ export function parseNumber(value: string | undefined): number | null {
 }
 
 /** Best-effort date/timestamp parse (calendar strings, epoch seconds/ms,
- *  Excel serial dates). Returns epoch ms, or null if nothing plausible. */
+ *  Excel serial dates, IRIG/range time). Returns epoch ms, or null if nothing
+ *  plausible. */
 export function parseDateLike(value: string): number | null {
   const direct = new Date(value)
   if (!Number.isNaN(direct.valueOf())) {
     return direct.valueOf()
+  }
+
+  // `DDD:HH:MM:SS.fff` and bare `HH:MM:SS.fff`. Date.parse rejects every
+  // colon-delimited form outright, so this only ever adds matches — a column of
+  // range time used to score zero here and never be typed as a datetime.
+  const rangeTime = parseRangeTimeToEpochMs(value)
+  if (rangeTime !== null) {
+    return rangeTime
   }
 
   const numeric = Number(value)

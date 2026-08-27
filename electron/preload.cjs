@@ -17,6 +17,7 @@ const IPC_CHANNELS = Object.freeze({
   reveal: 'kml-library:reveal',
   revealArchive: 'file-archive:reveal',
   saveDiagnostics: 'diagnostics:save',
+  setUnsavedChanges: 'window:set-unsaved-changes',
 })
 
 contextBridge.exposeInMainWorld('jointDomainCompiler', {
@@ -37,4 +38,8 @@ contextBridge.exposeInMainWorld('jointDomainCompiler', {
     save: (direction, name, bytes) => ipcRenderer.invoke(IPC_CHANNELS.archiveFile, direction, name, bytes),
     reveal: () => ipcRenderer.invoke(IPC_CHANNELS.revealArchive),
   },
+  // Fire-and-forget: the renderer reports dirtiness, the main process owns the
+  // close confirmation. See the `close` handler in main.cjs for why the
+  // renderer cannot do this itself with `beforeunload`.
+  setUnsavedChanges: (dirty) => ipcRenderer.send(IPC_CHANNELS.setUnsavedChanges, dirty === true),
 })

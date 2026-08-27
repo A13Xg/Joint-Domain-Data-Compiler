@@ -28,6 +28,7 @@ const TIME_FORMATS: Array<{ id: TimeFormat; label: string }> = [
   { id: 'epoch_milliseconds', label: 'Epoch milliseconds' },
   { id: 'epoch_microseconds', label: 'Epoch microseconds' },
   { id: 'excel_serial', label: 'Excel serial date' },
+  { id: 'irig_doy', label: 'IRIG / range time (DDD:HH:MM:SS)' },
 ]
 
 export function MappingPanel({ analysis, mapping, onChange, additionalHeaders, onToggleAdditionalHeaders, dataStartRow, onDataStartRowChange, onBuild, building }: Props) {

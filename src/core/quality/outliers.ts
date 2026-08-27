@@ -73,6 +73,29 @@ function robustScale(residuals: readonly number[], floor: number): number {
 }
 
 /**
+ * The smallest step a channel can actually resolve, estimated as the median gap
+ * between its consecutive distinct values. Returns 0 for a channel that is not
+ * quantized, which leaves the caller's own floor in charge.
+ *
+ * Altimeters quantize. A recorder reporting GPS altitude in 4 ft steps puts
+ * every sample on a 1.219 m grid, so across a short window most residuals are
+ * exactly zero, the median absolute deviation collapses to zero, and
+ * `robustScale` silently degenerates into the configured floor — turning a
+ * "3 sigma" test into a fixed 3 m bar that sits *inside* the sensor's own
+ * resolution, at 2.46 quantization steps. A residual smaller than one step is
+ * not evidence of anything, so the step is a lower bound on any honest scale.
+ * On a continuous channel the MAD is far above the step and this changes
+ * nothing.
+ */
+function quantizationStep(values: readonly number[]): number {
+  const distinct = Array.from(new Set(values.filter((value) => Number.isFinite(value)))).sort((left, right) => left - right)
+  if (distinct.length < 2) return 0
+  const gaps: number[] = []
+  for (let index = 1; index < distinct.length; index++) gaps.push(distinct[index]! - distinct[index - 1]!)
+  return median(gaps.sort((left, right) => left - right))
+}
+
+/**
  * Flags points that break their local trend in position, elevation, or ground speed.
  *
  * Each channel's residual is the point's departure from what its neighbours predict — for
@@ -142,7 +165,14 @@ export function detectOutliers(points: readonly TrackPoint[], config: OutlierCon
   const allowed = new Set<OutlierChannel>(config.channels ?? ALL_OUTLIER_CHANNELS)
   const defined = (values: readonly (number | undefined)[]) => values.filter((value): value is number => value !== undefined)
   const positionScale = robustScale(positionResiduals, config.minPositionScaleMeters)
-  const elevationScale = robustScale(defined(elevationResiduals), config.minElevationScaleMeters)
+  // Elevation is the one channel that arrives pre-quantized from the instrument,
+  // so its floor comes from the data rather than from the config alone. Position
+  // (full-precision decimal degrees) and speed (derived) have no such step.
+  const elevationValues = points.map((point) => point.ele).filter((value): value is number => value !== undefined)
+  const elevationScale = Math.max(
+    robustScale(defined(elevationResiduals), config.minElevationScaleMeters),
+    quantizationStep(elevationValues),
+  )
   const speedScale = robustScale(defined(speedResiduals), config.minSpeedScaleMps)
 
   for (let slot = 0; slot < eligible.length; slot++) {

@@ -3,6 +3,55 @@
 Notable user-facing and operational changes are recorded here. This project follows Semantic
 Versioning; release tags use the `vX.Y.Z` form.
 
+## Unreleased
+
+### Added
+
+- IRIG / range-time parsing (`DDD:HH:MM:SS.ffffff`, and bare `HH:MM:SS.ffffff`). Flight-test
+  recorders stamp day-of-year range time, which `Date.parse` rejects outright, so every row of
+  such a file previously imported with no timestamp at all and nothing downstream that needs
+  time — speed, the movement window, the time-order check, GPX export — could run. The format is
+  now recognised by auto-detect, offered explicitly in the mapping panel, and understood by the
+  column analyser, so the column is typed as a datetime and auto-maps to the timestamp field.
+- Range time carries no year. Imports state the assumption in a warning naming the year the
+  dates were anchored to, rather than letting a wrong absolute date reach an export silently.
+  Relative timing — what every analytic actually consumes — is exact either way.
+
+### Fixed
+
+- **The application closes again.** With unsaved changes present, the window button, the
+  taskbar's "Close window", and Alt+F4 all did nothing. A cancelled `beforeunload` raises the
+  browser's "Leave site?" prompt on the web but raises *nothing* in Electron — it just cancels
+  the close — so the renderer's unsaved-changes guard silently made the window unclosable. The
+  desktop build now hands the dirty flag to the main process, which owns the confirmation as a
+  real native modal; the web build keeps the listener, where it works as intended.
+- The data grid no longer runs away under the cursor. Every row published its index on
+  mouseenter and the grid re-centred on it, which scrolled new rows under a stationary pointer,
+  which fired the next mouseenter — a feedback loop that took hold as soon as the pointer neared
+  the top or bottom edge. Hover updates this grid raises itself are no longer followed, leaving
+  cross-panel hover (map, charts, 3D scene) and arrow-key navigation working, and a row already
+  on screen is no longer scrolled at all.
+- Column headers are no longer cut off on the right. The header sat outside the scrolling
+  viewport, so a grid wider than the panel scrolled its rows while the labels stayed clipped.
+  Header and rows now share a width and scroll horizontally together.
+- Outlier detection no longer reads altimeter quantization as signal. Altitude arrives on a
+  fixed grid (4 ft, 1.219 m, in the file this was found with), so over a short window most
+  residuals are exactly zero, the median absolute deviation collapses to zero, and the robust
+  z-score silently degenerates into whichever floor the config supplies — making "3σ" a fixed
+  3 m bar, *inside* the sensor's own resolution at 2.46 quantization steps. The elevation scale
+  is now floored at the channel's detected step as well. Continuous channels are unaffected,
+  where the deviation is far above the step and already wins.
+
+### Known limitation
+
+- Re-running outlier removal keeps finding more points, and this is inherent to the check rather
+  than a threshold that needs tuning: a point is scored against its index-space neighbours, so
+  removing the sharpest samples makes their neighbours adjacent and concentrates the same real
+  motion into fewer samples, producing a fresh crop. Measured on a 10 Hz fighter sortie it
+  reaches a nonzero steady state at every threshold from 3σ to 15σ, with the scale both frozen
+  and recomputed. On data with genuine high-rate dynamics the flags are real manoeuvring, not
+  sensor error; raising `scoreThreshold` is the lever, not repeated removal.
+
 ## 0.1.12 - 2026-08-27
 
 ### Added

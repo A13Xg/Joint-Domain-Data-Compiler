@@ -11,6 +11,7 @@ import {
   type DetectedColumn,
   type KnownField,
 } from '../types/converter'
+import { parseRangeTimeToEpochMs } from './format'
 import {
   detectDataStartRow,
   inferHeaderRowFromRows,
@@ -64,6 +65,10 @@ function detectPatterns(values: string[], header: string): string[] {
 
   if (values.some((value) => /^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}:\d{2})?/.test(value))) {
     patterns.add('value:iso_datetime_candidate')
+  }
+
+  if (values.some((value) => /^(?:\d{1,3}:)?\d{1,2}:\d{1,2}:\d{1,2}(?:[.,]\d+)?$/.test(value))) {
+    patterns.add('value:range_time_candidate')
   }
 
   if (values.some((value) => /^(true|false|yes|no|y|n|0|1)$/i.test(value))) {
@@ -148,7 +153,11 @@ function inferEstimatedType(
     return { type: 'boolean', confidence: stats.booleanRatio }
   }
 
-  if (stats.datetimeRatio >= 0.7 || patterns.includes('value:iso_datetime_candidate')) {
+  if (
+    stats.datetimeRatio >= 0.7
+    || patterns.includes('value:iso_datetime_candidate')
+    || patterns.includes('value:range_time_candidate')
+  ) {
     return { type: 'datetime', confidence: Math.max(stats.datetimeRatio, 0.7) }
   }
 
@@ -220,6 +229,13 @@ function scoreByValues(values: string[], field: KnownField): number {
     const parseable = nonEmpty.filter((value) => {
       const asNumber = Number(value)
       if (Number.isFinite(asNumber)) {
+        return true
+      }
+      // Colon-delimited range time is neither numeric nor Date.parse-able, so
+      // without this an IRIG-stamped column scored 0 here and carried only its
+      // header match (0.455) — under the 0.8 a candidate needs to set the
+      // column's type, which is why TIME never auto-mapped to the timestamp.
+      if (parseRangeTimeToEpochMs(value) !== null) {
         return true
       }
       return !Number.isNaN(new Date(value).valueOf())

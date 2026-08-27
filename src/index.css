@@ -406,11 +406,11 @@ code { font-family: var(--mono); background: var(--bg-3); padding: 1px 5px; bord
 .data-table-toolbar { display: flex; align-items: center; gap: 12px; }
 .data-search { width: 240px; }
 .data-meta { color: var(--text-faint); font-size: 12px; font-family: var(--mono); }
-.grid-header { display: grid; background: var(--bg-1); border: 1px solid var(--border); border-radius: 6px 6px 0 0; }
+.grid-header { display: grid; background: var(--bg-1); position: sticky; top: 0; z-index: 2; border-bottom: 1px solid var(--border); }
 .grid-th { background: transparent; border: none; border-right: 1px solid var(--border); text-align: left; color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; padding: 7px 8px; border-radius: 0; display: flex; align-items: center; gap: 4px; }
 .grid-th:hover { background: var(--bg-3); }
 .sort-arrow { font-size: 8px; color: var(--accent); }
-.grid-viewport { overflow: auto; border: 1px solid var(--border); border-top: none; border-radius: 0 0 6px 6px; background: var(--bg-1); }
+.grid-viewport { overflow: auto; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-1); }
 .grid-row { display: grid; border-bottom: 1px solid var(--bg-3); width: 100%; }
 .grid-row:nth-child(even) { background: rgba(255, 255, 255, 0.012); }
 .grid-row:hover { background: rgba(234, 79, 47, 0.06); }

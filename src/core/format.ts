@@ -12,6 +12,7 @@ export type TimeFormat =
   | 'epoch_milliseconds'
   | 'epoch_microseconds'
   | 'excel_serial'
+  | 'irig_doy'
 
 export type ElevationUnit = 'meters' | 'feet'
 
@@ -86,6 +87,44 @@ export function parseCoordinate(raw: string | number | undefined | null): number
   return direct
 }
 
+/**
+ * IRIG / range time: `DDD:HH:MM:SS[.fff]` (day-of-year) or a bare `HH:MM:SS[.fff]`.
+ *
+ * Flight-test recorders stamp range time and leave the date to the file's own
+ * metadata, so neither form carries a year. We anchor to the UTC year of
+ * `anchorMs` — the current year in normal use — which makes inter-sample deltas,
+ * the only quantity TSPI analysis derives from these, exact. The absolute date
+ * is therefore an assumption; callers surface it rather than letting a silently
+ * wrong year reach an export. A bare clock time additionally anchors to the
+ * anchor's own day.
+ *
+ * `anchorMs` is a parameter rather than a `Date.now()` call inside the function
+ * so the result is a pure function of its inputs and can be tested exactly.
+ */
+export function parseRangeTimeToEpochMs(value: string, anchorMs: number = Date.now()): number | null {
+  const match = /^(?:(\d{1,3}):)?(\d{1,2}):(\d{1,2}):(\d{1,2}(?:[.,]\d+)?)$/.exec(value.trim())
+  if (!match) return null
+
+  const dayOfYear = match[1] === undefined ? null : Number(match[1])
+  const hours = Number(match[2])
+  const minutes = Number(match[3])
+  const seconds = Number((match[4] as string).replace(',', '.'))
+
+  // Reject impossible field values rather than silently folding them into the
+  // next unit: "99:99:99" is a corrupt cell, not 4 days and change.
+  if (dayOfYear !== null && (dayOfYear < 1 || dayOfYear > 366)) return null
+  if (hours > 23 || minutes > 59 || seconds >= 61) return null
+
+  const anchor = new Date(anchorMs)
+  if (Number.isNaN(anchor.valueOf())) return null
+
+  const dayStart = dayOfYear !== null
+    ? Date.UTC(anchor.getUTCFullYear(), 0, 1) + (dayOfYear - 1) * MS_PER_DAY
+    : Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), anchor.getUTCDate())
+
+  return dayStart + hours * 3_600_000 + minutes * 60_000 + Math.round(seconds * 1000)
+}
+
 /** Parse a timestamp into epoch milliseconds (UTC) using an explicit format. */
 export function parseTimeToEpochMs(
   raw: string | number | undefined | null,
@@ -101,6 +140,10 @@ export function parseTimeToEpochMs(
 
   if (format === 'iso') {
     return parseIso(value)
+  }
+
+  if (format === 'irig_doy') {
+    return parseRangeTimeToEpochMs(value)
   }
 
   const numeric = Number(value.replace(',', '.'))
@@ -145,6 +188,13 @@ export function autoDetectEpochMs(value: string): number | null {
       return (numeric - EXCEL_EPOCH_OFFSET_DAYS) * MS_PER_DAY // Excel serial
     }
   }
+
+  // Colon-delimited range time is tried before ISO because Date.parse rejects it
+  // outright: "160:16:33:14.572000" is the shape that silently produced a null
+  // timestamp for every row of an IRIG-stamped file.
+  const rangeTime = parseRangeTimeToEpochMs(value)
+  if (rangeTime !== null) return rangeTime
+
   return parseIso(value)
 }
 

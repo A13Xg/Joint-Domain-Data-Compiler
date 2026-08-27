@@ -23,6 +23,17 @@ const {
 const isDev = !app.isPackaged
 const packagedRendererUrl = pathToFileURL(path.join(__dirname, '../dist/index.html')).href
 
+// Mirrors the renderer's `projectDirty`, pushed over IPC on every change.
+//
+// The renderer cannot guard the close itself. A `beforeunload` listener that
+// calls preventDefault() does NOT raise a confirmation in Electron the way it
+// does in a browser -- Electron simply cancels the close, silently. That is
+// exactly what shipped: with a dirty project loaded, the window button, the
+// taskbar "Close window" item, and Alt+F4 all did nothing at all, with no
+// dialog to explain why. The prompt has to live here, on the window's own
+// `close` event, where a native modal can actually be shown.
+let hasUnsavedChanges = false
+
 function createWindow() {
   const window = new BrowserWindow({
     width: 1480,
@@ -65,6 +76,28 @@ function createWindow() {
     reportFatal(isDev ? `Could not load the dev server at ${DEV_ORIGIN}` : 'Could not load the packaged renderer', error)
   })
   if (isDev) window.webContents.openDevTools({ mode: 'detach' })
+
+  // `forceClose` breaks the recursion: the second close() must pass straight
+  // through this handler rather than prompt again.
+  let forceClose = false
+  window.on('close', (event) => {
+    if (forceClose || !hasUnsavedChanges) return
+    event.preventDefault()
+    const choice = dialog.showMessageBoxSync(window, {
+      type: 'warning',
+      buttons: ['Close without saving', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+      title: 'Unsaved changes',
+      message: 'This project has unsaved changes.',
+      detail: 'Closing now discards every change made since the last save.',
+    })
+    if (choice === 0) {
+      forceClose = true
+      window.close()
+    }
+  })
 
   window.webContents.on('render-process-gone', (_event, details) => {
     reportFatal('The renderer process stopped', new Error(`${details.reason}${details.exitCode ? ` (exit ${details.exitCode})` : ''}`))
@@ -346,6 +379,12 @@ function registerFileArchiveIpc() {
   })
 }
 
+function registerWindowStateIpc() {
+  ipcMain.on(IPC_CHANNELS.setUnsavedChanges, (_event, dirty) => {
+    hasUnsavedChanges = dirty === true
+  })
+}
+
 function registerDiagnosticIpc() {
   ipcMain.handle(IPC_CHANNELS.saveDiagnostics, async (_event, text) => {
     const content = diagnosticBundleText(text)
@@ -380,6 +419,7 @@ app.whenReady().then(async () => {
   registerKmlLibraryIpc()
   registerFileArchiveIpc()
   registerDiagnosticIpc()
+  registerWindowStateIpc()
 
   // Fetch KML overlays in background (non-blocking startup)
   // This ensures they're cached locally before the user opens the map
