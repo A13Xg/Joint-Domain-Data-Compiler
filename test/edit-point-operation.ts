@@ -1,0 +1,79 @@
+import type { Dataset } from '../src/core/model.ts'
+import { buildRecipe, executeOperation, replayRecipe } from '../src/core/recipes/executor.ts'
+import { fingerprintDataset } from '../src/core/recipes/hash.ts'
+import { clearOperationsForTests, registerOperation } from '../src/core/recipes/registry.ts'
+import { editPointOperation } from '../src/core/operations/edit-point.ts'
+
+let failures = 0
+function check(name: string, condition: boolean): void {
+  if (!condition) failures++
+  console.log(`  [${condition ? 'PASS' : 'FAIL'}] ${name}`)
+}
+
+const source: Dataset = {
+  id: 'edit-point-source',
+  name: 'edit-point-source',
+  sourceFormat: 'csv',
+  points: [
+    { lat: 1, lon: 2, ele: 100, time: 1000, ext: { speed_mps: 5, flagged: false, tag: 'a' } },
+    { lat: 1.1, lon: 2.1, ele: 120, time: 2000 },
+  ],
+  warnings: [],
+  channels: ['speed_mps', 'flagged', 'tag'],
+  createdAt: 0,
+}
+
+clearOperationsForTests()
+registerOperation(editPointOperation)
+
+// --- scalar field edit ------------------------------------------------------
+const scalarEdit = executeOperation(source, 'edit-point', { index: 0, fields: { lat: 9.5, ele: 250 } }, { indexRange: { start: 0, end: 0 } })
+check('Scalar edit updates the targeted field', scalarEdit.dataset.points[0]?.lat === 9.5)
+check('Scalar edit updates a second targeted field in the same call', scalarEdit.dataset.points[0]?.ele === 250)
+check('Scalar edit leaves untouched scalar fields alone', scalarEdit.dataset.points[0]?.lon === 2)
+check('Scalar edit leaves other points untouched', scalarEdit.dataset.points[1]?.lat === 1.1)
+check('Scalar edit does not mutate the source dataset', source.points[0]?.lat === 1)
+check('Scalar edit preserves point count', scalarEdit.dataset.points.length === source.points.length)
+
+// --- ext patch merges without dropping other channels -----------------------
+const extEdit = executeOperation(source, 'edit-point', { index: 0, fields: { ext: { speed_mps: 11 } } })
+check('ext patch updates the targeted channel', extEdit.dataset.points[0]?.ext?.speed_mps === 11)
+check('ext patch leaves sibling channels intact', extEdit.dataset.points[0]?.ext?.tag === 'a')
+check('ext patch leaves a boolean sibling channel intact', extEdit.dataset.points[0]?.ext?.flagged === false)
+check('ext patch does not mutate the source point’s ext object', source.points[0]?.ext?.speed_mps === 5)
+
+// --- out-of-range index is rejected -----------------------------------------
+let outOfRangeRejected = false
+try {
+  executeOperation(source, 'edit-point', { index: source.points.length, fields: { lat: 0 } })
+} catch {
+  outOfRangeRejected = true
+}
+check('Out-of-range index is rejected', outOfRangeRejected)
+
+let negativeIndexRejected = false
+try {
+  executeOperation(source, 'edit-point', { index: -1, fields: { lat: 0 } })
+} catch {
+  negativeIndexRejected = true
+}
+check('Negative index is rejected', negativeIndexRejected)
+
+let emptyFieldsRejected = false
+try {
+  executeOperation(source, 'edit-point', { index: 0, fields: {} })
+} catch {
+  emptyFieldsRejected = true
+}
+check('An edit with no field changes is rejected', emptyFieldsRejected)
+
+// --- replay reproduces the same output --------------------------------------
+const recipe = buildRecipe('Edit point test', source, [scalarEdit.record])
+const replayed = replayRecipe(source, recipe)
+check('Recipe replay reproduces the same dataset state', fingerprintDataset(replayed) === fingerprintDataset(scalarEdit.dataset))
+check('Operation record captures the input hash', scalarEdit.record.inputDatasetHash === fingerprintDataset(source))
+check('Operation record captures the output hash', scalarEdit.record.outputDatasetHash === fingerprintDataset(scalarEdit.dataset))
+check('Operation record carries the point-index scope', scalarEdit.record.scope?.indexRange?.start === 0 && scalarEdit.record.scope.indexRange.end === 0)
+
+console.log(`\n${failures === 0 ? 'ALL EDIT POINT OPERATION CHECKS PASSED' : `${failures} EDIT POINT OPERATION CHECK(S) FAILED`}`)
+process.exit(failures === 0 ? 0 : 1)

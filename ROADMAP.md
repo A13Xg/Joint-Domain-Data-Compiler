@@ -20,6 +20,102 @@ This document outlines the planned development direction for Joint Domain Data C
 - [ ] **Chart image export** — High-quality PNG/SVG export with annotations preserved
 - [ ] **3D Performance validation** — Benchmark multi-track rendering and optimize geometry construction
 - [ ] **Playback controls refinement** — Timestamp-accurate scrubbing with linked cursor in all views
+- [x] **Window-aware downsampling** — *Enabling change; build first.* `TimeSeriesChart` builds its
+  series from `[points, selected, effectiveX]` — the visible domain is not a dependency, so the
+  whole dataset is reduced to `MAX_RENDERED_SAMPLES` (1,500) once and zooming only remaps those
+  same samples onto a narrower range. Zooming never recovers fidelity, so nothing below can work.
+  Filter to the visible domain *before* `minMaxDownsample`. Note that `xDomain` is currently
+  derived *from* the series, which makes the naive version circular: the full-extent domain must
+  be computed once from the raw data, with the windowed series derived from the zoom domain.
+  Folds `MAX_RENDERED_SAMPLES` into the *Configurable downsampling* setting above — one budget,
+  two consumers.
+- [ ] **Interactive editable graph view** — Show the smooth line at any zoom; once the visible
+  window holds fewer rows than the point budget, render the individual points and make them
+  selectable. Drag-select an area that looks wrong to drill down, repeat until the points appear,
+  then correct them there. Today the chart is read-only: it can zoom and it can *report* a
+  selection, but fixing a bad sample means leaving for the Transform tab and naming the point by
+  index. Analysts find bad points by looking at them, so the fix belongs where the eye already is.
+  Extends the existing chart rather than adding a panel, so multi-pane layouts and image export
+  inherit it. Points are selectable **only when the visible window is fully rendered**, which makes
+  a selection exact by construction — there are no undrawn rows hiding between the ones you see.
+- [x] **Point inspector** — Single-point value editing, and the increment that can ship first: it
+  works against the existing single-point selection and needs none of the work above. Fields are
+  locked by default; an explicit pencil unlocks them, a warning box confirms intent (first edit per
+  dataset, not every edit — the pencil-to-checkmark gesture carries intent thereafter), and a
+  checkmark in the pencil's place applies the change. All fields are editable, derived channels
+  included.
+- [ ] **Set-based selection model** — Group select yields an arbitrary, possibly non-contiguous set
+  of indices, used for **deletion only**. Both `PointSelectionSnapshot` and `WorkspaceSelection`
+  currently carry one `pointIndex` plus one *contiguous* `indexRange`, so this is a shape change to
+  persisted workspace state (`restorePointSelection` takes exactly those two), and the selection
+  store is a module-level singleton every panel reads — map, 3D, table and charts move together.
+- [ ] **Selection-scoped delete operation** — `OperationScope` supports `indexRange` and rejects
+  `timeRange`; there is no set-of-indices scope, and `runPointPreserving` is by definition
+  count-preserving, so delete needs the point-removing path. `operations/drop-outliers.ts` is the
+  template: it already narrows removal by scope while detecting over the whole track. Scoped to
+  removing a few strays — points that drifted off course or plotted far out. Bulk removal stays in
+  the Transform tab and is unchanged. Delete gets the same unlock-then-confirm gesture as editing,
+  being the more destructive of the two.
+- [ ] **Manual-edit provenance** — Flag hand-edited points via the existing
+  `PointProvenance.qualityFlags` (no schema change). Carried by the project save, GPB, and the HTML
+  analysis report, which already reads provenance; silently omitted by GPX and EAG TSPI, which have
+  no field for it. A hand-modified value that leaves no trace is the wrong default for range
+  instrumentation.
+- [ ] **Stale derived-channel badge** — A manual edit is truth data and is never silently
+  recomputed away, so editing lat/lon leaves `speed_mps`, `distance_m` and friends holding their
+  prior values until the user re-runs the derivation. Flag those channels as stale rather than
+  recomputing, so a chart of a derived channel does not look as though the edit did nothing.
+- [ ] **Y-axis zoom and pan** — `visualization/charts/zoom.ts` is pure X-domain math (`zoomDomain`,
+  `isFullyZoomedOut`) with no pan. Independent of the editing work now that a move is a typed value
+  rather than a drag; the value is in reading a channel whose variation is small against its full
+  extent. Lower priority than the items above.
+
+#### Settled decisions — editable graph view
+- **A "move" is a typed value, not a drag.** Select a point, unlock, edit named fields. This
+  removes the timestamp-vs-value-vs-position ambiguity entirely.
+- **Group select deletes; it never edits.** Value manipulation requires a single-point selection.
+- **A manual edit is truth data.** Derived channels are *not* auto-recomputed; a hand-edited point
+  stays as entered until some later action modifies it. Users own the order of operations, and the
+  stale badge exists to support that rather than replace it.
+- **Time edits are accepted with a warning; nothing is re-sorted.** There is no practical case for
+  an automatic resort, so the capability is skipped entirely: an edited timestamp stays where the
+  user put it, and the existing time-order check reports the break like any other. Consistent with
+  a manual edit being truth data — the user owns the order of operations. This also means an *edit*
+  never reshuffles indices; only deletion does.
+- **Drag zooms; the wheel zooms too.** Releasing a drag auto-zooms to the dragged span, and the
+  cursor-anchored wheel zoom keeps working at every level, so zoom is never trapped by whatever
+  drag currently means. The wheel behaviour already exists (`onWheelZoom`); the change is that drag
+  auto-zooms on release instead of only parking a range chip.
+- **Rendering already preserves extrema.** `minMaxDownsample` keeps the min and max of every
+  bucket, so a one-sample spike survives to full zoom-out. Seeing that a point is off, then zooming
+  to it, works with the existing renderer — the gap was window-awareness, not the envelope.
+- **Deterministic replay is deferred; recording is not.** Each edit and delete is recorded as an
+  explicit operation, because an edit invisible to the history panel and the analysis report is the
+  wrong default. Making the operation history recipe-safe stays deferred.
+
+#### Open questions — editable graph view
+- **What drags a marquee, and what pans?** Drag is now zoom, which leaves group-select-for-delete
+  without a gesture. Proposed: drag means *zoom* while the window is above the point budget and
+  *marquee-select* once individual points are rendered — the two never apply at the same zoom
+  level, it matches the drill-down-then-edit workflow, and the wheel still zooms throughout, so
+  nothing is lost. Panning still has no gesture at all; middle-drag or space-drag are the
+  candidates. Both to be confirmed.
+- **Index identity, now narrowed to deletion.** `TrackPoint` has no stable id; points are
+  identified by array position. Dropping the auto-resort removes the worst case — an edit no longer
+  moves any index — so only deletion shifts the rows after it, in the one direction, by a known
+  count. A recorded "set field at index N" can still go stale if a delete lands before it. Adding a
+  real `id` is the thorough fix and is expensive (every parser, every exporter, the GPB binary
+  format); the cheap mitigation is to record each edit alongside a fingerprint of the point's prior
+  values, so a stale index is detected and refused rather than silently written to the wrong row.
+
+#### Build order
+1. Window-aware downsampling — nothing else functions without it.
+2. Point rendering and hit-testing below the budget.
+3. Point inspector — independent of 1 and 2; ship early.
+4. Set-based selection model.
+5. Selection-scoped delete operation.
+6. Manual-edit provenance and the stale-channel badge.
+7. Y-axis zoom and pan.
 
 ### Comparison Module
 - [x] **Drift estimation** — Clock-skew detection shipped in 0.1.1 (`estimateClockDrift`, surfaced in
@@ -121,6 +217,16 @@ This document outlines the planned development direction for Joint Domain Data C
 - **Constraint:** Operation history not yet recipe-safe for deterministic replay
   - **Timeline:** Phase 1 follow-up
   - **Impact:** Undo/redo works via snapshots; export history visible in reports
+
+---
+
+## Generic Bug Fixes
+
+A batch of smaller defects to be fixed together, independent of the feature phases above.
+
+_Items to be outlined — placeholder, not an abandoned section._
+
+- [ ] _(to be filled in)_
 
 ---
 

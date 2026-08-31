@@ -3,6 +3,7 @@ import { runDerivation } from '../analytics/registry'
 import { offsetElevation, shiftTime, withPoints } from '../transforms'
 import { distanceResampleMonotoneOperation } from './distance-resample'
 import { dropOutliersOperation } from './drop-outliers'
+import { editPointOperation } from './edit-point'
 import { fillGapsOperation } from './fill-gaps'
 import { elevationFilterOperation, smoothOperation } from './filters'
 import { reducePointsOperation } from './reduce'
@@ -82,6 +83,7 @@ const BUILTIN_OPERATIONS: OperationDefinition<never>[] = [
   clipTimeRangeOperation,
   // Outliers & smoothing
   dropOutliersOperation,
+  editPointOperation,
   elevationFilterOperation,
   smoothOperation,
   // Density & precision

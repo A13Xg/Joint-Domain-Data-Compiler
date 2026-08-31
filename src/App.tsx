@@ -18,6 +18,8 @@ import { MapView, type OtherTrack } from './ui/MapView'
 import { SourcesPanel } from './ui/SourcesPanel'
 import { restoreWorkspaceDisplay, syncWorkspaceDisplay, type WorkspaceDisplay } from './state/workspaceDisplay'
 import { TimeSeriesChart } from './ui/TimeSeriesChart'
+import { PointInspectorPanel } from './ui/PointInspectorPanel'
+import type { EditPointFields } from './core/operations/edit-point'
 import { DataTable } from './ui/DataTable'
 import { PointVisualizerPanel } from './ui/PointVisualizerPanel'
 import { StatsPanel } from './ui/StatsPanel'
@@ -705,6 +707,21 @@ export default function App() {
     }
   }, [active, flashToast])
 
+  /**
+   * The Point Inspector's commit. Runs the registered edit-point operation so
+   * the change lands in history as a replayable record like any other
+   * transform, then reuses applyTransform exactly as acceptHealthRepair does.
+   */
+  const editPoint = useCallback((index: number, fields: EditPointFields) => {
+    if (!active) return
+    try {
+      const execution = executeOperation(active, 'edit-point', { index, fields }, { indexRange: { start: index, end: index } })
+      applyTransform(execution.dataset.points, execution.record.summary, true, execution.record)
+    } catch (error) {
+      logger.error('transform', `Edit point failed: ${errorMessage(error)}`)
+    }
+  }, [active, applyTransform])
+
   const acceptHealthRepair = useCallback(() => {
     const pending = pendingHealthRepair
     setPendingHealthRepair(null)
@@ -823,7 +840,7 @@ export default function App() {
             {tab === 'mapping' && pendingCsv && <MappingPanel analysis={pendingCsv.analysis} mapping={pendingCsv.mapping} onChange={(mapping) => setPendingCsv((current) => current ? { ...current, mapping } : current)} additionalHeaders={pendingCsv.additionalHeaders} onToggleAdditionalHeaders={(additionalHeaders) => setPendingCsv((current) => current ? { ...current, additionalHeaders } : current)} dataStartRow={pendingCsv.dataStartRow} onDataStartRowChange={(dataStartRow) => setPendingCsv((current) => current ? { ...current, dataStartRow } : current)} onBuild={onBuildCsv} building={building} />}
             {tab === 'overview' && active && <div className="overview-panels"><TrackHealthPanel dataset={active} onDrillDown={handleHealthDrillDown} onDropOutliers={dropHealthOutliers} /><TrackMetricsPanel dataset={active} /><StatsPanel dataset={active} bookmarks={bookmarks} onBookmarksChange={(next) => { setBookmarks(next); setProjectDirty(true) }} /></div>}
             {tab === 'map' && <MapView points={active?.points ?? []} channels={active?.channels ?? []} workspace={workspace.map} onWorkspaceChange={(map) => { setWorkspace((current) => ({ ...current, map })); setProjectDirty(true) }} otherTracks={otherTracks} overlayState={workspace.mapOverlays} onOverlayStateChange={onMapOverlayStateChange} onImportOverlayAsTrack={onImportOverlayAsTrack} browserOverlayFiles={browserOverlayFiles} onBrowserOverlayFile={onBrowserOverlayFile} jumpRequested={pendingJump === 'map'} onJumpHandled={clearPendingJump} />}
-            {tab === 'charts' && active && <TimeSeriesChart points={active.points} channels={active.channels} jumpRequested={pendingJump === 'charts'} onJumpHandled={clearPendingJump} />}
+            {tab === 'charts' && active && <div className="charts-workspace"><TimeSeriesChart points={active.points} channels={active.channels} jumpRequested={pendingJump === 'charts'} onJumpHandled={clearPendingJump} /><PointInspectorPanel dataset={active} onEditPoint={editPoint} /></div>}
             {tab === 'table' && active && <DataTable points={active.points} channels={active.channels} />}
             {tab === 'points' && active && <PointVisualizerPanel dataset={active} />}
             {tab === 'compare' && <ComparisonPanel datasets={datasets} activeId={activeId} workspace={workspace.comparison} onWorkspaceChange={(comparison) => { setWorkspace((current) => ({ ...current, comparison })); setProjectDirty(true) }} onSelectReferenceSample={(datasetId, pointIndex) => { const reference = datasets.find((dataset) => dataset.id === datasetId); if (!reference) return; restorePointSelection(reference.points, pointIndex, null); setActiveId(datasetId) }} />}

@@ -217,6 +217,10 @@ const VALID_OPERATION_PARAMS: Record<string, unknown[]> = {
     { gapThresholdMs: 2000, sampleIntervalMs: 1000, contextPoints: 4, profile: 'aircraft' },
     { gapThresholdMs: 60_000, sampleIntervalMs: 60_000, contextPoints: 2, profile: 'unconstrained' },
   ],
+  'edit-point': [
+    { index: 0, fields: { lat: 45.1, lon: -122.4 } },
+    { index: 5, fields: { ele: 120, time: 1_700_000_000_000, name: 'Waypoint', desc: 'note', ext: { speed_mps: 12.5, flagged: true, tag: 'x' } } },
+  ],
 }
 
 // Hostile values that are, on inspection, legitimately valid for a given
@@ -241,6 +245,7 @@ const TOLERATED_BY_OPERATION: Record<string, string[]> = {
   'reduce-points': [],
   'round-precision': [],
   'fill-gaps': [],
+  'edit-point': [],
 }
 
 const operations = [...listOperations()]
