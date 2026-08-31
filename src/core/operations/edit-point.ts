@@ -38,6 +38,13 @@ export const editPointOperation: OperationDefinition<EditPointParams> = {
       // Patched, not replaced: an edit that only touches lat/lon must not
       // silently drop every other derived/passthrough channel on the point.
       if (ext) next.ext = { ...next.ext, ...ext }
+      // A hand-edited value that leaves no trace is the wrong default for range
+      // instrumentation, so every edit is flagged in provenance regardless of
+      // which fields changed. Carried by project save, GPB, and the HTML report;
+      // silently dropped by GPX/EAG TSPI exports, which have no field for it.
+      const flags = new Set(next.provenance?.qualityFlags ?? [])
+      flags.add('manual_edit')
+      next.provenance = { ...next.provenance, qualityFlags: [...flags] }
       return next
     })
     return { dataset: withPoints(dataset, points), summary: `Edited point #${index}` }

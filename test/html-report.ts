@@ -93,7 +93,7 @@ check('Comparison/fusion/overlay sections default to Not included', (() => {
     && notIncludedBlock.includes('Map overlay inventory')
 })())
 check('Comparison/fusion/overlay sections are not rendered by default', !scopeDefaultHtml.includes('Cross-dataset comparison</h2>') && !scopeDefaultHtml.includes('Fusion decisions</h2>') && !scopeDefaultHtml.includes('Map overlay inventory</h2>'))
-check('Notional disclosure section renders by default', scopeDefaultHtml.includes('Notional / derived-data disclosure</h2>'))
+check('Data quality disclosure section renders by default', scopeDefaultHtml.includes('Data quality disclosure</h2>'))
 
 // --- Task 3.1: new option-gated section builders ---------------------------
 
@@ -160,7 +160,26 @@ const notionalDisabledHtml = buildHtmlAnalysisReport({
   title: 'Notional disabled', generatedAt: 2_000, applicationVersion: '0.1.0', datasets: [notionalDataset], bookmarks: [], operationRecords: {},
   options: { includeNotionalDisclosure: false },
 })
-check('Notional disclosure section can be disabled', !notionalDisabledHtml.includes('Notional / derived-data disclosure</h2>'))
+check('Data quality disclosure section can be disabled', !notionalDisabledHtml.includes('Data quality disclosure</h2>'))
+
+const editedDataset: Dataset = {
+  ...dataset,
+  id: 'dataset-edited',
+  points: [
+    ...dataset.points,
+    { lat: 40.0007, lon: -105, time: 6_000, provenance: { qualityFlags: ['manual_edit'] } },
+  ],
+}
+const editedHtml = buildHtmlAnalysisReport({
+  title: 'Edited', generatedAt: 2_000, applicationVersion: '0.1.0', datasets: [editedDataset], bookmarks: [], operationRecords: {},
+})
+check('Data quality disclosure reports manually edited point counts when present', editedHtml.includes('1 manually edited point'))
+check('Data quality disclosure lists the manually edited count per dataset', editedHtml.includes('1 manually edited, of 3 point(s)'))
+
+const noEditedHtml = buildHtmlAnalysisReport({
+  title: 'No edits', generatedAt: 2_000, applicationVersion: '0.1.0', datasets: [dataset], bookmarks: [], operationRecords: {},
+})
+check('Data quality disclosure states none were manually edited otherwise', noEditedHtml.includes('No manually edited points were present'))
 
 const sourceMetadataDisabledHtml = buildHtmlAnalysisReport({
   title: 'No source metadata', generatedAt: 2_000, applicationVersion: '0.1.0', datasets: [dataset], bookmarks: [], operationRecords: {},

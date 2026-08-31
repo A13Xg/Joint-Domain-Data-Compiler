@@ -1,4 +1,4 @@
-import type { Dataset } from '../model'
+import type { Dataset, TrackPoint } from '../model'
 import type { OperationRecord } from '../recipes/model'
 import type { ProjectBookmark } from '../../persistence/project/manifest'
 import type { FusionReport } from '../fusion/report'
@@ -278,17 +278,30 @@ ${rows}
 </tbody></table>`)
 }
 
+function isNotional(point: TrackPoint): boolean {
+  return point.ext?.notional === true || point.provenance?.qualityFlags?.includes('notional') === true
+}
+
+function isManuallyEdited(point: TrackPoint): boolean {
+  return point.provenance?.qualityFlags?.includes('manual_edit') === true
+}
+
 function buildNotionalDisclosureSection(options: ReportOptions, datasets: readonly Dataset[]): string {
   if (!options.includeNotionalDisclosure) return ''
   const perDataset = datasets.map((dataset) => {
-    const notionalCount = dataset.points.filter((point) => point.ext?.notional === true || point.provenance?.qualityFlags?.includes('notional')).length
-    return `${dataset.name}: ${notionalCount.toLocaleString('en-US')} of ${dataset.points.length.toLocaleString('en-US')} point(s)`
+    const notionalCount = dataset.points.filter(isNotional).length
+    const editedCount = dataset.points.filter(isManuallyEdited).length
+    return `${dataset.name}: ${notionalCount.toLocaleString('en-US')} notional/derived, ${editedCount.toLocaleString('en-US')} manually edited, of ${dataset.points.length.toLocaleString('en-US')} point(s)`
   })
-  const totalNotional = datasets.reduce((sum, dataset) => sum + dataset.points.filter((point) => point.ext?.notional === true || point.provenance?.qualityFlags?.includes('notional')).length, 0)
-  const notice = totalNotional > 0
+  const totalNotional = datasets.reduce((sum, dataset) => sum + dataset.points.filter(isNotional).length, 0)
+  const totalEdited = datasets.reduce((sum, dataset) => sum + dataset.points.filter(isManuallyEdited).length, 0)
+  const notionalNotice = totalNotional > 0
     ? `<p class="empty">This report contains ${totalNotional.toLocaleString('en-US')} notional/derived point(s) — synthetic samples interpolated to fill time gaps. They are not observed telemetry and are flagged in provenance; do not treat them as source measurements.</p>`
     : `<p class="empty">No notional/derived points were present in the datasets included in this report. All plotted points are as-observed from source.</p>`
-  return sectionWrapper('Notional / derived-data disclosure', `${notice}${perDataset.length > 0 ? bareList(perDataset) : ''}`)
+  const editedNotice = totalEdited > 0
+    ? `<p class="empty">This report contains ${totalEdited.toLocaleString('en-US')} manually edited point(s) — hand-entered values applied through the Point Inspector. A manual edit is not automatically recomputed into any derived channel it affects.</p>`
+    : `<p class="empty">No manually edited points were present in the datasets included in this report.</p>`
+  return sectionWrapper('Data quality disclosure', `${notionalNotice}${editedNotice}${perDataset.length > 0 ? bareList(perDataset) : ''}`)
 }
 
 function buildOverlayInventorySection(options: ReportOptions, overlays: readonly ReportOverlayEntry[] | undefined): string {

@@ -17,8 +17,8 @@
 //    silently produce an empty/misleading section under a truthful-looking
 //    "included" label.
 //  - `includeNotionalDisclosure` defaults to `true` because omitting a
-//    disclosure about synthetic/derived points is the failure mode this
-//    task exists to close.
+//    disclosure about synthetic/derived or hand-edited points is the
+//    failure mode this task exists to close.
 
 const MAX_TITLE_LENGTH = 200
 
@@ -39,7 +39,7 @@ export interface ReportOptions {
   includeComparison: boolean
   /** Multi-source fusion decision summary, when supplied. */
   includeFusion: boolean
-  /** Explicit disclosure of notional/derived (non-observed) points and their provenance. */
+  /** Explicit disclosure of notional/derived (non-observed) and manually edited points and their provenance. */
   includeNotionalDisclosure: boolean
   /** Inventory of map overlays active in the session, when supplied. */
   includeOverlayInventory: boolean
@@ -70,7 +70,7 @@ export const REPORT_SECTIONS: readonly ReportSectionDescriptor[] = Object.freeze
   { key: 'includeOperationHistory', label: 'Recorded transform/operation history' },
   { key: 'includeComparison', label: 'Cross-dataset comparison analytics' },
   { key: 'includeFusion', label: 'Multi-source fusion decisions' },
-  { key: 'includeNotionalDisclosure', label: 'Notional/derived-data disclosure' },
+  { key: 'includeNotionalDisclosure', label: 'Data quality disclosure (notional/derived and manually edited points)' },
   { key: 'includeOverlayInventory', label: 'Map overlay inventory' },
 ])
 

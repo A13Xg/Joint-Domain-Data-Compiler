@@ -56,11 +56,16 @@ This document outlines the planned development direction for Joint Domain Data C
   removing a few strays — points that drifted off course or plotted far out. Bulk removal stays in
   the Transform tab and is unchanged. Delete gets the same unlock-then-confirm gesture as editing,
   being the more destructive of the two.
-- [ ] **Manual-edit provenance** — Flag hand-edited points via the existing
-  `PointProvenance.qualityFlags` (no schema change). Carried by the project save, GPB, and the HTML
-  analysis report, which already reads provenance; silently omitted by GPX and EAG TSPI, which have
-  no field for it. A hand-modified value that leaves no trace is the wrong default for range
-  instrumentation.
+- [x] **Manual-edit provenance** — `edit-point` flags every edited point `manual_edit` in
+  `PointProvenance.qualityFlags` (no schema change), unioned with whatever flags a point already
+  carries. `TrackMetricsPanel` and `PointVisualizerPanel` already read `qualityFlags` generically, so
+  the flag surfaces there for free. The HTML report's disclosure section (`includeNotionalDisclosure`,
+  now labeled *Data quality disclosure*) was extended to count and disclose manually edited points
+  alongside notional ones — it previously special-cased only `notional` and would have stayed silent
+  on hand edits otherwise. Correction to this item's original premise: GPB does **not** carry
+  provenance (or `name`/`desc`, or non-numeric `ext` values) — it is a numeric-only container by
+  design (`core/parsers/gpb.ts`), so it silently drops the flag exactly like GPX and EAG TSPI. Project
+  save does carry it, via plain JSON round-tripping of the dataset.
 - [ ] **Stale derived-channel badge** — A manual edit is truth data and is never silently
   recomputed away, so editing lat/lon leaves `speed_mps`, `distance_m` and friends holding their
   prior values until the user re-runs the derivation. Flag those channels as stale rather than
@@ -208,6 +213,13 @@ This document outlines the planned development direction for Joint Domain Data C
 - **Constraint:** Map visual budget ~4,000 points (display only)
   - **Timeline:** Stable; full data preserved for export
   - **Impact:** Deterministic downsampling preserves statistical correctness
+
+- **Constraint:** GPB export is numeric-only — it drops `name`, `desc`, `provenance`
+  (including `qualityFlags`), and coerces any non-numeric `ext` channel to `0`
+  - **Timeline:** Phase 4 (archive schema v2, see *Format Support* below)
+  - **Impact:** A round-trip through GPB silently loses manual-edit flags, notional flags, and any
+    string/boolean passthrough channel. GPX and EAG TSPI are already documented as lossy here for
+    the same reason; GPB was not, until this was found while wiring manual-edit provenance.
 
 ### Architecture
 - **Constraint:** No mobile/tablet responsive design in current scope

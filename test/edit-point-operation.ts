@@ -34,6 +34,14 @@ check('Scalar edit leaves untouched scalar fields alone', scalarEdit.dataset.poi
 check('Scalar edit leaves other points untouched', scalarEdit.dataset.points[1]?.lat === 1.1)
 check('Scalar edit does not mutate the source dataset', source.points[0]?.lat === 1)
 check('Scalar edit preserves point count', scalarEdit.dataset.points.length === source.points.length)
+check('Scalar edit flags the point manual_edit in provenance', scalarEdit.dataset.points[0]?.provenance?.qualityFlags?.includes('manual_edit') === true)
+check('Scalar edit does not flag untouched points', scalarEdit.dataset.points[1]?.provenance?.qualityFlags === undefined)
+
+// --- manual_edit is unioned with pre-existing quality flags, not replacing them
+const flaggedSource: Dataset = { ...source, points: [{ ...source.points[0]!, provenance: { qualityFlags: ['interpolated'] } }, source.points[1]!] }
+const flaggedEdit = executeOperation(flaggedSource, 'edit-point', { index: 0, fields: { lat: 3 } })
+check('manual_edit is added alongside a pre-existing quality flag', flaggedEdit.dataset.points[0]?.provenance?.qualityFlags?.includes('interpolated') === true && flaggedEdit.dataset.points[0]?.provenance?.qualityFlags?.includes('manual_edit') === true)
+check('A repeat edit does not duplicate the manual_edit flag', executeOperation(flaggedEdit.dataset, 'edit-point', { index: 0, fields: { lat: 4 } }).dataset.points[0]?.provenance?.qualityFlags?.filter((flag) => flag === 'manual_edit').length === 1)
 
 // --- ext patch merges without dropping other channels -----------------------
 const extEdit = executeOperation(source, 'edit-point', { index: 0, fields: { ext: { speed_mps: 11 } } })
