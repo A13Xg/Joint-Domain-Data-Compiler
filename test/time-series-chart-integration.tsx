@@ -144,5 +144,30 @@ check(
   autoContainer.querySelector('.toast')?.textContent?.includes('Time Series') === true,
 )
 
+// --- Scenario 6: point rendering below the render budget --------------------
+// A small dataset (well under the 1,500-point render budget) is never
+// downsampled, even on first mount with no zoom applied — so individual point
+// markers should render immediately, and clicking one should select that
+// exact source index.
+const smallDataset: TrackPoint[] = Array.from({ length: 20 }, (_, index) => ({
+  lat: 0, lon: 0, ele: index, time: index * 1000,
+}))
+const { container: smallContainer } = renderChart(smallDataset, [])
+const pointMarkers = smallContainer.querySelectorAll('.chart-point')
+check('Individual point markers render for a dataset under the render budget', pointMarkers.length === smallDataset.length)
+
+// --- Scenario 7: no point markers above the render budget without zoom ------
+// A dataset larger than the render budget stays downsampled on the initial
+// full-extent view (no zoom applied yet), so no per-point markers should
+// render — only the reduced line. This is the "not yet drilled down" half of
+// window-aware downsampling; recovering resolution on zoom is covered at the
+// extractChartSeries level in chart-series.ts.
+const largeDataset: TrackPoint[] = Array.from({ length: 2000 }, (_, index) => ({
+  lat: 0, lon: 0, ele: index, time: index * 1000,
+}))
+const { container: largeContainer } = renderChart(largeDataset, [])
+check('No point markers render for the full-extent view of an over-budget dataset', largeContainer.querySelectorAll('.chart-point').length === 0)
+check('The line still renders for the over-budget dataset', largeContainer.querySelector('.chart-line') !== null)
+
 console.log(`\n${failures === 0 ? 'ALL TIME SERIES CHART INTEGRATION CHECKS PASSED' : `${failures} TIME SERIES CHART INTEGRATION CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)

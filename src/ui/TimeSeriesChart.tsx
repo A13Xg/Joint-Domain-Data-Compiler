@@ -5,6 +5,7 @@ import { calculateRangeStatistics } from '../core/analytics/rangeStatistics'
 import { detectQualityEvents, type QualityEvent } from '../core/quality/events'
 import {
   BUILT_IN_CHART_PRESETS,
+  computeXDomain,
   extractChartSeries,
   resolvePresetChannels,
   type ChartXAxis,
@@ -35,6 +36,7 @@ interface Series {
   values: SeriesValue[]
   min: number
   max: number
+  downsampled: boolean
 }
 
 const PALETTE = ['#ea4f2f', '#0f8c6f', '#3b82f6', '#eab308', '#a855f7', '#ec4899', '#14b8a6']
@@ -137,31 +139,27 @@ export function TimeSeriesChart({ points, channels, jumpRequested = false, onJum
   const effectiveX: ChartXAxis = xAxis === 'time' && !hasTime ? 'index' : xAxis === 'distance' && !hasDistance ? 'index' : xAxis
   const qualityEvents = useMemo(() => detectQualityEvents(points), [points])
 
+  // Full-extent domain computed once from raw points — never from a (possibly downsampled)
+  // series, so it can't shrink as a side effect of the budget that reduces `series` below.
+  const xDomain = useMemo(() => computeXDomain(points, effectiveX), [points, effectiveX])
+
+  const effectiveDomain = zoomedDomain ?? xDomain
+  const isZoomed = zoomedDomain !== null && xDomain !== null && !isFullyZoomedOut(zoomedDomain, xDomain)
+
+  // Filtering to `effectiveDomain` before downsampling is what makes zooming recover resolution:
+  // each zoom level re-spends the same sample budget over just the visible window instead of
+  // remapping whatever the full-extent view already picked.
   const series = useMemo<Series[]>(() => selected.map((key, index) => {
-    const data = extractChartSeries(points, key, effectiveX, MAX_RENDERED_SAMPLES)
+    const data = extractChartSeries(points, key, effectiveX, MAX_RENDERED_SAMPLES, effectiveDomain)
     return {
       key,
       color: PALETTE[index % PALETTE.length]!,
       values: data.samples.map((sample) => ({ x: sample.x, y: sample.y, sourceIndex: sample.sourceIndex })),
       min: data.min,
       max: data.max,
+      downsampled: data.downsampled,
     }
-  }), [points, selected, effectiveX])
-
-  const xDomain = useMemo(() => {
-    let lo = Infinity
-    let hi = -Infinity
-    for (const item of series) {
-      for (const value of item.values) {
-        if (value.x < lo) lo = value.x
-        if (value.x > hi) hi = value.x
-      }
-    }
-    return Number.isFinite(lo) ? { lo, hi: hi === lo ? lo + 1 : hi } : null
-  }, [series])
-
-  const effectiveDomain = zoomedDomain ?? xDomain
-  const isZoomed = zoomedDomain !== null && xDomain !== null && !isFullyZoomedOut(zoomedDomain, xDomain)
+  }), [points, selected, effectiveX, effectiveDomain])
 
   const cursorX = useMemo(() => {
     if (hover !== null) return hover
@@ -325,6 +323,29 @@ export function TimeSeriesChart({ points, channels, jumpRequested = false, onJum
               }).join(' ')
               return <path key={item.key} d={path} className="chart-line" style={{ stroke: item.color }} />
             })}
+            {series.map((item) => item.downsampled ? null : (
+              // Below the render budget every point in the window is present in `item.values`
+              // (no bucketing), so a marker here corresponds to a real, individually selectable
+              // sample rather than an extrema-preserving stand-in for a bucket of them.
+              <g key={`${item.key}-points`}>
+                {item.values.map((value) => {
+                  const span = item.max - item.min || 1
+                  const isSelected = value.sourceIndex === pointIndex
+                  const isHovered = value.sourceIndex === hoverIndex
+                  return (
+                    <circle
+                      key={value.sourceIndex}
+                      cx={xToPx(value.x)}
+                      cy={pad.top + plotH - ((value.y - item.min) / span) * plotH}
+                      r={isSelected ? 5 : isHovered ? 4 : 2.5}
+                      className="chart-point"
+                      style={{ fill: item.color, stroke: isSelected ? '#ea4f2f' : 'none', strokeWidth: isSelected ? 2 : 0 }}
+                      pointerEvents="none"
+                    />
+                  )
+                })}
+              </g>
+            ))}
             {xDomain && eventMarkers.map(({ event, x }) => <line key={event.id} x1={xToPx(x)} x2={xToPx(x)} y1={pad.top} y2={pad.top + plotH} className={`chart-event-marker chart-event-${event.severity}`} strokeDasharray={EVENT_SEVERITY_DASH[event.severity]}><title>{`${event.kind} (${event.severity}): ${event.explanation}`}</title></line>)}
             {cursorX !== null && xDomain && <line x1={xToPx(cursorX)} x2={xToPx(cursorX)} y1={pad.top} y2={pad.top + plotH} className="chart-crosshair" />}
             {dragStart !== null && hover !== null && <rect x={Math.min(xToPx(dragStart), xToPx(hover))} y={pad.top} width={Math.abs(xToPx(hover) - xToPx(dragStart))} height={plotH} fill="rgba(59,130,246,0.14)" />}

@@ -14,7 +14,11 @@ export interface ChartSeriesData {
   samples: ChartSample[]
   min: number
   max: number
+  /** True when the visible window held more raw points than `maxSamples`, so `samples` is a min/max-bucketed reduction rather than every point. */
+  downsampled: boolean
 }
+
+export interface XDomain { lo: number; hi: number }
 
 export interface ChartPreset {
   id: string
@@ -32,25 +36,59 @@ export const BUILT_IN_CHART_PRESETS: ChartPreset[] = [
   { id: 'altitude-distance', label: 'Altitude over distance', channelIds: ['elevation'], xAxis: 'distance' },
 ]
 
+/**
+ * Full x-value extent across every point, independent of any channel's y-availability or
+ * downsampling. The single source of truth for the chart's zoom bounds — computed once from raw
+ * data so it never depends on however a channel's series happens to be reduced.
+ */
+export function computeXDomain(points: readonly TrackPoint[], xAxis: ChartXAxis): XDomain | null {
+  let lo = Infinity
+  let hi = -Infinity
+  for (let sourceIndex = 0; sourceIndex < points.length; sourceIndex++) {
+    const x = xValue(points[sourceIndex]!, sourceIndex, xAxis)
+    if (x === null) continue
+    if (x < lo) lo = x
+    if (x > hi) hi = x
+  }
+  return Number.isFinite(lo) ? { lo, hi: hi === lo ? lo + 1 : hi } : null
+}
+
 export function extractChartSeries(
   points: readonly TrackPoint[],
   channelId: string,
   xAxis: ChartXAxis,
   maxSamples = 1500,
+  domain?: XDomain | null,
 ): ChartSeriesData {
   if (!Number.isInteger(maxSamples) || maxSamples < 2) throw new Error('maxSamples must be an integer of at least 2')
   const raw: ChartSample[] = []
   let min = Infinity
   let max = -Infinity
+  // One retained sample just outside each edge of `domain`, so the polyline still reaches the
+  // plot's edges instead of visibly stopping short at the last in-window sample.
+  let pendingBefore: ChartSample | null = null
+  let afterAdded = false
+
+  const push = (sample: ChartSample) => {
+    raw.push(sample)
+    if (sample.y < min) min = sample.y
+    if (sample.y > max) max = sample.y
+  }
 
   for (let sourceIndex = 0; sourceIndex < points.length; sourceIndex++) {
     const point = points[sourceIndex]!
     const y = numericChannelValue(point, channelId)
     const x = xValue(point, sourceIndex, xAxis)
     if (y === null || x === null) continue
-    raw.push({ sourceIndex, x, y })
-    if (y < min) min = y
-    if (y > max) max = y
+    const sample: ChartSample = { sourceIndex, x, y }
+    if (!domain) { push(sample); continue }
+    if (x < domain.lo) { pendingBefore = sample; continue }
+    if (x > domain.hi) {
+      if (!afterAdded) { push(sample); afterAdded = true }
+      continue
+    }
+    if (pendingBefore) { push(pendingBefore); pendingBefore = null }
+    push(sample)
   }
 
   return {
@@ -58,6 +96,7 @@ export function extractChartSeries(
     samples: minMaxDownsample(raw, maxSamples),
     min: Number.isFinite(min) ? min : 0,
     max: Number.isFinite(max) ? max : 0,
+    downsampled: raw.length > maxSamples,
   }
 }
 
