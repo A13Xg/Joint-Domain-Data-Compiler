@@ -16,6 +16,12 @@ Versioning; release tags use the `vX.Y.Z` form.
 - Range time carries no year. Imports state the assumption in a warning naming the year the
   dates were anchored to, rather than letting a wrong absolute date reach an export silently.
   Relative timing — what every analytic actually consumes — is exact either way.
+- Stale derived-channel badge. A manual edit to lat/lon/elevation/time is truth data and is never
+  silently recomputed away, so `distance_m`, `ground_speed_mps`, and every other channel a
+  derivation produced from that point (or the point after it, for pairwise kinematics) now carry
+  an amber "stale" badge in the Point Inspector and the Points panel until the producing
+  derivation is re-run. Re-running it clears exactly the channels it owns; the `manual_edit` flag
+  itself is untouched.
 
 ### Fixed
 
@@ -41,6 +47,22 @@ Versioning; release tags use the `vX.Y.Z` form.
   3 m bar, *inside* the sensor's own resolution at 2.46 quantization steps. The elevation scale
   is now floored at the channel's detected step as well. Continuous channels are unaffected,
   where the deviation is far above the step and already wins.
+- The Special Use Airspace KML overlay now loads in packaged Windows and macOS builds. Only the
+  Linux target had an `extraResources` entry seeding it; Windows and macOS fell back to a remote
+  fetch URL pointing at a deleted branch, which 404s, so the overlay silently never appeared.
+  `win` and `mac` now carry the same `KML-KMZ → kml-seed` bundle Linux already had, and the local
+  seed always wins over the remote fetch — verified end to end (`seedKmlLibrary` against a packaged
+  `kml-seed` directory populates the library correctly), not just that the file lands in the
+  installer. Adds ~23 MB to each Windows/macOS artifact.
+- The Charts tab no longer overlaps the chart on top of the Point Inspector. `.charts-workspace`
+  forced itself to shrink to the viewport (`min-height: 0`, inherited from the single-panel Map
+  tab layout), but once a second panel sits below the chart, that shrink squeezed the chart below
+  its own readable minimum and its `overflow: visible` content — the legend, "Reset zoom" chip,
+  and per-point selection chip — painted over the inspector below it. Worse, the floating chip
+  intercepted clicks meant for the inspector's own "Edit" button, making the point editor
+  unreachable whenever enough channels were selected to fill the window. The workspace no longer
+  shrinks below its content (`.tab-content`'s existing scroll takes over instead, matching every
+  other tab) but keeps growing to fill a tall, short-content window exactly as before.
 
 ### Known limitation
 

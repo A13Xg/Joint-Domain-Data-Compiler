@@ -66,10 +66,17 @@ This document outlines the planned development direction for Joint Domain Data C
   provenance (or `name`/`desc`, or non-numeric `ext` values) — it is a numeric-only container by
   design (`core/parsers/gpb.ts`), so it silently drops the flag exactly like GPX and EAG TSPI. Project
   save does carry it, via plain JSON round-tripping of the dataset.
-- [ ] **Stale derived-channel badge** — A manual edit is truth data and is never silently
+- [x] **Stale derived-channel badge** — A manual edit is truth data and is never silently
   recomputed away, so editing lat/lon leaves `speed_mps`, `distance_m` and friends holding their
-  prior values until the user re-runs the derivation. Flag those channels as stale rather than
-  recomputing, so a chart of a derived channel does not look as though the edit did nothing.
+  prior values until the user re-runs the derivation. `PointProvenance.staleChannels` names the
+  channels a lat/lon/ele/time edit invalidates (on the edited point and the next one, for
+  pairwise kinematics); `runDerivation` clears the ids it owns on its next run. `PointInspectorPanel`
+  and `PointVisualizerPanel` render an amber "stale" badge next to the affected field. Verifying
+  this in the browser surfaced a real, pre-existing bug: the Charts tab's flex layout let the
+  chart collapse below its readable minimum whenever the Point Inspector was tall enough to fill
+  the viewport, painting the chart's own legend/selection chips over the inspector and blocking
+  its "Edit" button entirely. Fixed alongside this item — `.charts-workspace` now sizes to content
+  and the tab scrolls, like every other tab.
 - [ ] **Y-axis zoom and pan** — `visualization/charts/zoom.ts` is pure X-domain math (`zoomDomain`,
   `isFullyZoomedOut`) with no pan. Independent of the editing work now that a move is a typed value
   rather than a drag; the value is in reading a channel whose variation is small against its full

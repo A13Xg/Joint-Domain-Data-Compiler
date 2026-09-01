@@ -89,7 +89,16 @@
         }
       ],
       "icon": "build/icon.png",
-      "executableName": "JointDomainDataCompiler"
+      "executableName": "JointDomainDataCompiler",
+      "extraResources": [
+        {
+          "from": "KML-KMZ",
+          "to": "kml-seed",
+          "filter": [
+            "*.kml"
+          ]
+        }
+      ]
     },
     "nsis": {
       "artifactName": "${productName}-${version}-Windows-${arch}-Setup.${ext}",
@@ -108,7 +117,16 @@
         "dmg",
         "zip"
       ],
-      "category": "public.app-category.utilities"
+      "category": "public.app-category.utilities",
+      "extraResources": [
+        {
+          "from": "KML-KMZ",
+          "to": "kml-seed",
+          "filter": [
+            "*.kml"
+          ]
+        }
+      ]
     }
   },
   "overrides": {

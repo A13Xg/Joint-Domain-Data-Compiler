@@ -341,20 +341,32 @@ function LegRow({ label, from, to }: { label: string; from?: TrackPoint; to?: Tr
 function ChannelValues({ point }: { point: TrackPoint }) {
   const entries = Object.entries(point.ext ?? {})
   if (entries.length === 0) return <p className="muted small">This sample carries no additional channels.</p>
+  const staleChannels = new Set(point.provenance?.staleChannels ?? [])
   return (
     <details className="point-channels" open>
       <summary>Channels ({entries.length})</summary>
       <dl className="point-fields">
         {entries.map(([name, value]) => (
-          <Field key={name} label={name} value={value === undefined || value === null ? '—' : String(value)} />
+          <Field key={name} label={name} value={value === undefined || value === null ? '—' : String(value)} stale={staleChannels.has(name)} />
         ))}
       </dl>
     </details>
   )
 }
 
-function Field({ label, value }: { label: string; value: string }) {
-  return <><dt>{label}</dt><dd className="mono">{value}</dd></>
+function Field({ label, value, stale }: { label: string; value: string; stale?: boolean }) {
+  return <><dt>{label}{stale && <StaleBadge />}</dt><dd className="mono">{value}</dd></>
+}
+
+function StaleBadge() {
+  return (
+    <span
+      className="badge stale-badge"
+      title="Computed before a manual edit changed one of its inputs. Re-run Derive kinematics to refresh it."
+    >
+      stale
+    </span>
+  )
 }
 
 function neighbourhoodSlice(points: readonly TrackPoint[], index: number, radius: number): { start: number; end: number } {

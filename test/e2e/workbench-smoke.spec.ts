@@ -322,3 +322,44 @@ test('primary local-first workflow: import, inspect, transform, save/open, and e
 
   expect(pageErrors).toEqual([])
 })
+
+test('point inspector edits a value and flags dependent derived channels stale', async ({ page }) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+
+  await page.goto('/')
+  await page.locator('input[type=file][multiple]').first().setInputFiles(fixture)
+  await expect(page.getByText('1 dataset loaded')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Transform', exact: true }).click()
+  await page.locator('.op-card').filter({ hasText: 'Derive kinematics' }).getByRole('button', { name: 'Apply' }).click()
+
+  await page.getByRole('button', { name: 'Table', exact: true }).click()
+  await page.locator('.grid-row').nth(2).click()
+  await page.getByRole('button', { name: 'Charts', exact: true }).click()
+  await expect(page.locator('.point-inspector')).toBeVisible()
+
+  // A real (non-forced) click here catches the chart-overlaps-inspector
+  // regression: the chart's own selection chip used to float on top of this
+  // button and swallow the click before it ever reached the inspector.
+  await page.locator('.point-inspector-head').getByRole('button', { name: '✎ Edit' }).click()
+  await page.locator('.point-inspector-warning').getByRole('button', { name: 'Understood, unlock fields' }).click()
+  const latInput = page.locator('.point-inspector').getByLabel('Latitude')
+  const editedLat = (Number(await latInput.inputValue()) + 0.01).toString()
+  await latInput.fill(editedLat)
+  await page.locator('.point-inspector-head').getByRole('button', { name: '✓ Apply' }).click()
+
+  await expect(page.locator('.point-inspector .stale-badge').first()).toBeVisible()
+  const staleAfterEdit = await page.locator('.point-inspector .stale-badge').count()
+  expect(staleAfterEdit).toBeGreaterThan(0)
+
+  await page.getByRole('button', { name: 'Points', exact: true }).click()
+  await expect(page.locator('.point-visualizer .stale-badge').first()).toBeVisible()
+
+  await page.getByRole('button', { name: 'Transform', exact: true }).click()
+  await page.locator('.op-card').filter({ hasText: 'Derive kinematics' }).getByRole('button', { name: 'Apply' }).click()
+  await page.getByRole('button', { name: 'Charts', exact: true }).click()
+  await expect(page.locator('.point-inspector .stale-badge')).toHaveCount(0)
+
+  expect(pageErrors).toEqual([])
+})

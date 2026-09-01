@@ -58,6 +58,16 @@ export interface PointProvenance {
   sourceFeatureIndex?: number
   /** Machine-readable flags describing source or transform quality concerns. */
   qualityFlags?: string[]
+  /**
+   * `ext` channel ids (e.g. `distance_m`, `ground_speed_mps`) whose current
+   * value was computed from inputs this point (or the point before it, for a
+   * pairwise derivation) has since had manually edited. A manual edit is
+   * truth data and never triggers a silent recompute, so a stale entry stays
+   * exactly as it was derived until the producing derivation is re-run —
+   * re-running it clears the ids it owns. Purely advisory: it names channels
+   * worth distrusting, not a promise the channel exists on this point.
+   */
+  staleChannels?: string[]
 }
 
 /** A single time/space sample. Canonical units: degrees, meters, epoch milliseconds. */
@@ -194,20 +204,24 @@ export function computeBounds(points: TrackPoint[]): BoundingBox | null {
 /**
  * Deep-enough copy of a point for a pure transform.
  *
- * `ext` and `provenance.qualityFlags` are the two mutable structures a
- * transform is likely to touch, so both are copied; everything else on a
- * TrackPoint is a primitive. Six identical private copies of this had
- * accumulated across transforms, rangeTransform, kinematics, and three
- * operations — one drifting from the others would be a silent
- * shared-mutation bug, which is exactly what invariant 3 (transforms are
- * pure, never mutate the input) exists to prevent.
+ * `ext`, `provenance.qualityFlags`, and `provenance.staleChannels` are the
+ * mutable structures a transform is likely to touch, so all three are
+ * copied; everything else on a TrackPoint is a primitive. Six identical
+ * private copies of this had accumulated across transforms, rangeTransform,
+ * kinematics, and three operations — one drifting from the others would be a
+ * silent shared-mutation bug, which is exactly what invariant 3 (transforms
+ * are pure, never mutate the input) exists to prevent.
  */
 export function clonePoint(point: TrackPoint): TrackPoint {
   return {
     ...point,
     ext: point.ext ? { ...point.ext } : undefined,
     provenance: point.provenance
-      ? { ...point.provenance, qualityFlags: point.provenance.qualityFlags ? [...point.provenance.qualityFlags] : undefined }
+      ? {
+          ...point.provenance,
+          qualityFlags: point.provenance.qualityFlags ? [...point.provenance.qualityFlags] : undefined,
+          staleChannels: point.provenance.staleChannels ? [...point.provenance.staleChannels] : undefined,
+        }
       : undefined,
   }
 }

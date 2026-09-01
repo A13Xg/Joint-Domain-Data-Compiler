@@ -85,6 +85,7 @@ export function PointInspectorPanel({ dataset, onEditPoint }: Props) {
   }
 
   const extEntries = Object.entries(point.ext ?? {})
+  const staleChannels = new Set(point.provenance?.staleChannels ?? [])
 
   return (
     <div className="point-inspector point-detail">
@@ -137,6 +138,7 @@ export function PointInspectorPanel({ dataset, onEditPoint }: Props) {
                 channel={channel}
                 original={original}
                 unlocked={unlocked}
+                stale={staleChannels.has(channel)}
                 value={draft[extKey(channel)] ?? ''}
                 onChange={(value) => setDraft((current) => ({ ...current, [extKey(channel)]: value }))}
               />
@@ -160,18 +162,31 @@ function ScalarRow({ label, field, point, unlocked, value, onChange }: {
   return <><dt>{label}</dt><dd><input className="mono" type="text" value={value} onChange={(event) => onChange(event.target.value)} aria-label={label} /></dd></>
 }
 
-function ExtRow({ channel, original, unlocked, value, onChange }: {
+function ExtRow({ channel, original, unlocked, stale, value, onChange }: {
   channel: string
   original: number | string | boolean
   unlocked: boolean
+  stale: boolean
   value: string
   onChange: (value: string) => void
 }) {
-  if (!unlocked) return <><dt>{channel}</dt><dd className="mono">{String(original)}</dd></>
+  const label = <>{channel}{stale && <StaleBadge />}</>
+  if (!unlocked) return <><dt>{label}</dt><dd className="mono">{String(original)}</dd></>
   if (typeof original === 'boolean') {
-    return <><dt>{channel}</dt><dd><input type="checkbox" checked={value === 'true'} onChange={(event) => onChange(String(event.target.checked))} aria-label={channel} /></dd></>
+    return <><dt>{label}</dt><dd><input type="checkbox" checked={value === 'true'} onChange={(event) => onChange(String(event.target.checked))} aria-label={channel} /></dd></>
   }
-  return <><dt>{channel}</dt><dd><input className="mono" type="text" value={value} onChange={(event) => onChange(event.target.value)} aria-label={channel} /></dd></>
+  return <><dt>{label}</dt><dd><input className="mono" type="text" value={value} onChange={(event) => onChange(event.target.value)} aria-label={channel} /></dd></>
+}
+
+function StaleBadge() {
+  return (
+    <span
+      className="badge stale-badge"
+      title="Computed before a manual edit changed one of its inputs. Re-run Derive kinematics to refresh it."
+    >
+      stale
+    </span>
+  )
 }
 
 function displayScalar(point: TrackPoint, field: ScalarField): string {

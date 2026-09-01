@@ -49,7 +49,19 @@ export function runDerivation(id: string, dataset: Dataset): DerivationResult {
   const definition = getDerivation(id)
   if (!definition) throw new Error(`Unknown derivation: ${id}`)
   validateRequirements(definition, dataset)
-  return definition.derive({ dataset, points: dataset.points })
+  const result = definition.derive({ dataset, points: dataset.points })
+  // A fresh derive() supersedes whatever staleness a prior manual edit
+  // recorded against this derivation's own output channels.
+  const ownedChannels = new Set(definition.outputChannels.map((channel) => channel.id))
+  return { ...result, points: result.points.map((point) => clearOwnedStaleChannels(point, ownedChannels)) }
+}
+
+function clearOwnedStaleChannels(point: TrackPoint, ownedChannels: ReadonlySet<string>): TrackPoint {
+  const stale = point.provenance?.staleChannels
+  if (!stale || stale.length === 0) return point
+  const remaining = stale.filter((channel) => !ownedChannels.has(channel))
+  if (remaining.length === stale.length) return point
+  return { ...point, provenance: { ...point.provenance, staleChannels: remaining.length > 0 ? remaining : undefined } }
 }
 
 function validateRequirements(definition: DerivedChannelDefinition, dataset: Dataset): void {

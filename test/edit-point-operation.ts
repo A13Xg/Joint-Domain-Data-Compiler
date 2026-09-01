@@ -1,8 +1,11 @@
 import type { Dataset } from '../src/core/model.ts'
+import { ensureBuiltinDerivationsRegistered } from '../src/core/analytics/bootstrap.ts'
+import { runDerivation } from '../src/core/analytics/registry.ts'
 import { buildRecipe, executeOperation, replayRecipe } from '../src/core/recipes/executor.ts'
 import { fingerprintDataset } from '../src/core/recipes/hash.ts'
 import { clearOperationsForTests, registerOperation } from '../src/core/recipes/registry.ts'
 import { editPointOperation } from '../src/core/operations/edit-point.ts'
+import { withPoints } from '../src/core/transforms.ts'
 
 let failures = 0
 function check(name: string, condition: boolean): void {
@@ -49,6 +52,34 @@ check('ext patch updates the targeted channel', extEdit.dataset.points[0]?.ext?.
 check('ext patch leaves sibling channels intact', extEdit.dataset.points[0]?.ext?.tag === 'a')
 check('ext patch leaves a boolean sibling channel intact', extEdit.dataset.points[0]?.ext?.flagged === false)
 check('ext patch does not mutate the source point’s ext object', source.points[0]?.ext?.speed_mps === 5)
+
+// --- a lat/lon/ele/time edit flags derived channels stale on this point AND the next --
+ensureBuiltinDerivationsRegistered()
+const kinematicSource: Dataset = withPoints(source, [
+  { lat: 1, lon: 2, ele: 100, time: 1000 },
+  { lat: 1.1, lon: 2.1, ele: 120, time: 2000 },
+  { lat: 1.2, lon: 2.2, ele: 140, time: 3000 },
+])
+const derived = runDerivation('standard-kinematics', kinematicSource)
+const kinematicDataset = withPoints(kinematicSource, derived.points)
+check('Derivation populates ground_speed_mps to sanity-check the fixture', kinematicDataset.points[1]?.ext?.ground_speed_mps !== undefined)
+
+const positionEdit = executeOperation(kinematicDataset, 'edit-point', { index: 1, fields: { lat: 5 } })
+check('Position edit stales distance_m on the edited point', positionEdit.dataset.points[1]?.provenance?.staleChannels?.includes('distance_m') === true)
+check('Position edit stales ground_speed_mps on the edited point', positionEdit.dataset.points[1]?.provenance?.staleChannels?.includes('ground_speed_mps') === true)
+check('Position edit stales the next point too, which read the edited point as "previous"', positionEdit.dataset.points[2]?.provenance?.staleChannels?.includes('distance_m') === true)
+check('Position edit leaves the point before the edit unflagged', positionEdit.dataset.points[0]?.provenance?.staleChannels === undefined)
+
+const nameOnlyEdit = executeOperation(kinematicDataset, 'edit-point', { index: 1, fields: { name: 'waypoint' } })
+check('A name-only edit does not stale any derived channel', nameOnlyEdit.dataset.points[1]?.provenance?.staleChannels === undefined)
+check('A name-only edit does not touch the next point at all', nameOnlyEdit.dataset.points[2]?.provenance === undefined)
+
+const extOnlyEdit = executeOperation(kinematicDataset, 'edit-point', { index: 1, fields: { ext: { ground_speed_mps: 99 } } })
+check('An ext-only edit does not stale any derived channel', extOnlyEdit.dataset.points[1]?.provenance?.staleChannels === undefined)
+
+const rederived = runDerivation('standard-kinematics', positionEdit.dataset)
+check('Re-running the derivation clears the stale flags it owns', rederived.points[1]?.provenance?.staleChannels === undefined && rederived.points[2]?.provenance?.staleChannels === undefined)
+check('Re-running the derivation still keeps the manual_edit flag (only staleness clears)', rederived.points[1]?.provenance?.qualityFlags?.includes('manual_edit') === true)
 
 // --- out-of-range index is rejected -----------------------------------------
 let outOfRangeRejected = false
