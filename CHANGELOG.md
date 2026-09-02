@@ -3,7 +3,7 @@
 Notable user-facing and operational changes are recorded here. This project follows Semantic
 Versioning; release tags use the `vX.Y.Z` form.
 
-## Unreleased
+## 0.2.0 - 2026-09-02
 
 ### Added
 
@@ -22,6 +22,27 @@ Versioning; release tags use the `vX.Y.Z` form.
   an amber "stale" badge in the Point Inspector and the Points panel until the producing
   derivation is re-run. Re-running it clears exactly the channels it owns; the `manual_edit` flag
   itself is untouched.
+- Point deletion, from the Table grid and the Charts tab. Ctrl/⌘+click or shift+click builds a
+  multi-point selection (ctrl/⌘+drag on the chart adds a whole run at once); a Delete button
+  removes exactly those points as a replayable, undoable operation, the same as any other
+  transform. In the Charts tab the gesture only arms once the visible window renders every point
+  individually, so a selection is always exact — never a stand-in for a downsampled range.
+- The Charts tab's drag now zooms to the dragged span at every zoom level, replacing the old
+  drag-to-range-select; wheel zoom is unchanged, and shift+wheel (or a trackpad's horizontal
+  swipe) pans without changing zoom. Range selection is still available — shift+arrow, the
+  Table's row clicks, or zooming to an existing selection — the chart just no longer *produces*
+  one from a drag.
+- A Settings tab. The chart, map, and 3D scene point-rendering budgets are user-adjustable
+  instead of hardcoded constants, stored on the device rather than inside any project. The chart
+  budget does double duty: it's the same value that decides whether a point renders individually
+  and whether it's selectable for the deletion gesture above.
+- Chart image export, as SVG or PNG. The exported file is self-contained — every element's
+  *computed* style is inlined so it renders correctly outside this app — with a background rect
+  added so a standalone view matches the on-screen chart.
+- A CSV import with no usable timestamp (an unmapped timestamp column, or one where every row
+  failed to parse) now raises a prominent warning — the header status badge, the import toast,
+  and Track Health all surface it — instead of silently producing a dataset with no time axis,
+  playback, or time-based metrics.
 
 ### Fixed
 
@@ -63,6 +84,16 @@ Versioning; release tags use the `vX.Y.Z` form.
   unreachable whenever enough channels were selected to fill the window. The workspace no longer
   shrinks below its content (`.tab-content`'s existing scroll takes over instead, matching every
   other tab) but keeps growing to fill a tall, short-content window exactly as before.
+- The Charts tab's screen-to-data coordinate mapping used the SVG's bounding-rect aspect ratio
+  instead of its screen transform matrix, silently mis-locating clicks whenever `.chart-svg`'s
+  `max-height` cap made its rendered aspect ratio diverge from its 900:320 viewBox (mainly a
+  short-window symptom). Invisible until a gesture actually depended on click accuracy — the new
+  delete-set hit-testing above is what surfaced it; now uses `getScreenCTM()`, exact regardless
+  of letterboxing.
+- Zooming or panning the chart with the mouse wheel could scroll the page underneath it at the
+  same time. React attaches the JSX `onWheel` handler as a passive listener by default, which
+  silently drops `preventDefault()`; replaced with a real listener registered
+  `{ passive: false }`.
 
 ### Known limitation
 

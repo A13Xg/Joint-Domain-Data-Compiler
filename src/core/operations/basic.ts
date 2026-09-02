@@ -1,6 +1,7 @@
 import { ensureBuiltinDerivationsRegistered } from '../analytics/bootstrap'
 import { runDerivation } from '../analytics/registry'
 import { offsetElevation, shiftTime, withPoints } from '../transforms'
+import { deletePointsOperation } from './delete-points'
 import { distanceResampleMonotoneOperation } from './distance-resample'
 import { dropOutliersOperation } from './drop-outliers'
 import { editPointOperation } from './edit-point'
@@ -84,6 +85,7 @@ const BUILTIN_OPERATIONS: OperationDefinition<never>[] = [
   // Outliers & smoothing
   dropOutliersOperation,
   editPointOperation,
+  deletePointsOperation,
   elevationFilterOperation,
   smoothOperation,
   // Density & precision

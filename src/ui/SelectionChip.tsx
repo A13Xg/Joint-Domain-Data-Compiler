@@ -12,8 +12,8 @@
 interface Props {
   /** What the badge names, e.g. "selected #412" or "range 20–95". */
   label: string
-  /** Styling only: a point selection reads as active, a range as a span. */
-  tone?: 'point' | 'range'
+  /** Styling only: a point selection reads as active, a range as a span, a set as a group. */
+  tone?: 'point' | 'range' | 'set'
   /** Brings the named samples into view. Omitted where the surrounding view has nowhere to go. */
   onJump?: () => void
   /** What the jump does here, e.g. "Zoom the chart to this point". */
@@ -25,7 +25,7 @@ interface Props {
 
 export function SelectionChip({ label, tone = 'point', onJump, jumpTitle, onClear, clearLabel }: Props) {
   return (
-    <span className={`chip selection-chip ${tone === 'range' ? 'chip-range' : 'chip-on'}`}>
+    <span className={`chip selection-chip ${tone === 'range' ? 'chip-range' : tone === 'set' ? 'chip-set' : 'chip-on'}`}>
       {onJump
         ? <button type="button" className="selection-chip-jump" onClick={onJump} title={jumpTitle}>{label}</button>
         : <span className="selection-chip-label">{label}</span>}

@@ -106,4 +106,48 @@ const ANCHOR = Date.UTC(2026, 5, 15)
   assert.deepEqual(deltas, [1000, 1000, 1000, 1000])
 }
 
+// --- No usable timestamp is a prominent warning, not a silent gap ---------
+{
+  const rows = [{ LAT: '37.798', LON: '-116.78' }]
+  const noMapping = buildPointsFromCsvRows(rows, {
+    latitude: 'LAT', longitude: 'LON', elevation: '', timestamp: '',
+    name: '', description: '', elevationUnit: 'meters', timeFormat: 'auto',
+  }, ['LAT', 'LON'])
+  assert.equal(noMapping.points.length, 1, 'the point still imports, just without a time')
+  assert.ok(noMapping.points[0]!.time === undefined)
+  assert.ok(
+    noMapping.warnings.some((warning) => /usable timestamp/i.test(warning)),
+    `an unmapped timestamp column must surface a prominent warning, got: ${noMapping.warnings.join(' | ')}`,
+  )
+}
+{
+  // Every row's timestamp fails to parse: same practical outcome (zero timed
+  // points) as an unmapped column, so it gets the same warning, on top of
+  // (not instead of) the existing per-row parse-failure count.
+  const rows = [{ LAT: '37.798', LON: '-116.78', TIME: 'not-a-time' }]
+  const unparseable = buildPointsFromCsvRows(rows, {
+    latitude: 'LAT', longitude: 'LON', elevation: '', timestamp: 'TIME',
+    name: '', description: '', elevationUnit: 'meters', timeFormat: 'auto',
+  }, ['LAT', 'LON', 'TIME'])
+  assert.ok(unparseable.warnings.some((warning) => /could not be parsed/.test(warning)))
+  assert.ok(unparseable.warnings.some((warning) => /usable timestamp/i.test(warning)))
+}
+{
+  // Regression guard: a normally-timed import gets neither warning.
+  const rows = [{ LAT: '37.798', LON: '-116.78', TIME: '2026-06-09T16:33:14Z' }]
+  const timed = buildPointsFromCsvRows(rows, {
+    latitude: 'LAT', longitude: 'LON', elevation: '', timestamp: 'TIME',
+    name: '', description: '', elevationUnit: 'meters', timeFormat: 'auto',
+  }, ['LAT', 'LON', 'TIME'])
+  assert.ok(!timed.warnings.some((warning) => /usable timestamp/i.test(warning)), 'a fully-timed import must not warn')
+}
+{
+  // No rows at all: nothing to warn about.
+  const empty = buildPointsFromCsvRows([], {
+    latitude: 'LAT', longitude: 'LON', elevation: '', timestamp: '',
+    name: '', description: '', elevationUnit: 'meters', timeFormat: 'auto',
+  }, ['LAT', 'LON'])
+  assert.ok(!empty.warnings.some((warning) => /usable timestamp/i.test(warning)), 'an empty import must not warn about missing time')
+}
+
 console.log('range/IRIG time parsing tests passed')

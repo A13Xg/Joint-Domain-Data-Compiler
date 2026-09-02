@@ -109,6 +109,21 @@ function rangeTimeWarning(rows: number): string {
     + `Dates were anchored to ${new Date().getUTCFullYear()}; relative timing is unaffected.`
 }
 
+/**
+ * A dataset with zero timed points loses its time axis, playback, and every
+ * time-based metric entirely — not a partial degradation like some rows
+ * having unparseable timestamps (see the "rows had timestamps that could
+ * not be parsed" warning above, which already covers that case). This is
+ * silent otherwise: an unmapped timestamp column skips the time-handling
+ * branch in `mapCsvRow` for every row without ever setting `badTime`, so
+ * without this check nothing gets pushed to `warnings` at all — the miss
+ * this warning exists to close.
+ */
+function noTimeWarning(points: readonly TrackPoint[]): string | null {
+  if (points.length === 0 || points.some((point) => point.time !== undefined)) return null
+  return 'No points have a usable timestamp — the time axis, playback, and every time-based metric are unavailable until the CSV mapping includes a valid timestamp column.'
+}
+
 export function buildPointsFromCsvRows(
   rows: CsvRow[],
   mapping: CsvMapping,
@@ -133,6 +148,8 @@ export function buildPointsFromCsvRows(
   if (badCoords > 0) warnings.push(`${badCoords} rows skipped (unparseable latitude/longitude).`)
   if (badTimes > 0) warnings.push(`${badTimes} rows had timestamps that could not be parsed.`)
   if (rangeTimes > 0) warnings.push(rangeTimeWarning(rangeTimes))
+  const timeWarning = noTimeWarning(points)
+  if (timeWarning) warnings.push(timeWarning)
 
   return { points, warnings, channels: Array.from(channelSet) }
 }
@@ -226,6 +243,8 @@ export function streamCsvFileToPoints(
         if (badCoords > 0) warnings.push(`${badCoords} rows skipped (unparseable latitude/longitude).`)
         if (badTimes > 0) warnings.push(`${badTimes} rows had timestamps that could not be parsed.`)
         if (rangeTimes > 0) warnings.push(rangeTimeWarning(rangeTimes))
+        const timeWarning = noTimeWarning(points)
+        if (timeWarning) warnings.push(timeWarning)
         resolve({ points, warnings, channels: Array.from(channelSet) })
       },
       error: (err: Error) => reject(err),

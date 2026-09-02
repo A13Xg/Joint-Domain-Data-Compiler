@@ -1,0 +1,70 @@
+// App-level preferences — see `state/settings.ts` for why these live outside
+// any project. Deliberately small: three point budgets today, but the store
+// takes new settings without restructuring (each field is read/normalized
+// independently), matching the roadmap's "Settings page" requirement.
+import { DEFAULT_SETTINGS, SETTINGS_LIMITS, resetSettings, updateSetting, useAppSettings, useSettingsStorageSync, type AppSettings } from '../state/settings'
+
+interface BudgetField {
+  key: keyof AppSettings
+  label: string
+  description: string
+}
+
+const BUDGET_FIELDS: BudgetField[] = [
+  {
+    key: 'chartPointBudget',
+    label: 'Chart point budget',
+    description: 'Below this many points in the visible window, the Charts tab draws every sample individually — which is also what makes a sample selectable for the ctrl/⌘+click and shift+click delete-set gestures there. Raising it reaches individual points at a wider zoom; lowering it needs a closer zoom before points (and the delete-set gesture) become available.',
+  },
+  {
+    key: 'mapPointBudget',
+    label: 'Map point budget',
+    description: 'Caps how many points the Map tab draws for the active track and for each other visible/overlay track. Display only — export, stats, and every other computation still use the full dataset.',
+  },
+  {
+    key: 'scenePointBudget',
+    label: '3D scene point budget',
+    description: 'Caps how many points the 3D tab draws per track, including companion tracks sharing the same scene.',
+  },
+]
+
+export function SettingsPanel() {
+  useSettingsStorageSync()
+  const settings = useAppSettings()
+  const isDefault = BUDGET_FIELDS.every((field) => settings[field.key] === DEFAULT_SETTINGS[field.key])
+
+  return (
+    <div className="settings-panel">
+      <div className="settings-header">
+        <h3>Settings</h3>
+        <p className="muted small">Stored on this device, not inside any project — opening a different project keeps these values.</p>
+      </div>
+      <div className="settings-group">
+        <h4>Visualization point budgets</h4>
+        {BUDGET_FIELDS.map((field) => {
+          const limits = SETTINGS_LIMITS[field.key]
+          return (
+            <div key={field.key} className="settings-field">
+              <label className="num-field">
+                <span>{field.label}</span>
+                <input
+                  type="number"
+                  value={settings[field.key]}
+                  min={limits.min}
+                  max={limits.max}
+                  step={100}
+                  onChange={(event) => {
+                    const parsed = Number(event.target.value)
+                    if (Number.isFinite(parsed)) updateSetting(field.key, parsed)
+                  }}
+                />
+              </label>
+              <p className="muted small settings-field-desc">{field.description} Range {limits.min.toLocaleString()}–{limits.max.toLocaleString()}.</p>
+            </div>
+          )
+        })}
+        <button type="button" disabled={isDefault} onClick={resetSettings}>Reset to defaults</button>
+      </div>
+    </div>
+  )
+}

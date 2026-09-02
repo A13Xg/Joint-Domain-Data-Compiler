@@ -4,6 +4,12 @@ import type { IndexRange, TimeRange } from '../selection'
 export interface OperationScope {
   indexRange?: IndexRange
   timeRange?: TimeRange
+  /**
+   * An arbitrary, possibly non-contiguous set of point indices. Only
+   * `delete-points` reads this — every other operation either ignores it or
+   * should reject it, the same way `drop-outliers` rejects `timeRange`.
+   */
+  indexSet?: number[]
 }
 
 export interface OperationRecord<TParams = unknown> {

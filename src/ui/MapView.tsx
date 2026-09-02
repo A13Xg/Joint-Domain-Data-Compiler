@@ -8,6 +8,7 @@ import { DEFAULT_QUALITY_EVENT_CONFIG, detectQualityEvents } from '../core/quali
 import { DensityLayer } from './DensityLayer'
 import { gradientColor } from './gradient'
 import { usePointSelection } from '../state/pointSelection'
+import { useAppSettings } from '../state/settings'
 import type { WorkspaceState } from '../state/workspace'
 import type { MapOverlayState } from '../state/mapOverlays'
 import type { KmlLibraryEntry } from '../types/desktop'
@@ -18,11 +19,13 @@ type DisplayMode = 'both' | 'path' | 'points'
 /** What a pending jump should frame: one badge's own samples, or whatever is selected. */
 type JumpTarget = 'point' | 'range' | 'selection'
 type BasemapMode = 'osm' | 'osm-dark' | 'osm-humanitarian' | 'osm-topo' | 'none'
-const MAX_RENDER_POINTS = 4000
+// The point budget for a single continuous path (track or overlay) is a
+// user setting — see `state/settings.ts`'s `mapPointBudget` — read via
+// `useAppSettings()` inside the component below.
 // A KML/KMZ overlay can hold many unrelated placemark geometries (e.g. one
 // polygon per airspace boundary). Each shape gets its own point budget, and
-// the shape count itself is capped, independently of MAX_RENDER_POINTS above
-// (which bounds a single continuous path).
+// the shape count itself is capped, independently of the map point budget
+// above (which bounds a single continuous path).
 const MAX_OVERLAY_SHAPE_POINTS = 200
 const MAX_OVERLAY_SHAPES = 4000
 
@@ -153,17 +156,18 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
     setBasemapStatus('unknown')
   }
   const { pointIndex, hoverIndex, indexRange, selectPoint, setHoverIndex, clearPointSelection, clearRangeSelection, clearHover } = usePointSelection(points)
+  const { mapPointBudget } = useAppSettings()
 
   const valid = useMemo(
     () => points.map((point, index) => ({ point, index })).filter(({ point }) => isValidLat(point.lat) && isValidLon(point.lon)),
     [points],
   )
-  const rendered = useMemo(() => downsample(valid, MAX_RENDER_POINTS), [valid])
+  const rendered = useMemo(() => downsample(valid, mapPointBudget), [valid, mapPointBudget])
   const selectedValid = useMemo(
     () => indexRange ? valid.filter(({ index }) => index >= indexRange.start && index <= indexRange.end) : [],
     [valid, indexRange],
   )
-  const renderedSelection = useMemo(() => downsample(selectedValid, MAX_RENDER_POINTS), [selectedValid])
+  const renderedSelection = useMemo(() => downsample(selectedValid, mapPointBudget), [selectedValid, mapPointBudget])
   const positions = useMemo<LatLngTuple[]>(() => rendered.map(({ point }) => [point.lat, point.lon]), [rendered])
   // A jump reaches the map two ways: the Track Health drill-down arrives as a
   // prop and means "whatever I just selected", while each selection badge asks
@@ -213,7 +217,7 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
   // draws as an open Polyline, matching plain track/route overlays.
   const otherTrackLayers = useMemo(() => otherTracks.map((track) => {
     const validPoints = track.points.filter((point) => isValidLat(point.lat) && isValidLon(point.lon))
-    const sampled = downsample(validPoints, MAX_RENDER_POINTS)
+    const sampled = downsample(validPoints, mapPointBudget)
     const shapes = downsample(groupBySegment(validPoints), MAX_OVERLAY_SHAPES)
       .map((group): { kind: 'polygon' | 'line'; positions: LatLngTuple[] } => {
         const shapePositions = downsample(group, MAX_OVERLAY_SHAPE_POINTS).map((point): LatLngTuple => [point.lat, point.lon])
@@ -221,7 +225,7 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
       })
       .filter((shape) => shape.positions.length > 1)
     return { id: track.id, name: track.name, color: track.color, opacity: track.opacity, positions: sampled.map((point): LatLngTuple => [point.lat, point.lon]), shapes }
-  }), [otherTracks])
+  }), [otherTracks, mapPointBudget])
   const mapPositions = positions.length > 0 ? positions : otherTrackLayers.flatMap((track) => track.positions)
 
   const fitPositions = fitSelection && selectionPositions.length > 0

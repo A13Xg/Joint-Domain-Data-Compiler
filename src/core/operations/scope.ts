@@ -13,7 +13,7 @@ import { withPoints, type TransformResult } from '../transforms'
 
 /** Guards an operation that has no meaningful sub-range behaviour. */
 export function rejectScope(scope: OperationScope | undefined, label: string): void {
-  if (scope?.indexRange || scope?.timeRange) throw new Error(`${label} requires full-dataset scope`)
+  if (scope?.indexRange || scope?.timeRange || scope?.indexSet) throw new Error(`${label} requires full-dataset scope`)
 }
 
 /**
@@ -31,6 +31,7 @@ export function runPointPreserving(
   transform: (points: TrackPoint[]) => TransformResult,
 ): OperationExecutionResult {
   if (scope?.timeRange) throw new Error(`${label} does not support time-range scope`)
+  if (scope?.indexSet) throw new Error(`${label} does not support set-based scope`)
   const result = scope?.indexRange
     ? applyTransformToRange(dataset.points, scope.indexRange, transform)
     : transform(dataset.points)

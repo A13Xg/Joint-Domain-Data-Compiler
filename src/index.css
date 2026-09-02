@@ -425,7 +425,7 @@ code { font-family: var(--mono); background: var(--bg-3); padding: 1px 5px; bord
 .grid-th:hover { background: var(--bg-3); }
 .sort-arrow { font-size: 8px; color: var(--accent); }
 .grid-viewport { overflow: auto; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-1); }
-.grid-row { display: grid; border-bottom: 1px solid var(--bg-3); width: 100%; }
+.grid-row { display: grid; border-bottom: 1px solid var(--bg-3); width: 100%; user-select: none; }
 .grid-row:nth-child(even) { background: rgba(255, 255, 255, 0.012); }
 .grid-row:hover { background: rgba(234, 79, 47, 0.06); }
 .grid-row.quality-flagged { box-shadow: inset 3px 0 #f59e0b; }
@@ -462,6 +462,12 @@ button.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--red) 1
 .op-controls { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin-top: auto; }
 .num-field { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--text-dim); }
 .num-field input { width: 88px; }
+.settings-panel { display: flex; flex-direction: column; gap: 18px; max-width: 640px; }
+.settings-header h3 { margin: 0 0 4px; }
+.settings-group { background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.settings-group h4 { margin: 0; font-size: 13.5px; }
+.settings-field { display: flex; flex-direction: column; gap: 4px; }
+.settings-field-desc { margin: 0; max-width: 560px; }
 .chk { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-dim); }
 
 /* ---------- Mapping ---------- */

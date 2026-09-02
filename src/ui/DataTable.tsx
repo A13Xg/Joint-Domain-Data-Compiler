@@ -5,6 +5,7 @@ import { detectQualityEvents, eventSourceIndices } from '../core/quality/events'
 import { usePointSelection } from '../state/pointSelection'
 import { archiveFile } from '../desktop/fileArchive'
 import { SelectionChip } from './SelectionChip'
+import { useConfirm } from './confirmContext'
 
 const ROW_HEIGHT = 26
 const OVERSCAN = 8
@@ -19,7 +20,7 @@ interface Column {
   get: (point: TrackPoint) => number | string | boolean | undefined
 }
 
-export function DataTable({ points, channels }: { points: TrackPoint[]; channels: string[] }) {
+export function DataTable({ points, channels, onDeletePoints }: { points: TrackPoint[]; channels: string[]; onDeletePoints: (indices: number[]) => void }) {
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState<string | null>(null)
   const [sortDir, setSortDir] = useState<SortDir>(null)
@@ -32,10 +33,39 @@ export function DataTable({ points, channels }: { points: TrackPoint[]; channels
   // the follow-selection effect below. See that effect for why.
   const selfDrivenHoverRef = useRef(false)
   const viewportHeight = 460
-  const { pointIndex, hoverIndex, indexRange, selectPoint, setHoverIndex, clearPointSelection, clearRangeSelection, clearHover } = usePointSelection(points)
+  const confirm = useConfirm()
+  const { pointIndex, hoverIndex, indexRange, indexSet, selectPoint, setHoverIndex, toggleInSet, extendSetRange, clearPointSelection, clearRangeSelection, clearSet, clearHover } = usePointSelection(points)
+  const indexSetLookup = useMemo(() => new Set(indexSet), [indexSet])
   const activeRangeOnly = rangeOnly && indexRange !== null
   const qualityEvents = useMemo(() => detectQualityEvents(points), [points])
   const flaggedIndices = useMemo(() => eventSourceIndices(qualityEvents), [qualityEvents])
+  // Shift+click unions a *source-index* run between the anchor and the
+  // clicked row. That run is only meaningful while the grid shows every row
+  // in dataset order — under a sort or any filter, the rows between anchor
+  // and target on screen are not the rows between those indices in the
+  // dataset, and unioning by index would silently reach past what's visible
+  // (and, via delete, remove points the user never saw). Outside natural
+  // order, shift+click degrades to the same single-index toggle as
+  // ctrl/cmd+click rather than doing nothing or doing the wrong thing.
+  const naturalOrder = !sortKey && query.trim().length === 0 && !flaggedOnly && !activeRangeOnly
+
+  const handleDeleteSet = async () => {
+    if (indexSet.length === 0) return
+    const proceed = await confirm({
+      title: `Delete ${indexSet.length.toLocaleString()} point(s)`,
+      message: 'These points are removed from the track. Every row after a deleted point shifts up by one for each point removed ahead of it.',
+      details: [
+        `${points.length.toLocaleString()} points → ${(points.length - indexSet.length).toLocaleString()} points`,
+        'Undoable from the operation history',
+      ],
+      confirmLabel: 'Delete',
+    })
+    if (!proceed) return
+    // applyTransform → restorePointSelection already clears indexSet (and
+    // everything else) once the delete lands, since the indices it named no
+    // longer resolve to the same rows. No need to clearSet() here too.
+    onDeletePoints(indexSet)
+  }
 
   const columns = useMemo<Column[]>(() => {
     const base: Column[] = [
@@ -145,7 +175,10 @@ export function DataTable({ points, channels }: { points: TrackPoint[]; channels
         {indexRange && <label className="chk"><input type="checkbox" checked={rangeOnly} onChange={(event) => setRangeOnly(event.target.checked)} />selected range only</label>}
         {pointIndex !== null && <SelectionChip label={`selected #${pointIndex}`} onJump={() => scrollToSelection(pointIndex)} jumpTitle="Scroll to this row" onClear={clearPointSelection} clearLabel="Clear point selection" />}
         {indexRange && <SelectionChip label={`range ${indexRange.start}–${indexRange.end}`} tone="range" onJump={() => scrollToSelection(indexRange.start)} jumpTitle="Scroll to the start of this range" onClear={() => { setRangeOnly(false); clearRangeSelection() }} clearLabel="Clear range selection" />}
+        {indexSet.length > 0 && <SelectionChip label={`set of ${indexSet.length}`} tone="set" onJump={() => scrollToSelection(indexSet[0]!)} jumpTitle="Scroll to the first selected point" onClear={clearSet} clearLabel="Clear multi-select" />}
+        {indexSet.length > 0 && <button type="button" onClick={() => void handleDeleteSet()}>Delete {indexSet.length} point(s)</button>}
       </div>
+      <div className="data-table-hint">Ctrl/⌘+click a row to add or remove it from a delete set{naturalOrder ? '; shift+click extends it to a range' : ' (sort/filter active — shift+click adds one row at a time)'}.</div>
       {/* Header and rows share one scroll container so a grid wider than the
           panel scrolls both together and the labels stay over their columns
           instead of being clipped at the right edge. Keeping the header in a
@@ -163,10 +196,11 @@ export function DataTable({ points, channels }: { points: TrackPoint[]; channels
             const selected = pointIndex === index
             const hovered = hoverIndex === index
             const inRange = indexRange !== null && index >= indexRange.start && index <= indexRange.end
+            const inSet = indexSetLookup.has(index)
             const flagged = flaggedIndices.has(index)
             const eventKinds = qualityEvents.filter((event) => event.startIndex <= index && event.endIndex >= index).map((event) => event.kind).join(', ')
             return (
-              <div key={index} className={`grid-row${selected ? ' selected' : ''}${hovered ? ' hovered' : ''}${inRange ? ' in-range' : ''}${flagged ? ' quality-flagged' : ''}`} title={eventKinds ? `Quality events: ${eventKinds}` : undefined} onMouseEnter={() => { selfDrivenHoverRef.current = true; setHoverIndex(index) }} onMouseLeave={clearHover} onClick={() => { selfDrivenHoverRef.current = true; selectPoint(selected ? null : index) }} style={{ position: 'absolute', top: (startIndex + offset) * ROW_HEIGHT, height: ROW_HEIGHT, gridTemplateColumns: gridTemplate, cursor: 'pointer' }}>
+              <div key={index} className={`grid-row${selected ? ' selected' : ''}${hovered ? ' hovered' : ''}${inRange ? ' in-range' : ''}${inSet ? ' in-set' : ''}${flagged ? ' quality-flagged' : ''}`} title={eventKinds ? `Quality events: ${eventKinds}` : undefined} onMouseEnter={() => { selfDrivenHoverRef.current = true; setHoverIndex(index) }} onMouseLeave={clearHover} onClick={(event) => { selfDrivenHoverRef.current = true; if (event.shiftKey) { if (naturalOrder) extendSetRange(index); else toggleInSet(index); return } if (event.ctrlKey || event.metaKey) { toggleInSet(index); return } selectPoint(selected ? null : index) }} style={{ position: 'absolute', top: (startIndex + offset) * ROW_HEIGHT, height: ROW_HEIGHT, gridTemplateColumns: gridTemplate, cursor: 'pointer' }}>
                 <div className="grid-cell grid-idx">{flagged ? '⚠ ' : ''}{index}</div>
                 {columns.map((column) => <div key={column.key} className="grid-cell" title={fmtCell(column.get(point))}>{fmtCell(column.get(point))}</div>)}
               </div>

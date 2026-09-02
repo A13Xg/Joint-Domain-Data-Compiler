@@ -1,5 +1,5 @@
 // Task 4.2: pure X-domain zoom math for the time-series chart.
-import { isFullyZoomedOut, zoomDomain } from '../src/visualization/charts/zoom.ts'
+import { isFullyZoomedOut, panDomain, zoomDomain } from '../src/visualization/charts/zoom.ts'
 
 let failures = 0
 function check(name: string, condition: boolean, detail = ''): void {
@@ -57,6 +57,40 @@ const bounds = { lo: 0, hi: 1000 }
 }
 
 check('isFullyZoomedOut is false for a narrowed domain', !isFullyZoomedOut({ lo: 100, hi: 900 }, bounds))
+
+// --- panDomain: shifts position, never span ----------------------------------
+{
+  const zoomed = { lo: 400, hi: 500 }
+  const panned = panDomain(zoomed, bounds, 0.5)
+  check('Panning right shifts the domain forward', panned.lo > zoomed.lo && panned.hi > zoomed.hi)
+  check('Panning never changes the span', Math.abs((panned.hi - panned.lo) - (zoomed.hi - zoomed.lo)) < 1e-9)
+}
+{
+  const zoomed = { lo: 400, hi: 500 }
+  const panned = panDomain(zoomed, bounds, -0.5)
+  check('Panning left shifts the domain backward', panned.lo < zoomed.lo && panned.hi < zoomed.hi)
+}
+{
+  const nearLeftEdge = { lo: 0, hi: 50 }
+  const panned = panDomain(nearLeftEdge, bounds, -1)
+  check('Panning past the left edge clamps to bounds.lo', panned.lo === bounds.lo)
+  check('Clamped pan preserves span', Math.abs((panned.hi - panned.lo) - 50) < 1e-9)
+}
+{
+  const nearRightEdge = { lo: 950, hi: 1000 }
+  const panned = panDomain(nearRightEdge, bounds, 1)
+  check('Panning past the right edge clamps to bounds.hi', panned.hi === bounds.hi)
+}
+{
+  const fullyZoomedOut = { ...bounds }
+  const panned = panDomain(fullyZoomedOut, bounds, 0.5)
+  check('Panning at full zoom-out is a no-op (nowhere to go)', panned.lo === bounds.lo && panned.hi === bounds.hi)
+}
+{
+  const degenerate = { lo: 5, hi: 5 }
+  const panned = panDomain(degenerate, bounds, 0.5)
+  check('A zero-span current domain is a safe no-op', panned.lo === degenerate.lo && panned.hi === degenerate.hi)
+}
 
 console.log(`\n${failures === 0 ? 'ALL CHART ZOOM CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)

@@ -5,6 +5,7 @@ import { DEFAULT_QUALITY_EVENT_CONFIG, detectQualityEvents } from '../core/quali
 import { buildSharedTrajectory3dGeometry, type Trajectory3dVertex } from '../visualization/scene3d/trajectory'
 import { assessDatasetCompatibility } from '../core/metadataCompatibility'
 import { usePointSelection } from '../state/pointSelection'
+import { useAppSettings } from '../state/settings'
 import { SelectionChip } from './SelectionChip'
 import type { WorkspaceState } from '../state/workspace'
 
@@ -29,10 +30,11 @@ export function Trajectory3dPanel({ dataset, datasets, workspace, onWorkspaceCha
   const projectedRef = useRef<ScreenVertex[]>([])
   const dragRef = useRef<{ x: number; y: number; pan: boolean; moved: boolean } | null>(null)
   const { pointIndex, hoverIndex, indexRange, selectPoint, setHoverIndex, clearPointSelection, clearRangeSelection, clearHover } = usePointSelection(dataset.points)
+  const { scenePointBudget } = useAppSettings()
   const shared3d = useMemo(() => {
     const compatible = datasets.filter((candidate) => candidate.id !== dataset.id && assessDatasetCompatibility(dataset, candidate).level === 'compatible')
-    return buildSharedTrajectory3dGeometry([dataset, ...compatible].map((candidate) => ({ id: candidate.id, points: candidate.points })), { altitudeExaggeration, maxPoints: 20_000, colorChannelId: colorChannelId || undefined })
-  }, [dataset, datasets, altitudeExaggeration, colorChannelId])
+    return buildSharedTrajectory3dGeometry([dataset, ...compatible].map((candidate) => ({ id: candidate.id, points: candidate.points })), { altitudeExaggeration, maxPoints: scenePointBudget, colorChannelId: colorChannelId || undefined })
+  }, [dataset, datasets, altitudeExaggeration, colorChannelId, scenePointBudget])
   const geometry = shared3d.tracks[0]!.geometry
   const companionGeometries = shared3d.tracks.slice(1).map((track) => track.geometry)
   const incompatibleCount = datasets.filter((candidate) => candidate.id !== dataset.id && assessDatasetCompatibility(dataset, candidate).level === 'blocked').length

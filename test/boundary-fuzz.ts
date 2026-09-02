@@ -221,6 +221,7 @@ const VALID_OPERATION_PARAMS: Record<string, unknown[]> = {
     { index: 0, fields: { lat: 45.1, lon: -122.4 } },
     { index: 5, fields: { ele: 120, time: 1_700_000_000_000, name: 'Waypoint', desc: 'note', ext: { speed_mps: 12.5, flagged: true, tag: 'x' } } },
   ],
+  'delete-points': [undefined, {}],
 }
 
 // Hostile values that are, on inspection, legitimately valid for a given
@@ -246,6 +247,9 @@ const TOLERATED_BY_OPERATION: Record<string, string[]> = {
   'round-precision': [],
   'fill-gaps': [],
   'edit-point': [],
+  // delete-points takes its indices through `scope`, not `params` — like
+  // sort-by-time and drop-invalid, `undefined`/`{}` are both "no parameters".
+  'delete-points': ['undefined', 'empty object'],
 }
 
 const operations = [...listOperations()]

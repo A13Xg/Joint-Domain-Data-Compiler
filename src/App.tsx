@@ -28,6 +28,7 @@ import { TransformPanel } from './ui/TransformPanel'
 import { NotionalSmoothingPanel } from './ui/NotionalSmoothingPanel'
 import { FusionPanel } from './ui/FusionPanel'
 import { ExportPanel } from './ui/ExportPanel'
+import { SettingsPanel } from './ui/SettingsPanel'
 import { MappingPanel } from './ui/MappingPanel'
 import { ImportView } from './ui/ImportView'
 import { ComparisonPanel } from './ui/ComparisonPanel'
@@ -64,7 +65,7 @@ ensureBuiltinOperationsRegistered()
 // Single source for the tab ids. `isTab` reads this list instead of repeating
 // it: the duplicate it replaced had already drifted (it was missing 'sources'
 // and 'fusion'), which silently restored those projects to the overview.
-const TAB_IDS = ['import', 'mapping', 'overview', 'map', 'charts', 'table', 'points', 'compare', 'scene3d', 'transform', 'project', 'export', 'sources', 'fusion'] as const
+const TAB_IDS = ['import', 'mapping', 'overview', 'map', 'charts', 'table', 'points', 'compare', 'scene3d', 'transform', 'project', 'export', 'sources', 'fusion', 'settings'] as const
 
 export type Tab = typeof TAB_IDS[number]
 
@@ -722,6 +723,25 @@ export default function App() {
     }
   }, [active, applyTransform])
 
+  /**
+   * Set-based multi-select delete, shared by the Table grid and the Charts
+   * tab (both build the same `indexSet` via `state/pointSelection`). Runs
+   * the registered delete-points operation so it lands in history as a
+   * replayable record like any other transform, undoable the same way.
+   * Never preserves the old selection: the deleted indices shift every
+   * index after them, and the deleted indices themselves no longer exist,
+   * so there is nothing meaningful to carry forward.
+   */
+  const deletePoints = useCallback((indices: number[]) => {
+    if (!active || indices.length === 0) return
+    try {
+      const execution = executeOperation(active, 'delete-points', {}, { indexSet: indices })
+      applyTransform(execution.dataset.points, execution.record.summary, false, execution.record)
+    } catch (error) {
+      logger.error('transform', `Delete points failed: ${errorMessage(error)}`)
+    }
+  }, [active, applyTransform])
+
   const acceptHealthRepair = useCallback(() => {
     const pending = pendingHealthRepair
     setPendingHealthRepair(null)
@@ -811,6 +831,7 @@ export default function App() {
     { id: 'export', label: 'Export', enabled: !!active },
     { id: 'sources', label: 'Sources', enabled: datasets.length > 0 },
     { id: 'fusion', label: 'Fusion', enabled: datasets.length >= 2 },
+    { id: 'settings', label: 'Settings', enabled: true },
   ]
 
   const otherTracks: OtherTrack[] = (active
@@ -840,8 +861,8 @@ export default function App() {
             {tab === 'mapping' && pendingCsv && <MappingPanel analysis={pendingCsv.analysis} mapping={pendingCsv.mapping} onChange={(mapping) => setPendingCsv((current) => current ? { ...current, mapping } : current)} additionalHeaders={pendingCsv.additionalHeaders} onToggleAdditionalHeaders={(additionalHeaders) => setPendingCsv((current) => current ? { ...current, additionalHeaders } : current)} dataStartRow={pendingCsv.dataStartRow} onDataStartRowChange={(dataStartRow) => setPendingCsv((current) => current ? { ...current, dataStartRow } : current)} onBuild={onBuildCsv} building={building} />}
             {tab === 'overview' && active && <div className="overview-panels"><TrackHealthPanel dataset={active} onDrillDown={handleHealthDrillDown} onDropOutliers={dropHealthOutliers} /><TrackMetricsPanel dataset={active} /><StatsPanel dataset={active} bookmarks={bookmarks} onBookmarksChange={(next) => { setBookmarks(next); setProjectDirty(true) }} /></div>}
             {tab === 'map' && <MapView points={active?.points ?? []} channels={active?.channels ?? []} workspace={workspace.map} onWorkspaceChange={(map) => { setWorkspace((current) => ({ ...current, map })); setProjectDirty(true) }} otherTracks={otherTracks} overlayState={workspace.mapOverlays} onOverlayStateChange={onMapOverlayStateChange} onImportOverlayAsTrack={onImportOverlayAsTrack} browserOverlayFiles={browserOverlayFiles} onBrowserOverlayFile={onBrowserOverlayFile} jumpRequested={pendingJump === 'map'} onJumpHandled={clearPendingJump} />}
-            {tab === 'charts' && active && <div className="charts-workspace"><TimeSeriesChart points={active.points} channels={active.channels} jumpRequested={pendingJump === 'charts'} onJumpHandled={clearPendingJump} /><PointInspectorPanel dataset={active} onEditPoint={editPoint} /></div>}
-            {tab === 'table' && active && <DataTable points={active.points} channels={active.channels} />}
+            {tab === 'charts' && active && <div className="charts-workspace"><TimeSeriesChart points={active.points} channels={active.channels} jumpRequested={pendingJump === 'charts'} onJumpHandled={clearPendingJump} onDeletePoints={deletePoints} /><PointInspectorPanel dataset={active} onEditPoint={editPoint} /></div>}
+            {tab === 'table' && active && <DataTable points={active.points} channels={active.channels} onDeletePoints={deletePoints} />}
             {tab === 'points' && active && <PointVisualizerPanel dataset={active} />}
             {tab === 'compare' && <ComparisonPanel datasets={datasets} activeId={activeId} workspace={workspace.comparison} onWorkspaceChange={(comparison) => { setWorkspace((current) => ({ ...current, comparison })); setProjectDirty(true) }} onSelectReferenceSample={(datasetId, pointIndex) => { const reference = datasets.find((dataset) => dataset.id === datasetId); if (!reference) return; restorePointSelection(reference.points, pointIndex, null); setActiveId(datasetId) }} />}
             {tab === 'scene3d' && active && <Trajectory3dPanel dataset={active} datasets={datasets} workspace={workspace.scene3d} onWorkspaceChange={(scene3d) => { setWorkspace((current) => ({ ...current, scene3d })); setProjectDirty(true) }} />}
@@ -849,6 +870,7 @@ export default function App() {
             {tab === 'project' && <ProjectPanel datasets={datasets} histories={histories} activeId={activeId} activeTab={workspace.lastWorkspaceTab} workspace={workspace} datasetDisplay={syncedDisplay} bookmarks={bookmarks} operationRecords={operationRecords} namedRecipes={namedRecipes} fusionArtifacts={fusionArtifacts} projectName={projectName} projectNotes={projectNotes} projectDirty={projectDirty} onWorkspaceChange={(next) => { setWorkspace(next); setProjectDirty(true) }} onProjectNameChange={(name) => { setProjectName(name); setProjectDirty(true) }} onProjectNotesChange={(notes) => { setProjectNotes(notes); setProjectDirty(true) }} onProjectSaved={() => setProjectDirty(false)} onRestoreProject={restoreProject} />}
 
             {tab === 'export' && active && <ExportPanel dataset={active} />}
+            {tab === 'settings' && <SettingsPanel />}
             {tab === 'sources' && <SourcesPanel datasets={datasets} activeId={activeId} display={syncedDisplay} onDisplayChange={(next) => { setDatasetDisplay(next); setProjectDirty(true) }} onSelectActive={setActiveId} />}
             {tab === 'fusion' && <FusionPanel datasets={datasets} fusionArtifacts={fusionArtifacts} onCreateDataset={(dataset, artifact) => { addDataset(dataset); setFusionArtifacts((current) => [...current, artifact]); setProjectDirty(true); setTab('fusion') }} />}
           </section>
@@ -865,7 +887,7 @@ function isTab(value: unknown): value is Tab {
   return typeof value === 'string' && (TAB_IDS as readonly string[]).includes(value)
 }
 
-function isWorkspaceTab(tab: Tab): tab is Exclude<Tab, 'import' | 'mapping' | 'project' | 'export' | 'sources' | 'fusion'> {
+function isWorkspaceTab(tab: Tab): tab is Exclude<Tab, 'import' | 'mapping' | 'project' | 'export' | 'sources' | 'fusion' | 'settings'> {
   return ['overview', 'map', 'charts', 'table', 'points', 'compare', 'scene3d', 'transform'].includes(tab)
 }
 
