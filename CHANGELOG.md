@@ -3,7 +3,7 @@
 Notable user-facing and operational changes are recorded here. This project follows Semantic
 Versioning; release tags use the `vX.Y.Z` form.
 
-## Unreleased
+## 0.5.0 - 2026-09-04
 
 ### Added
 
