@@ -33,6 +33,8 @@ export interface JointDomainCompilerDesktopApi {
   openUserGuide?: () => Promise<string>
   /** Hands the unsaved-changes flag to the main process, which owns the close prompt. */
   setUnsavedChanges?: (dirty: boolean) => void
+  /** Reports that the workbench has mounted, retiring the launch splash. */
+  notifyRendererReady?: () => void
 }
 
 declare global {

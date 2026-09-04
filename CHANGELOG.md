@@ -3,6 +3,32 @@
 Notable user-facing and operational changes are recorded here. This project follows Semantic
 Versioning; release tags use the `vX.Y.Z` form.
 
+## Unreleased
+
+### Added
+
+- A launch splash for the desktop app. It is the first thing `ready` opens — ahead of every IPC
+  registration and filesystem touch — so a cold launch is acknowledged on screen in well under a
+  second while the rest of startup proceeds behind it. A progress bar spans the bottom edge and a
+  status line above it cycles through what is actually being brought up at each stage. The stages
+  are real: the bar advances on the workbench window's `dom-ready`, on its `did-finish-load`, and
+  on the renderer's own report that React has mounted, and every item named is something that
+  stage genuinely loads or registers. It is a plain frameless window rather than a transparent
+  rounded one because `transparent: true` is unreliable on Linux without a compositor, and black
+  corners on the AppImage and `.deb` builds are worse than a straight edge everywhere.
+
+### Changed
+
+- The application icon and the browser-tab favicon are now the JDDC mark. The favicon previously
+  carried an unrelated stock logo left over from the project scaffold.
+- The desktop window now stays hidden until the renderer reports the workbench mounted, rather
+  than appearing at the loading skeleton's first paint. With a splash on screen the old behavior
+  would raise a half-built window behind it and then swap to that same window a second later.
+  Nothing changes for the browser build, or for a macOS `activate` reopen, where there is no
+  splash to wait behind and the skeleton still carries the wait. An 8-second ceiling covers a
+  renderer that never reports in, so a bundle that throws before mounting still surfaces its
+  failure in the skeleton instead of leaving a permanent splash.
+
 ## 0.4.0 - 2026-09-04
 
 ### Added

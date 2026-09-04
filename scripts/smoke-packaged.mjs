@@ -103,7 +103,11 @@ async function waitForRenderer(port, processHandle) {
       const response = await fetch(`http://127.0.0.1:${port}/json/list`)
       if (response.ok) {
         const targets = await response.json()
-        const page = targets.find((target) => target.type === 'page')
+        // Matched by URL, not just by being the first page target: the
+        // launch splash is a second page for the first second or two of
+        // startup, and `find` would otherwise keep returning it.
+        const pages = targets.filter((target) => target.type === 'page')
+        const page = pages.find((target) => target.url.includes(expectedUrlFragment)) ?? pages[0]
         if (page) {
           lastPage = page
           if (page.url.includes(expectedUrlFragment) && page.title === expectedTitle) return page

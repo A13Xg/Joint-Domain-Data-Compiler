@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- `script-src 'none'` is not an oversight: this page has no script of its
+         own. splash-preload.cjs drives the DOM from the isolated preload world,
+         which page CSP does not govern, so the splash needs neither an inline
+         script exception nor a contextBridge surface. `file:` sits beside
+         'self' in img-src because Chromium treats a file:// document's origin
+         as opaque, and 'self' alone can refuse the sibling plate below --
+         a failure that renders as a bare dark rectangle with the reason only
+         in devtools nobody opens during a launch. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src 'self' file:; style-src 'unsafe-inline'; script-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Starting Joint Domain Data Compiler</title>
+    <style>
+      :root {
+        --ink: #050b18;
+        --text: #a8c8e4;
+        --text-dim: #5d7793;
+        --cyan: #38bdf8;
+      }
+
+      html, body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: var(--ink);
+        cursor: default;
+        user-select: none;
+        font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+
+      /* Sized to the window's own aspect ratio, so `cover` is an exact fit and
+         only absorbs sub-pixel rounding at fractional device scale factors. */
+      .plate {
+        position: fixed;
+        inset: 0;
+        background: var(--ink) url("./splash.png") center / cover no-repeat;
+        /* A frameless window has no chrome to separate it from whatever is
+           behind it; this is the entire edge treatment. */
+        box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.16);
+      }
+
+      /* The art's lower third is a bright wireframe grid. Without this the
+         status line reads on top of moving detail rather than against ground. */
+      .scrim {
+        position: fixed;
+        inset: auto 0 0 0;
+        height: 132px;
+        background: linear-gradient(
+          180deg,
+          rgba(5, 11, 24, 0) 0%,
+          rgba(5, 11, 24, 0.45) 38%,
+          rgba(4, 9, 20, 0.93) 100%
+        );
+      }
+
+      .footer {
+        position: fixed;
+        inset: auto 0 0 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 0 24px 17px;
+        font-size: 10.5px;
+        letter-spacing: 0.11em;
+        text-transform: uppercase;
+      }
+
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        min-width: 0;
+        color: var(--text);
+      }
+
+      .pip {
+        flex: none;
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--cyan);
+        box-shadow: 0 0 8px rgba(56, 189, 248, 0.9);
+        animation: pip 1.5s ease-in-out infinite;
+      }
+
+      @keyframes pip {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.28; }
+      }
+
+      /* Each item is swapped in behind a short fade rather than cut, so a fast
+         sequence reads as one moving line instead of a flicker. */
+      .item {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        transition: opacity 180ms ease, transform 180ms ease;
+      }
+
+      .item.is-swapping {
+        opacity: 0;
+        transform: translateY(3px);
+      }
+
+      .version {
+        flex: none;
+        /* The footer uppercases its status line; a version is a literal, and
+           "V0.4.0" reads as a different string than the one in the title bar. */
+        text-transform: none;
+        color: var(--text-dim);
+        letter-spacing: 0.08em;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .bar {
+        position: fixed;
+        inset: auto 0 0 0;
+        height: 3px;
+        background: rgba(148, 190, 230, 0.13);
+      }
+
+      /* One long ease-out per stage does the work two animations normally
+         would: it covers most of the distance to the stage's ceiling within a
+         few hundred milliseconds, then crawls, so the bar keeps moving during
+         a slow stage without ever running past it. */
+      .bar__fill {
+        position: relative;
+        width: 0;
+        height: 100%;
+        background: linear-gradient(90deg, #22d3ee 0%, #7dd3fc 55%, #f5c542 100%);
+        box-shadow: 0 0 12px rgba(56, 189, 248, 0.55);
+        transition: width 5s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .bar__fill.is-complete {
+        transition: width 260ms cubic-bezier(0.33, 1, 0.68, 1);
+      }
+
+      /* A glow at the leading edge rather than a sheen travelling the fill:
+         it stays the same size at 5% and at 95%, where a proportional sweep
+         would be invisible early and overbearing late. */
+      .bar__fill::after {
+        content: "";
+        position: absolute;
+        top: -2px;
+        right: 0;
+        bottom: -2px;
+        width: 28px;
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.8));
+        animation: head 1.5s ease-in-out infinite;
+      }
+
+      @keyframes head {
+        0%, 100% { opacity: 0.35; }
+        50% { opacity: 1; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .pip, .bar__fill::after { animation: none; }
+        .item, .bar__fill { transition-duration: 0ms; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="plate"></div>
+    <div class="scrim"></div>
+    <div class="footer">
+      <div class="status">
+        <span class="pip"></span>
+        <!-- Seeded with the first stage's label so the very first paint is
+             already the real status line, not a placeholder the preload
+             replaces a frame later. -->
+        <span class="item" id="splash-item">Starting Joint Domain Data Compiler</span>
+      </div>
+      <span class="version" id="splash-version"></span>
+    </div>
+    <div class="bar"><div class="bar__fill" id="splash-fill"></div></div>
+  </body>
+</html>

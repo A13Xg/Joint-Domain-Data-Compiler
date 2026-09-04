@@ -45,6 +45,16 @@ export default defineConfig([
       sourceType: 'commonjs',
     },
   },
+  // Preload scripts are the exception to the block above: they run in a
+  // renderer, not the main process. splash-preload.cjs drives the splash
+  // page's DOM directly (see the note at the top of that file for why), so it
+  // needs browser globals alongside the CommonJS ones.
+  {
+    files: ['electron/*preload.cjs'],
+    languageOptions: {
+      globals: { ...globals.node, ...globals.browser },
+    },
+  },
   {
     files: ['scripts/**/*.mjs'],
     extends: [js.configs.recommended],

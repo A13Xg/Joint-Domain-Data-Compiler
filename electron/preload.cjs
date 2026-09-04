@@ -13,6 +13,7 @@ const IPC_CHANNELS = Object.freeze({
   save: 'kml-library:save',
   readText: 'kml-library:read-text',
   remove: 'kml-library:remove',
+  rendererReady: 'window:renderer-ready',
   reseed: 'kml-library:reseed',
   reveal: 'kml-library:reveal',
   revealArchive: 'file-archive:reveal',
@@ -47,4 +48,9 @@ contextBridge.exposeInMainWorld('jointDomainCompiler', {
   // close confirmation. See the `close` handler in main.cjs for why the
   // renderer cannot do this itself with `beforeunload`.
   setUnsavedChanges: (dirty) => ipcRenderer.send(IPC_CHANNELS.setUnsavedChanges, dirty === true),
+  // Also fire-and-forget: reports that the workbench has actually mounted, so
+  // the main process can retire the launch splash and raise a finished window
+  // instead of a half-painted one. Takes no argument and returns nothing --
+  // the renderer cannot ask for anything with it.
+  notifyRendererReady: () => ipcRenderer.send(IPC_CHANNELS.rendererReady),
 })

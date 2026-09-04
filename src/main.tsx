@@ -45,6 +45,12 @@ import('./App.tsx')
         </ErrorBoundary>
       </StrictMode>,
     )
+    // The desktop build holds its window hidden behind the launch splash until
+    // this lands, so the first thing on screen is a finished workbench rather
+    // than one assembling itself. Optional throughout: the browser build has
+    // no bridge, and index.html's skeleton covers the same gap there on its
+    // own.
+    window.jointDomainCompiler?.notifyRendererReady?.()
   })
   .catch((error: unknown) => {
     // ErrorBoundary can't help here -- it only catches failures from a

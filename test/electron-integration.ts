@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 const {
@@ -26,7 +26,7 @@ function rejects(fn: () => unknown): boolean {
 }
 
 check('IPC channel names are unique', new Set(Object.values(IPC_CHANNELS)).size === Object.keys(IPC_CHANNELS).length)
-check('IPC surface exposes only the expected eleven operations', Object.keys(IPC_CHANNELS).sort().join(',') === 'archiveFile,list,openUserGuide,readText,remove,reseed,reveal,revealArchive,save,saveDiagnostics,setUnsavedChanges')
+check('IPC surface exposes only the expected twelve operations', Object.keys(IPC_CHANNELS).sort().join(',') === 'archiveFile,list,openUserGuide,readText,remove,rendererReady,reseed,reveal,revealArchive,save,saveDiagnostics,setUnsavedChanges')
 check('Exact development origin is allowed', isAllowedAppUrl(DEV_ORIGIN, true))
 check('Development origin paths are allowed', isAllowedAppUrl(`${DEV_ORIGIN}/index.html`, true))
 check('Lookalike development origins are blocked', !isAllowedAppUrl(`${DEV_ORIGIN}.attacker.invalid`, true))
@@ -54,6 +54,21 @@ check('Bundled seed reset has an explicit IPC handler', mainProcessSource.includ
 check('File archive registers its IPC handlers at startup', mainProcessSource.includes('registerFileArchiveIpc()'))
 check('File archive writes are size-bounded', mainProcessSource.includes('ipcBytes(bytes, MAX_ARCHIVE_FILE_BYTES)'))
 check('File archive prunes oldest entries after every write', mainProcessSource.includes('pruneFileArchiveDir(dir, MAX_ARCHIVE_TOTAL_BYTES)'))
+
+// The launch splash is a second BrowserWindow with its own preload, opened
+// ahead of everything else in `ready`. Its value is entirely in that ordering
+// -- opened after the workbench window it would appear over a window that no
+// longer needs covering -- and in staying outside the renderer's IPC surface.
+const splashHtmlSource = readFileSync(resolve(process.cwd(), 'electron/splash.html'), 'utf8')
+const splashPreloadSource = readFileSync(resolve(process.cwd(), 'electron/splash-preload.cjs'), 'utf8')
+check('Splash opens before the workbench window is created', mainProcessSource.indexOf('openSplash()') < mainProcessSource.indexOf('createWindow()'))
+check('Splash runs sandboxed with context isolation', /openSplash[\s\S]*?sandbox: true[\s\S]*?\}\)/.test(mainProcessSource))
+check('Splash is dismissed before a fatal startup dialog', /function reportFatal[\s\S]*?dismissSplash\(\)[\s\S]*?showErrorBox/.test(mainProcessSource))
+check('Splash stage channel stays out of the renderer IPC surface', !Object.values(IPC_CHANNELS).includes('splash:stage'))
+check('Splash preload and main process agree on the stage channel', splashPreloadSource.includes("'splash:stage'") && mainProcessSource.includes("SPLASH_STAGE_CHANNEL = 'splash:stage'"))
+check('Splash page runs no script of its own', /script-src 'none'/.test(splashHtmlSource))
+check('Splash preload exposes no bridge to the page', !/exposeInMainWorld/.test(splashPreloadSource))
+check('Splash art ships beside its page', existsSync(resolve(process.cwd(), 'electron/splash.png')))
 
 // preload.cjs runs under webPreferences.sandbox: true (set in main.cjs), whose
 // restricted module loader only resolves 'electron' and Node built-ins — a
