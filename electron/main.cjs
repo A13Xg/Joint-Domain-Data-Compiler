@@ -46,6 +46,9 @@ let hasUnsavedChanges = false
 // Linux without a compositor, and black corners on the AppImage and .deb
 // builds are a worse outcome than a straight edge on every platform.
 const SPLASH_STAGE_CHANNEL = 'splash:stage'
+// Sent by splash-preload.cjs once the artwork is decoded and composited. See
+// where it is consumed in openSplash() for why the window waits for it.
+const SPLASH_PAINTED_CHANNEL = 'splash:painted'
 // Matches splash.png's aspect ratio, so its `cover` fit is exact.
 const SPLASH_SIZE = { width: 800, height: 343 }
 // Only four stages, because only four moments are real. Registering the IPC
@@ -165,21 +168,21 @@ function openSplash() {
     splashShownAt = Date.now()
     window.show()
   }
-  // Both of these mean "there are real pixels": whichever arrives first shows
-  // the window. 'did-finish-load' is not redundant -- it is the one that still
-  // arrives if 'ready-to-show' is swallowed, which is otherwise the failure
-  // the blind timer below has to cover.
-  window.once('ready-to-show', markShown)
-  window.webContents.once('did-finish-load', markShown)
+  // Shown when splash-preload.cjs reports the artwork composited -- NOT on
+  // 'ready-to-show' or 'did-finish-load'. Both of those fire before a CSS
+  // background-image has decoded, so showing on either put the window up
+  // painted in nothing but `backgroundColor`: a black box that sat there until
+  // the art caught up, and on a fast launch closed again before it ever did.
+  ipcMain.once(SPLASH_PAINTED_CHANNEL, markShown)
 
-  // Last resort only, and deliberately far out. An earlier 400 ms fallback
-  // fired during ordinary cold starts -- before the document had committed --
-  // and put a WHITE 800x343 rectangle on screen for the ~200 ms until the art
-  // arrived, which is precisely the "that looked broken" flash the splash is
-  // supposed to prevent. Nothing but a genuinely stuck renderer should reach
-  // this now, and in that case a blank window beats no window.
-  const forceShowTimer = setTimeout(markShown, 2500)
-  window.once('closed', () => clearTimeout(forceShowTimer))
+  // There is deliberately no timeout that shows the window anyway. Every
+  // version of that idea shipped the bug it was meant to guard against: at
+  // 400 ms and at 1200 ms it beat the artwork on a cold start and put a blank
+  // rectangle on screen, and at 2500 ms it sat past the point where a fast
+  // launch had already retired the splash, so it never fired at all. A splash
+  // is decoration; if its art cannot be painted, the right outcome is the
+  // launch it replaced -- no splash -- not a coloured box pretending to be one.
+  // reveal() treats a never-shown splash as absent and hands off immediately.
 
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', (event) => { event.preventDefault() })
@@ -209,11 +212,8 @@ function dismissSplash() {
 // How long to keep the splash up before starting its outro, so that a launch
 // quick enough to outrun it still shows a splash rather than a flicker.
 function splashHoldMs() {
-  if (!splashWindow) return 0
-  // Not yet painted: charge the full hold from now rather than from a paint
-  // that has not happened, so the window it is finally shown in is not zero.
-  const visibleFor = splashShownAt === null ? 0 : Date.now() - splashShownAt
-  return Math.max(0, SPLASH_MIN_VISIBLE_MS - SPLASH_OUTRO_MS - visibleFor)
+  if (!splashWindow || splashShownAt === null) return 0
+  return Math.max(0, SPLASH_MIN_VISIBLE_MS - SPLASH_OUTRO_MS - (Date.now() - splashShownAt))
 }
 
 // The renderer-ready channel is registered once at startup, but the window it
@@ -260,7 +260,11 @@ function createWindow() {
     revealed = true
     clearTimeout(revealTimer)
     revealCurrentWindow = null
-    if (!splashWindow) {
+    // No splash, or one whose artwork never painted and so was never shown:
+    // there is nothing on screen to hand off from, and holding the workbench
+    // back for an invisible window would be pure added latency.
+    if (!splashWindow || splashShownAt === null) {
+      dismissSplash()
       window.show()
       warmKmlLibrary()
       return

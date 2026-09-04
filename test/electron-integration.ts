@@ -70,6 +70,18 @@ check('Splash page runs no script of its own', /script-src 'none'/.test(splashHt
 check('Splash preload exposes no bridge to the page', !/exposeInMainWorld/.test(splashPreloadSource))
 check('Splash art ships beside its page', existsSync(resolve(process.cwd(), 'electron/splash.png')))
 
+// Showing the splash window before its artwork has decoded is the bug that
+// shipped twice: 'ready-to-show' and 'did-finish-load' both land before a CSS
+// background-image paints, so the window went up as a bare coloured box. The
+// preload now reports the decode and the main process waits for that report.
+check('Splash waits for its artwork before being shown', /ipcMain\.once\(SPLASH_PAINTED_CHANNEL, markShown\)/.test(mainProcessSource))
+check('Splash is not shown on first paint alone', !/once\('ready-to-show', markShown\)/.test(mainProcessSource))
+check('Splash preload reports the decoded artwork', splashPreloadSource.includes("SPLASH_PAINTED_CHANNEL = 'splash:painted'") && splashPreloadSource.includes('plate.decode'))
+// The splash window is hidden while it loads, and Chromium runs no frame
+// callbacks for a window that is not on screen: a paint signal built on
+// requestAnimationFrame never arrived, so the splash was never shown at all.
+check('Splash paint signal does not depend on a frame callback', !/requestAnimationFrame\s*\(/.test(splashPreloadSource))
+
 // preload.cjs runs under webPreferences.sandbox: true (set in main.cjs), whose
 // restricted module loader only resolves 'electron' and Node built-ins — a
 // relative require('./security.cjs') throws "module not found" there even

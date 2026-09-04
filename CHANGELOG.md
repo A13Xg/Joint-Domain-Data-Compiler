@@ -3,6 +3,30 @@
 Notable user-facing and operational changes are recorded here. This project follows Semantic
 Versioning; release tags use the `vX.Y.Z` form.
 
+## Unreleased
+
+### Fixed
+
+- The splash appeared as a bare dark box that flashed on and off. `ready-to-show` and
+  `did-finish-load` both fire before a CSS `background-image` has decoded, so the window went up
+  painted in nothing but its `backgroundColor` — and on a quick launch it was retired again before
+  the artwork ever arrived. The splash preload now reports when the plate is actually decoded, and
+  the window waits for that.
+- There is no longer any timeout that shows the splash regardless. Every version of that guard
+  shipped the bug it was meant to prevent: at 400 ms and at 1200 ms it beat the artwork on a cold
+  start and put a blank rectangle on screen; at 2500 ms it sat past the point where a fast launch
+  had already retired the splash, so it never fired at all. If the artwork cannot be painted the
+  launch now proceeds with no splash, exactly as it did before the feature existed, and the
+  workbench is no longer held back for a window nobody can see.
+
+### Added
+
+- `portable.splashImage`: the Windows portable executable now shows a native bitmap while it
+  extracts. That extraction happens before Electron starts, so it is the only thing that can put
+  anything on screen during it — no in-app splash can. **The installed build remains much faster
+  to launch**: electron-builder's portable target runs `RMDir /r` and re-extracts the entire
+  application into `%TEMP%` on *every* launch, while an installed copy simply runs from disk.
+
 ## 0.5.1 - 2026-09-04
 
 ### Fixed

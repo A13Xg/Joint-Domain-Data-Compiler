@@ -30,6 +30,7 @@ test-results
 # app's icon is built from, so the packaging config can name it directly.
 build/
 !build/icon.png
+!build/portable-splash.bmp
 .env.local
 .env.*.local
 

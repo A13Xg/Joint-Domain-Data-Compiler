@@ -112,7 +112,8 @@
       "deleteAppDataOnUninstall": false
     },
     "portable": {
-      "artifactName": "${productName}-${version}-Windows-${arch}-Portable.${ext}"
+      "artifactName": "${productName}-${version}-Windows-${arch}-Portable.${ext}",
+      "splashImage": "build/portable-splash.bmp"
     },
     "mac": {
       "target": [

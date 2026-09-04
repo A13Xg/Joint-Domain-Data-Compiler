@@ -12,6 +12,14 @@ const { ipcRenderer } = require('electron')
 // workbench's renderer surface, mirrored into preload.cjs and asserted
 // one-for-one by test/electron-integration.ts, and the splash is neither.
 const SPLASH_STAGE_CHANNEL = 'splash:stage'
+// Reports that the artwork is decoded and a frame carrying it has been
+// composited, so the main process can show a window with the splash actually
+// on it. 'ready-to-show' and 'did-finish-load' both fire earlier than that: a
+// CSS background-image does not block first paint, so showing on either of
+// them puts the window up painted in nothing but `backgroundColor` -- a black
+// box that sits there until the art arrives, which is what a fast launch
+// showed and then closed again.
+const SPLASH_PAINTED_CHANNEL = 'splash:painted'
 const ITEM_INTERVAL_MS = 470
 const SWAP_FADE_MS = 180
 
@@ -72,4 +80,32 @@ document.addEventListener('DOMContentLoaded', () => {
     applyStage(queuedStage)
     queuedStage = null
   }
+
+  // Loading the plate through an Image() pulls it into the same cache the CSS
+  // background paints from, so the window's first frame after show() already
+  // carries the art instead of bare `backgroundColor`.
+  //
+  // Deliberately not requestAnimationFrame: the splash window is still hidden
+  // at this point, and Chromium does not run frame callbacks for a window that
+  // is not on screen. Waiting for a frame here deadlocked -- the signal never
+  // arrived, the window was never shown, and the splash was destroyed by the
+  // handoff before the blind fallback could rescue it. `onload` and `decode()`
+  // are not frame-gated and fire regardless of visibility.
+  //
+  // Errors announce too: a splash that cannot find its artwork should still
+  // appear rather than be withheld until that fallback.
+  const plate = new Image()
+  const announceOnce = () => {
+    plate.onload = null
+    plate.onerror = null
+    ipcRenderer.send(SPLASH_PAINTED_CHANNEL)
+  }
+  plate.onload = () => {
+    // decode() resolves once the bitmap is ready to paint, which onload alone
+    // does not guarantee. Its rejection is not interesting -- announce either way.
+    if (typeof plate.decode === 'function') plate.decode().then(announceOnce, announceOnce)
+    else announceOnce()
+  }
+  plate.onerror = announceOnce
+  plate.src = './splash.png'
 })
