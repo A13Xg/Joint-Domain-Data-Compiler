@@ -28,7 +28,10 @@ test-results
 # `build/` is electron-builder's buildResources directory: generated icon
 # conversions land here, but build/icon.png is the tracked source the packaged
 # app's icon is built from, so the packaging config can name it directly.
-build/
+# `build/*`, not `build/`: git cannot re-include a file whose parent DIRECTORY
+# is excluded, so with `build/` the negations below silently did nothing and
+# build/icon.png survived only because it was already tracked.
+build/*
 !build/icon.png
 !build/portable-splash.bmp
 .env.local
