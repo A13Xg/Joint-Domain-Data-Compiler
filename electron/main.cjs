@@ -93,8 +93,22 @@ const SPLASH_STAGES = Object.freeze({
 const SPLASH_TIMEOUT_MS = 8000
 // Long enough to read the bar landing on 100%, short enough not to feel like lag.
 const SPLASH_OUTRO_MS = 260
+// Total time the splash stays on screen at minimum, outro included.
+//
+// Measured on a packaged Linux build, a warm launch reached "renderer ready"
+// 381 ms after process start, which put the splash on screen for about 330 ms
+// -- a flash that reads as a rendering glitch rather than as a splash, and the
+// reason a real launch could be reported as showing no splash at all. This
+// only binds on launches already fast enough to beat it; a slow launch has
+// long since exceeded it, so it costs nothing on exactly the launches the
+// splash exists for.
+const SPLASH_MIN_VISIBLE_MS = 900
 
 let splashWindow = null
+// When the splash actually became visible -- not when it was constructed. The
+// hold above has to be measured from the paint, or a slow first paint eats the
+// budget it is meant to add.
+let splashShownAt = null
 let splashStageName = 'boot'
 // webContents.send before the preload has registered its listener is dropped
 // silently, and the first stages are dispatched from the same startup tick
@@ -140,14 +154,32 @@ function openSplash() {
     },
   })
 
-  // Same defence as the workbench window's reveal timer: a swallowed
-  // 'ready-to-show' must not turn the splash into an invisible window that
-  // still holds the workbench back for its full timeout.
-  const forceShowTimer = setTimeout(() => { if (!window.isDestroyed()) window.show() }, 400)
-  window.once('ready-to-show', () => {
-    clearTimeout(forceShowTimer)
-    if (!window.isDestroyed()) window.show()
-  })
+  // Shown on first paint rather than at construction. `show: true` does map
+  // the window immediately -- verified against a deliberately blocked main
+  // thread -- but Chromium paints it WHITE until the document commits, and a
+  // white rectangle on a dark app reads as a fault, not as a launch. Waiting
+  // for the real pixels costs about 200 ms and is the difference between a
+  // splash and a flash of the wrong colour.
+  const markShown = () => {
+    if (window.isDestroyed() || splashShownAt !== null) return
+    splashShownAt = Date.now()
+    window.show()
+  }
+  // Both of these mean "there are real pixels": whichever arrives first shows
+  // the window. 'did-finish-load' is not redundant -- it is the one that still
+  // arrives if 'ready-to-show' is swallowed, which is otherwise the failure
+  // the blind timer below has to cover.
+  window.once('ready-to-show', markShown)
+  window.webContents.once('did-finish-load', markShown)
+
+  // Last resort only, and deliberately far out. An earlier 400 ms fallback
+  // fired during ordinary cold starts -- before the document had committed --
+  // and put a WHITE 800x343 rectangle on screen for the ~200 ms until the art
+  // arrived, which is precisely the "that looked broken" flash the splash is
+  // supposed to prevent. Nothing but a genuinely stuck renderer should reach
+  // this now, and in that case a blank window beats no window.
+  const forceShowTimer = setTimeout(markShown, 2500)
+  window.once('closed', () => clearTimeout(forceShowTimer))
 
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', (event) => { event.preventDefault() })
@@ -170,7 +202,18 @@ function dismissSplash() {
   const window = splashWindow
   splashWindow = null
   splashCanReceive = false
+  splashShownAt = null
   if (window && !window.isDestroyed()) window.destroy()
+}
+
+// How long to keep the splash up before starting its outro, so that a launch
+// quick enough to outrun it still shows a splash rather than a flicker.
+function splashHoldMs() {
+  if (!splashWindow) return 0
+  // Not yet painted: charge the full hold from now rather than from a paint
+  // that has not happened, so the window it is finally shown in is not zero.
+  const visibleFor = splashShownAt === null ? 0 : Date.now() - splashShownAt
+  return Math.max(0, SPLASH_MIN_VISIBLE_MS - SPLASH_OUTRO_MS - visibleFor)
 }
 
 // The renderer-ready channel is registered once at startup, but the window it
@@ -219,18 +262,25 @@ function createWindow() {
     revealCurrentWindow = null
     if (!splashWindow) {
       window.show()
+      warmKmlLibrary()
       return
     }
-    splashStage('ready')
+    // The workbench is ready, but the splash may only just have appeared.
+    // Let it finish being seen, still cycling its current stage, before the
+    // bar runs to 100% and the windows swap.
     setTimeout(() => {
-      if (!window.isDestroyed()) {
-        window.show()
-        window.focus()
-      }
-      // Dismissed after the workbench window is up, never before: the other
-      // order leaves a beat with no window of ours on screen at all.
-      dismissSplash()
-    }, SPLASH_OUTRO_MS)
+      splashStage('ready')
+      setTimeout(() => {
+        if (!window.isDestroyed()) {
+          window.show()
+          window.focus()
+        }
+        // Dismissed after the workbench window is up, never before: the other
+        // order leaves a beat with no window of ours on screen at all.
+        dismissSplash()
+        warmKmlLibrary()
+      }, SPLASH_OUTRO_MS)
+    }, splashHoldMs())
   }
   revealCurrentWindow = reveal
 
@@ -342,6 +392,23 @@ async function ensureKmlLibraryDir() {
   }
 
   return dir
+}
+
+// Deliberately deferred until the workbench window is on screen, and
+// deliberately not awaited.
+//
+// This used to run in `ready`, between opening the splash and the splash's
+// first paint. Its first act is a synchronous 23 MB copyFileSync of the
+// bundled airspace overlay into userData on a first launch, which blocks the
+// main process: the splash's own 'ready-to-show' cannot be delivered while it
+// runs, so the launch that most needed a splash was the launch least likely to
+// show one. Nothing needs the library before the map is opened, and the IPC
+// handlers call ensureKmlLibraryDir() themselves, so this is only a cache
+// warm and is safe anywhere after startup.
+function warmKmlLibrary() {
+  ensureKmlLibraryDir().catch((error) => {
+    console.warn('[KML] Background overlay warm-up failed:', error.message)
+  })
 }
 
 function libraryPath(name) {
@@ -654,12 +721,6 @@ app.whenReady().then(async () => {
   registerDiagnosticIpc()
   registerWindowStateIpc()
   registerUserGuideIpc()
-
-  // Fetch KML overlays in background (non-blocking startup)
-  // This ensures they're cached locally before the user opens the map
-  ensureKmlLibraryDir().catch((error) => {
-    console.warn('[KML] Background fetch failed:', error.message)
-  })
 
   createWindow()
 

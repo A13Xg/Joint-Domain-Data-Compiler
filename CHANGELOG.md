@@ -5,6 +5,30 @@ Versioning; release tags use the `vX.Y.Z` form.
 
 ## Unreleased
 
+### Fixed
+
+- The launch splash could be missed entirely. Three causes, all measured against a packaged Linux
+  build:
+  - Warming the KML/KMZ overlay library ran in `ready`, between opening the splash and its first
+    paint. Its first act is a synchronous 23 MB copy of the bundled airspace overlay into
+    `userData` on a first launch, which blocks the main process — so the splash's own
+    `ready-to-show` could not be delivered while it ran, and the launch that most needed a splash
+    was the one least likely to show one. It now runs once the workbench is on screen; nothing
+    needs it before the map is opened.
+  - The splash was dismissed the instant the workbench reported ready. On a warm launch that
+    measured 381 ms end to end, leaving the splash on screen for about 330 ms — a flash that reads
+    as a rendering glitch. It now stays up for a minimum of 900 ms including its outro
+    (`SPLASH_MIN_VISIBLE_MS`), which binds only on launches already fast enough to beat it.
+  - A 400 ms fallback meant to cover a swallowed `ready-to-show` was firing during ordinary cold
+    starts, before the document had committed, putting a **white** 800×343 rectangle on screen for
+    the ~200 ms until the art arrived. The splash is now shown by whichever of `ready-to-show` or
+    `did-finish-load` lands first — both mean real pixels — and the blind fallback moved to 2.5 s,
+    where only a genuinely stuck renderer can reach it.
+
+  Note that no splash can cover the time before Electron's `ready` event, which was measured at
+  ~970 ms on a cold packaged Linux launch and is expected to be longer on Windows, where the ASAR
+  integrity fuse hashes the archive at startup.
+
 ### Changed
 
 - A `v*` version tag now builds and publishes Linux and Windows only. macOS runners bill at 10x on
