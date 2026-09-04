@@ -56,6 +56,41 @@ conversion against its own inverse would prove nothing about its correctness.
 
 These replace a test corpus that was retired before this repository was made public.
 
+## Demo flight fixtures (user guide screenshots)
+
+`demo-flight-a.csv` and `demo-flight-b.csv` are the tracks every screenshot in
+`public/user-guide.html` is taken against, produced by `scripts/generate-demo-flight.mjs`.
+
+They are synthetic by necessity, not convenience. The guide's screenshots are committed to a
+public repository *and* packaged inside every release binary, so they cannot be shot against
+recorded telemetry. Regenerate with `npm run fixtures:demo-flight`; the generator uses no
+randomness, so the output is byte-identical every run and a screenshot re-run reproduces the
+same pictures.
+
+Positions are **integrated from a commanded heading/speed/vertical-rate profile**, not drawn as
+a shape, so derived kinematics, turn rates, and the Track Health checks all see a physically
+consistent flight: a 10-minute sortie from a 20 m field, climbing through the 1000 ft altitude
+floor to ~1730 m, two opposed 3°/s racetrack turns at a 33.7° bank, then a descent back below
+the floor to the field. Phase transitions are smoothed over a 25-second window because an
+airframe rolls and pitches into a change over seconds — stepping the commanded profile at a
+phase boundary puts a real discontinuity into the path, which the outlier detector then flags
+correctly, making a healthy fixture look defective.
+
+Both tracks score **100/100** on all seven Track Health checks. `hdop`/`sat` vary with bank angle
+(a banked airframe masks part of the sky) without ever crossing the fix-quality thresholds, so
+that check reports real data rather than "not applicable". `demo-flight-b.csv` is the same
+sortie 400 m abeam and two seconds in trail, so the Compare tab aligns 600 of 601 samples at a
+~458 m mean separation.
+
+## Synthetic quality fixtures
+
+`outlier-spikes.csv` is a generated 40-sample eastbound leg at 1 Hz with three ~200 m lateral
+position spikes, used by `test/e2e/track-health-repair.spec.ts`. It is synthetic on purpose:
+Track Health's remediation button only appears when the outlier check *fails*, which requires more
+than `maxFlaggedFraction` (5%) of evaluated points to be flagged, and none of the real-capture
+fixtures above trips that. Every sample is timed, so the repair exercises the reconstruct-in-place
+path rather than the untimed-track deletion fallback.
+
 ## Manual smoke test
 
 1. Import `real-usgs.csv` and map `latitude`, `longitude`, `depth_km`, and `time`.

@@ -106,6 +106,12 @@ test('the Transform tab scrolls to its last card group', async ({ page }) => {
   await page.locator('input[type=file][multiple]').first().setInputFiles(fixture)
   await page.locator('.tab-bar').getByRole('button', { name: 'Transform', exact: true }).click()
 
+  // Every tab but Import is code-split, so the panel arrives after the click.
+  // Measuring before it does reads the loading skeleton, whose scroll height
+  // legitimately equals its client height -- a race that fails this assertion
+  // for the one reason it is not testing.
+  await expect(page.locator('.op-card').first()).toBeVisible()
+
   const content = page.locator('.tab-content')
   const metrics = await content.evaluate((el) => ({ clientH: el.clientHeight, scrollH: el.scrollHeight }))
   // The tab is taller than the viewport by design — that is precisely why it
@@ -125,6 +131,11 @@ test('the Transform tab scrolls to its last card group', async ({ page }) => {
 test('the log dock starts collapsed, shows the newest line, and expands', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto('/')
+  // Bundled map overlays load in the background and log when they arrive. If
+  // that lands after the import, the newest line is the overlay's, not the
+  // import's -- so wait for it here rather than racing it below.
+  await expect(page.locator('.log-collapsed-bar .log-msg')).toContainText('overlay')
+
   await page.locator('input[type=file][multiple]').first().setInputFiles(fixture)
   await expect(page.getByText('1 dataset loaded')).toBeVisible()
 

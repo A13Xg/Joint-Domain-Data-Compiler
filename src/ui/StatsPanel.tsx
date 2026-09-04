@@ -2,7 +2,9 @@
 // Phase 1 time/segment selection controls.
 import { useMemo, useState } from 'react'
 import type { Dataset } from '../core/model'
-import { computeStats, formatDistance, formatDuration } from '../core/stats'
+import { computeStats, formatDuration } from '../core/stats'
+import { formatAltitude, formatDistance, formatSpeed } from '../core/units'
+import { useAppSettings } from '../state/settings'
 import { epochMsToIso } from '../core/format'
 import { segmentTrack } from '../core/analytics/segments'
 import { detectQualityEvents, type QualityEventKind } from '../core/quality/events'
@@ -17,6 +19,7 @@ interface Props {
 }
 
 export function StatsPanel({ dataset, bookmarks, onBookmarksChange }: Props) {
+  const { unitSystem } = useAppSettings()
   const stats = useMemo(() => computeStats(dataset), [dataset])
   const segments = useMemo(() => segmentTrack(dataset.points), [dataset.points])
   const qualityEvents = useMemo(() => detectQualityEvents(dataset.points), [dataset.points])
@@ -34,7 +37,7 @@ export function StatsPanel({ dataset, bookmarks, onBookmarksChange }: Props) {
   const endMs = Date.parse(endTime)
 
   return <div className="stats-panel">
-    <div className="metric-grid"><Metric label="Points" value={stats.pointCount.toLocaleString()} /><Metric label="Valid coords" value={stats.validCoordCount.toLocaleString()} /><Metric label="Distance" value={formatDistance(stats.distanceMeters)} /><Metric label="Duration" value={formatDuration(stats.durationMs)} /><Metric label="Avg rate" value={stats.sampleRateHz ? `${stats.sampleRateHz.toFixed(2)} Hz` : '—'} /><Metric label="Max speed" value={stats.speed ? `${stats.speed.maxMps.toFixed(1)} m/s` : '—'} /><Metric label="Elev gain" value={stats.elevation ? `${stats.elevation.gain.toFixed(0)} m` : '—'} /><Metric label="Elev range" value={stats.elevation ? `${stats.elevation.min.toFixed(0)}–${stats.elevation.max.toFixed(0)} m` : '—'} /></div>
+    <div className="metric-grid"><Metric label="Points" value={stats.pointCount.toLocaleString()} /><Metric label="Valid coords" value={stats.validCoordCount.toLocaleString()} /><Metric label="Distance" value={formatDistance(stats.distanceMeters, unitSystem)} /><Metric label="Duration" value={formatDuration(stats.durationMs)} /><Metric label="Avg rate" value={stats.sampleRateHz ? `${stats.sampleRateHz.toFixed(2)} Hz` : '—'} /><Metric label="Max speed" value={stats.speed ? formatSpeed(stats.speed.maxMps, unitSystem) : '—'} /><Metric label="Elev gain" value={stats.elevation ? formatAltitude(stats.elevation.gain, unitSystem) : '—'} /><Metric label="Elev range" value={stats.elevation ? `${formatAltitude(stats.elevation.min, unitSystem)}–${formatAltitude(stats.elevation.max, unitSystem)}` : '—'} /></div>
     <ImportSummary dataset={dataset} />
     <BookmarksSection dataset={dataset} bookmarks={bookmarks} onBookmarksChange={onBookmarksChange} pointIndex={pointIndex} onJump={selectPoint} />
     <section className="stats-block selection-controls"><h3>Selection controls</h3><div className="selection-time-controls"><label>Start time<input type="datetime-local" step="0.001" value={startTime} onChange={(event) => setStartTime(event.target.value)} /></label><label>End time<input type="datetime-local" step="0.001" value={endTime} onChange={(event) => setEndTime(event.target.value)} /></label><button type="button" disabled={!Number.isFinite(startMs) || !Number.isFinite(endMs)} onClick={() => selectTimeRange({ startMs, endMs })}>Select time range</button>{timeRange && <SelectionChip label={`${epochMsToIso(timeRange.startMs)} → ${epochMsToIso(timeRange.endMs)}`} tone="range" onClear={clearRange} clearLabel="Clear time range selection" />}</div><div className="segment-list">{segments.map((segment) => <button key={segment.id} type="button" className={`segment-chip${segmentIds.includes(segment.id) ? ' active' : ''}`} onClick={() => selectSegment(segment.id, { start: segment.startIndex, end: segment.endIndex })}><strong>{segment.kind}</strong><span>#{segment.startIndex}–{segment.endIndex}</span><span>{segment.pointCount} pts</span></button>)}{segments.length === 0 && <span className="muted small">No segments available.</span>}</div><p className="muted small">Keyboard: ←/→ moves the synchronized cursor, Shift+←/→ extends a range, Enter selects the cursor point, Home/End jumps, Escape clears.</p></section>
@@ -91,7 +94,7 @@ function BookmarksSection({ dataset, bookmarks, onBookmarksChange, pointIndex, o
     <section className="stats-block bookmarks-section">
       <h3>Bookmarks ({datasetBookmarks.length})</h3>
       <div className="bookmark-add">
-        <input placeholder={pointIndex === null ? 'Select a point to bookmark it' : `Label (default: Point #${pointIndex})`} value={label} onChange={(event) => setLabel(event.target.value)} disabled={pointIndex === null} />
+        <input aria-label="Bookmark label" placeholder={pointIndex === null ? 'Select a point to bookmark it' : `Label (default: Point #${pointIndex})`} value={label} onChange={(event) => setLabel(event.target.value)} disabled={pointIndex === null} />
         <button type="button" disabled={pointIndex === null} onClick={addBookmark}>Bookmark current point</button>
       </div>
       {datasetBookmarks.length === 0

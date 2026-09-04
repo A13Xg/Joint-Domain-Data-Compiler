@@ -12,6 +12,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Dataset, TrackPoint } from '../core/model'
 import { haversineMeters } from '../core/model'
 import { epochMsToIso } from '../core/format'
+import { formatAltitude, formatDistance, formatSpeed, type UnitSystem } from '../core/units'
+import { useAppSettings } from '../state/settings'
 import { initialBearingDegrees } from '../core/operations/angular'
 import { DEFAULT_QUALITY_EVENT_CONFIG, detectQualityEvents, type QualityEvent } from '../core/quality/events'
 import { usePointSelection } from '../state/pointSelection'
@@ -45,6 +47,7 @@ export function PointVisualizerPanel({ dataset }: Props) {
   const points = dataset.points
   const { pointIndex, hoverIndex, selectPoint, setHoverIndex } = usePointSelection(points)
   const [neighbourhood, setNeighbourhood] = useState<number>(10)
+  const { unitSystem } = useAppSettings()
   const indexInputRef = useRef<HTMLInputElement>(null)
 
   const events = useMemo(() => detectQualityEvents([...points], DEFAULT_QUALITY_EVENT_CONFIG), [points])
@@ -115,7 +118,7 @@ export function PointVisualizerPanel({ dataset }: Props) {
         <section className="point-neighbourhood">
           <h4>Neighbourhood</h4>
           <NeighbourhoodPlan points={points} range={range} index={index} onSelect={selectPoint} />
-          <NeighbourhoodProfile points={points} range={range} index={index} />
+          <NeighbourhoodProfile points={points} range={range} index={index} unitSystem={unitSystem} />
         </section>
 
         <section className="point-detail">
@@ -123,7 +126,7 @@ export function PointVisualizerPanel({ dataset }: Props) {
           <dl className="point-fields">
             <Field label="Latitude" value={formatDegrees(point.lat, 'lat')} />
             <Field label="Longitude" value={formatDegrees(point.lon, 'lon')} />
-            <Field label="Elevation" value={point.ele === undefined ? '—' : `${point.ele.toLocaleString(undefined, { maximumFractionDigits: 3 })} m`} />
+            <Field label="Elevation" value={point.ele === undefined ? '—' : formatAltitude(point.ele, unitSystem, 3)} />
             <Field label="Time" value={point.time === undefined ? 'untimed' : epochMsToIso(point.time)} />
             <Field label="Epoch ms" value={point.time === undefined ? '—' : String(point.time)} />
             {point.name && <Field label="Name" value={point.name} />}
@@ -149,7 +152,7 @@ export function PointVisualizerPanel({ dataset }: Props) {
             </ul>
           )}
 
-          <NeighbourDeltas points={points} index={index} />
+          <NeighbourDeltas points={points} index={index} unitSystem={unitSystem} />
 
           <ChannelValues point={point} />
         </section>
@@ -263,10 +266,11 @@ function NeighbourhoodPlan({ points, range, index, onSelect }: {
   )
 }
 
-function NeighbourhoodProfile({ points, range, index }: {
+function NeighbourhoodProfile({ points, range, index, unitSystem }: {
   points: readonly TrackPoint[]
   range: { start: number; end: number }
   index: number
+  unitSystem: UnitSystem
 }) {
   const samples: { index: number; ele: number }[] = []
   for (let cursor = range.start; cursor <= range.end; cursor++) {
@@ -289,13 +293,13 @@ function NeighbourhoodProfile({ points, range, index }: {
         {focused && <circle className="diff-focus-ring" cx={toX(focused.index)} cy={toY(focused.ele)} r={5} />}
       </svg>
       <figcaption className="muted small">
-        Elevation {min.toLocaleString(undefined, { maximumFractionDigits: 1 })} – {max.toLocaleString(undefined, { maximumFractionDigits: 1 })} m across the neighbourhood.
+        Elevation {formatAltitude(min, unitSystem, 1)} – {formatAltitude(max, unitSystem, 1)} across the neighbourhood.
       </figcaption>
     </figure>
   )
 }
 
-function NeighbourDeltas({ points, index }: { points: readonly TrackPoint[]; index: number }) {
+function NeighbourDeltas({ points, index, unitSystem }: { points: readonly TrackPoint[]; index: number; unitSystem: UnitSystem }) {
   const previous = index > 0 ? points[index - 1] : undefined
   const next = index < points.length - 1 ? points[index + 1] : undefined
   const point = points[index]!
@@ -307,14 +311,14 @@ function NeighbourDeltas({ points, index }: { points: readonly TrackPoint[]; ind
         <tr><th scope="col">Leg</th><th scope="col">Δt</th><th scope="col">Distance</th><th scope="col">Implied speed</th><th scope="col">Δ elevation</th><th scope="col">Bearing</th></tr>
       </thead>
       <tbody>
-        <LegRow label="from previous" from={previous} to={point} />
-        <LegRow label="to next" from={point} to={next} />
+        <LegRow label="from previous" from={previous} to={point} unitSystem={unitSystem} />
+        <LegRow label="to next" from={point} to={next} unitSystem={unitSystem} />
       </tbody>
     </table>
   )
 }
 
-function LegRow({ label, from, to }: { label: string; from?: TrackPoint; to?: TrackPoint }) {
+function LegRow({ label, from, to, unitSystem }: { label: string; from?: TrackPoint; to?: TrackPoint; unitSystem: UnitSystem }) {
   if (!from || !to) return <tr><th scope="row">{label}</th><td colSpan={5} className="muted">no neighbouring sample</td></tr>
 
   const deltaMs = from.time !== undefined && to.time !== undefined ? to.time - from.time : undefined
@@ -330,9 +334,9 @@ function LegRow({ label, from, to }: { label: string; from?: TrackPoint; to?: Tr
     <tr>
       <th scope="row">{label}</th>
       <td className="mono">{deltaMs === undefined ? '—' : `${(deltaMs / 1000).toFixed(3)} s`}</td>
-      <td className="mono">{meters === undefined ? '—' : formatDistance(meters)}</td>
-      <td className="mono">{speed === undefined ? '—' : `${speed.toLocaleString(undefined, { maximumFractionDigits: 2 })} m/s`}</td>
-      <td className="mono">{deltaEle === undefined ? '—' : `${deltaEle.toLocaleString(undefined, { maximumFractionDigits: 2 })} m`}</td>
+      <td className="mono">{meters === undefined ? '—' : formatDistance(meters, unitSystem)}</td>
+      <td className="mono">{speed === undefined ? '—' : formatSpeed(speed, unitSystem, 2)}</td>
+      <td className="mono">{deltaEle === undefined ? '—' : formatAltitude(deltaEle, unitSystem, 2)}</td>
       <td className="mono">{bearing === undefined ? '—' : `${bearing.toFixed(1)}°`}</td>
     </tr>
   )
@@ -402,11 +406,6 @@ function formatDegrees(value: number, axis: 'lat' | 'lon'): string {
 }
 
 /** Metres up to 10 km, kilometres beyond it — a ten-thousand-kilometre leg in metres is unreadable. */
-function formatDistance(meters: number): string {
-  if (meters >= 10_000) return `${(meters / 1000).toLocaleString(undefined, { maximumFractionDigits: 2 })} km`
-  return `${meters.toLocaleString(undefined, { maximumFractionDigits: 2 })} m`
-}
-
 function clamp(value: number, low: number, high: number): number {
   return Math.max(low, Math.min(high, value))
 }

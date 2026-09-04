@@ -7,6 +7,7 @@ import { createReportOptions } from '../core/reports/options'
 import type { WorkspaceDisplay } from '../state/workspaceDisplay'
 import type { ProjectBookmark } from '../persistence/project/manifest'
 import { buildDiagnosticBundle, serializeDiagnosticBundle } from '../core/diagnostics/bundle'
+import { buildReportComparisonSummary } from '../core/analytics/comparisonSummary'
 import { logger } from '../core/logger'
 import { buildHtmlAnalysisReport } from '../core/reports/htmlReport'
 import type { ReportOptions } from '../core/reports/options'
@@ -113,6 +114,13 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
     const latestFusionReport = fusionArtifacts.length > 0
       ? [...fusionArtifacts].sort((a, b) => b.createdAt - a.createdAt)[0]!.report
       : undefined
+    // Re-derived from the persisted comparison settings rather than read from
+    // the Comparison tab, so the section is populated even when that tab was
+    // never opened this session. Gated on the option because aligning two long
+    // tracks is real work the user did not ask for when the section is off.
+    const comparison = options.includeComparison
+      ? buildReportComparisonSummary(datasets, workspace.comparison, activeId)
+      : undefined
     const html = buildHtmlAnalysisReport({
       title: options.title,
       generatedAt: Date.now(),
@@ -122,6 +130,7 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
       operationRecords,
       overlays: workspace.mapOverlays.overlays.map((overlay) => ({ id: overlay.id, name: overlay.name, sourceKind: overlay.sourceKind, visible: overlay.visible })),
       fusion: latestFusionReport,
+      comparison,
       options,
     })
     downloadBlob(new Blob([html], { type: 'text/html' }), `${sanitizeFilename(filename)}.html`)
@@ -199,7 +208,7 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
         <button type="button" disabled={busy} onClick={() => inputRef.current?.click()}>Open project</button>
         <button type="button" disabled={datasets.length === 0 || busy} onClick={exportManifest}>Export manifest only</button>
         <button type="button" disabled={datasets.length === 0 || busy} onClick={() => setReportDialogOpen(true)}>Export HTML report</button>
-        <input ref={inputRef} className="hidden-input" type="file" accept=".jddc-project,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void openProject(file); event.target.value = '' }} />
+        <input ref={inputRef} className="hidden-input" type="file" aria-label="Choose a project file to open" accept=".jddc-project,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void openProject(file); event.target.value = '' }} />
       </div>
       <p className="muted small">A <code>.jddc-project</code> file is a self-contained, gzip-compressed workspace archive. It embeds current datasets, semantic metadata, undo/redo snapshots, the active dataset and tab, and point/range selection. The manifest remains versioned and fingerprint-verified during restore.</p>
       <label className="field"><span>Project notes</span><textarea rows={3} value={projectNotes} placeholder="Purpose, assumptions, provenance, or handoff notes." onChange={(event) => onProjectNotesChange(event.target.value)} /></label>

@@ -29,6 +29,8 @@ export interface JointDomainCompilerDesktopApi {
     save: (direction: 'inputs' | 'outputs', name: string, bytes: ArrayBuffer) => Promise<{ path: string; bytes: number }>
     reveal: () => Promise<string>
   }
+  /** Opens the packaged user guide in the OS default browser; resolves with the path opened. */
+  openUserGuide?: () => Promise<string>
   /** Hands the unsaved-changes flag to the main process, which owns the close prompt. */
   setUnsavedChanges?: (dirty: boolean) => void
 }

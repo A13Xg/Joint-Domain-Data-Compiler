@@ -538,6 +538,16 @@ button.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--red) 1
 .error-line { color: var(--red); }
 .notional-export-gate { display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--amber); border-radius: var(--radius); margin: 8px 0; }
 
+/* Lives in the header rather than floating over the workspace: a fixed corner
+   button would sit on top of the log dock and the toast stack. */
+.header-help {
+  width: 22px; height: 22px; flex-shrink: 0; margin-left: 10px; padding: 0;
+  border-radius: 50%; border: 1px solid var(--border); background: var(--bg-2);
+  color: var(--text-faint); font-size: 12px; font-weight: 700; line-height: 1; cursor: pointer;
+}
+.header-help:hover { color: var(--text); border-color: var(--accent); }
+h3 .header-help { vertical-align: middle; }
+
 /* ---------- Log dock ---------- */
 .log-dock { height: 220px; flex-shrink: 0; border-top: 1px solid var(--border); background: var(--bg); }
 .log-dock.is-collapsed { height: auto; }

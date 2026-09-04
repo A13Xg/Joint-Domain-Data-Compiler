@@ -377,6 +377,20 @@ function registerKmlLibraryIpc() {
   })
 }
 
+function registerUserGuideIpc() {
+  ipcMain.handle(IPC_CHANNELS.openUserGuide, async () => {
+    // Resolved here rather than passed in from the renderer, so this handler
+    // can only ever open the one document that ships with the app.
+    const guidePath = path.join(__dirname, '../dist/user-guide.html')
+    if (!fs.existsSync(guidePath)) throw new Error('The user guide is not present in this build')
+    // openPath resolves with an error STRING instead of rejecting, so an
+    // unchecked call makes the info button look like a no-op when it fails.
+    const failure = await shell.openPath(guidePath)
+    if (failure) throw new Error(`Could not open the user guide: ${failure}`)
+    return guidePath
+  })
+}
+
 function registerFileArchiveIpc() {
   ipcMain.handle(IPC_CHANNELS.archiveFile, async (_event, direction, name, bytes) => {
     const dir = fileArchiveDir(direction)
@@ -440,6 +454,7 @@ app.whenReady().then(async () => {
   registerFileArchiveIpc()
   registerDiagnosticIpc()
   registerWindowStateIpc()
+  registerUserGuideIpc()
 
   // Fetch KML overlays in background (non-blocking startup)
   // This ensures they're cached locally before the user opens the map

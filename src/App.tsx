@@ -40,6 +40,7 @@ import { errorMessage } from './core/errors'
 import { executeOperation } from './core/recipes/executor'
 import { computeTrackDiff } from './core/repair/diff'
 import { RepairPreviewDialog, type RepairPreviewRequest } from './ui/RepairPreviewDialog'
+import { openUserGuide } from './ui/userGuide'
 import { DEFAULT_TRACK_HEALTH_CONFIG } from './core/quality/trackHealthConfig'
 
 // Every tab but the first (Import, above) is loaded on demand instead of
@@ -871,7 +872,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="app-header"><div className="brand"><span className="brand-mark">JD</span><div><h1>Joint Domain Data Compiler</h1><p>TSPI flight-data conversion &amp; analysis workbench</p></div></div><div className="header-status">{busy && <Spinner label={busy} />}<StatusLight tone={statusTone} label={statusLabel} detail={statusDetail} /></div></header>
+      <header className="app-header"><div className="brand"><span className="brand-mark">JD</span><div><h1>Joint Domain Data Compiler</h1><p>TSPI flight-data conversion &amp; analysis workbench</p></div></div><div className="header-status">{busy && <Spinner label={busy} />}<StatusLight tone={statusTone} label={statusLabel} detail={statusDetail} /><button type="button" className="header-help" onClick={openUserGuide} title="Open the user guide" aria-label="Open the user guide">?</button></div></header>
       <div className="app-body">
         <aside className="sidebar">
           <button type="button" className="primary-action" onClick={() => fileInputRef.current?.click()}>+ Load data</button>

@@ -3,6 +3,55 @@
 Notable user-facing and operational changes are recorded here. This project follows Semantic
 Versioning; release tags use the `vX.Y.Z` form.
 
+## 0.4.0 - 2026-09-04
+
+### Added
+
+- An illustrated user guide, opened by the **?** button in the header or on the Settings tab. It
+  covers every tab, control, gesture, and keyboard shortcut, with worked examples for importing a
+  CSV, comparing two tracks, repairing outliers, and exporting, plus a troubleshooting section. It
+  ships inside the desktop app and works entirely offline — no fonts, scripts, or images are
+  fetched from anywhere.
+- `FEATURE_INVENTORY.md`: an exhaustive reference for every control and behavior in the workbench,
+  and the source the user guide is written from.
+- A unit-system preference (Settings → Display units): every distance, altitude, and speed
+  readout can now render in aviation/marine units (feet, nautical miles, knots) instead of
+  metric. Covers the Overview metrics and track metrics, the Point Inspector's fields and
+  neighbour legs, the Compare tab's summary cards and sample table (whose column headers carry
+  the active unit), the map's point tooltip, and the chart window readout. Channel values and
+  their inferred units are deliberately left alone — an arbitrary channel is not metres — as are
+  bearings, sample rates, and time deltas.
+- Cross-dataset comparison results now actually reach the exported HTML analysis report. The
+  report's comparison section had existed since the report was built but was never supplied with
+  data, so every export said comparison results were "not yet captured in report export". The
+  section is re-derived from the saved comparison settings at export time, so it is populated
+  even if the Compare tab was never opened, and always names the same dataset pair the tab shows.
+- End-to-end browser coverage for the Track Health repair flow: scan, repair, and both the
+  Accept and Revert outcomes, asserting that accepting refits the flagged points in place
+  (the track keeps every point) and reports them as interpolated rather than as observed data.
+
+### Changed
+
+- Stored data, all exports, and the HTML analysis report remain in canonical metres and m/s
+  regardless of the display-unit preference. The Settings panel states this explicitly.
+- The Point Inspector's inter-point distance now switches to kilometres (or nautical miles) at
+  one whole unit rather than at ten, and shares the formatting used everywhere else — a
+  consequence of collapsing a duplicated distance formatter into the shared one.
+
+### Fixed
+
+- Two long-standing races in the layout end-to-end tests, both test-only (the app's measured layout
+  is byte-identical either way): one measured the Transform tab before its code-split panel had
+  rendered, reading the loading skeleton instead; the other assumed the import was the newest log
+  line when a background map-overlay load can land after it.
+- Four controls had no accessible name and were unreachable by a screen reader: the Table tab's row
+  filter, the bookmark label field, the Fusion source priority fields, and the project file picker.
+  A new end-to-end check now walks every tab and fails if any visible control lacks one.
+- The Compare tab and the HTML report can no longer disagree about a comparison: both now compute
+  their range statistics, and resolve which dataset pair is being compared, through the same code.
+- Summarizing a very long comparison no longer risks a call-stack overflow when the report path
+  (which applies no sample cap) summarizes it.
+
 ## 0.3.0 - 2026-09-04
 
 ### Added

@@ -51,5 +51,30 @@ test('point budget settings persist across a reload and "Reset to defaults" rest
   await page.getByRole('button', { name: 'Reset to defaults' }).click()
   await expect(page.getByLabel('Chart point budget')).toHaveValue(defaultValue)
   await expect(page.getByLabel('Default motion profile')).toHaveValue('aircraft')
+  await expect(page.getByLabel('Unit system')).toHaveValue('metric')
   await expect(page.getByRole('button', { name: 'Reset to defaults' })).toBeDisabled()
+})
+
+test('the unit system persists across a reload and converts the Overview readouts', async ({ page }) => {
+  await page.goto('/')
+  await page.locator('input[type=file][multiple]').first().setInputFiles(fixture)
+  await page.getByRole('button', { name: 'Overview', exact: true }).click()
+
+  const distance = page.locator('.metric-card').filter({ hasText: 'Distance' }).locator('.metric-value, strong').first()
+  const metricDistance = (await distance.textContent())?.trim() ?? ''
+  expect(metricDistance).toMatch(/ (m|km)$/)
+
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByLabel('Unit system').selectOption('nautical')
+
+  // The readout has to change without a reload: the settings store is a live
+  // subscription, not a value read once at mount.
+  await page.getByRole('button', { name: 'Overview', exact: true }).click()
+  await expect(distance).toHaveText(/ (ft|NM)$/)
+  const nauticalDistance = (await distance.textContent())?.trim() ?? ''
+  expect(nauticalDistance).not.toBe(metricDistance)
+
+  await page.reload()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await expect(page.getByLabel('Unit system')).toHaveValue('nautical')
 })

@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, SETTINGS_LIMITS, getSettings, normalizeSettings, resetSettings, updateDefaultMotionProfile, updateSetting } from '../src/state/settings.ts'
+import { DEFAULT_SETTINGS, SETTINGS_LIMITS, getSettings, normalizeSettings, resetSettings, updateDefaultMotionProfile, updateSetting, updateUnitSystem } from '../src/state/settings.ts'
 
 let failures = 0
 function check(name: string, condition: boolean, detail = ''): void {
@@ -56,6 +56,19 @@ check('updateDefaultMotionProfile changes the field', getSettings().defaultMotio
 check('updateDefaultMotionProfile leaves numeric fields untouched', getSettings().chartPointBudget === DEFAULT_SETTINGS.chartPointBudget)
 resetSettings()
 check('resetSettings also restores defaultMotionProfile', getSettings().defaultMotionProfile === DEFAULT_SETTINGS.defaultMotionProfile)
+
+// --- unitSystem: the second closed string enum, same path as the profile ----
+check('unitSystem defaults to metric', DEFAULT_SETTINGS.unitSystem === 'metric')
+check('an unrecognized unit system falls back to the default', normalizeSettings({ unitSystem: 'furlongs' }).unitSystem === DEFAULT_SETTINGS.unitSystem)
+check('a non-string unit system falls back to the default', normalizeSettings({ unitSystem: 7 }).unitSystem === DEFAULT_SETTINGS.unitSystem)
+check('a valid unit system is kept', normalizeSettings({ unitSystem: 'nautical' }).unitSystem === 'nautical')
+
+updateUnitSystem('nautical')
+check('updateUnitSystem changes the field', getSettings().unitSystem === 'nautical')
+check('updateUnitSystem leaves the motion profile untouched', getSettings().defaultMotionProfile === DEFAULT_SETTINGS.defaultMotionProfile)
+check('updateUnitSystem leaves numeric fields untouched', getSettings().chartPointBudget === DEFAULT_SETTINGS.chartPointBudget)
+resetSettings()
+check('resetSettings also restores unitSystem', getSettings().unitSystem === DEFAULT_SETTINGS.unitSystem)
 
 console.log(`\n${failures === 0 ? 'ALL SETTINGS CHECKS PASSED' : `${failures} SETTINGS CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)

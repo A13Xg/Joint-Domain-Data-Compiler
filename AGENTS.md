@@ -20,11 +20,17 @@ auditability — not dashboards.
 ```bash
 npm ci                # install (never `npm install` in CI)
 npm run dev           # browser dev server, http://localhost:5173
-npm run check:all     # lint + 71 test harnesses + build + app health
+npm run check:all     # lint + 92 test harnesses + build + app health
 npm run check:e2e     # 10 Playwright workflow tests (needs chromium)
 npm run check:full    # check:all + check:e2e (desktop smoke still needs build:desktop:*)
 npx tsc -b            # types only — fastest feedback loop
+
+npm run fixtures:demo-flight  # regenerate the synthetic demo flight fixtures
+npm run guide:screenshots     # recapture every screenshot in public/user-guide.html
 ```
+
+`public/user-guide.html` is written from `FEATURE_INVENTORY.md`. If you change a control, update
+both — a gap in the inventory becomes a gap in the shipped user guide.
 
 Run `npm run check:all` before committing. Install `libxml2-utils` locally, or the
 GPX/KML schema assertions in `test/validate.ts` skip silently instead of running.

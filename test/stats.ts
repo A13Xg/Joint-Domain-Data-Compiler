@@ -1,4 +1,4 @@
-import { computeStats, formatDistance, formatDuration } from '../src/core/stats.ts'
+import { computeStats, formatDuration } from '../src/core/stats.ts'
 import type { Dataset, TrackPoint } from '../src/core/model.ts'
 
 let failures = 0
@@ -115,14 +115,11 @@ check('a zero or negative time delta contributes no speed sample', computeStats(
 }
 check('a dataset with no declared channels reports an empty channel list', computeStats(dataset([{ lat: 0, lon: 0 }], [])).channels.length === 0)
 
-// --- formatDuration / formatDistance ---
+// --- formatDuration (formatDistance and the unit-aware formatters live in test/units.ts) ---
 check('formatDuration renders HH:MM:SS', formatDuration(3661_000) === '01:01:01')
 check('formatDuration renders zero as 00:00:00', formatDuration(0) === '00:00:00')
 check('formatDuration renders null as an em dash', formatDuration(null) === '—')
 check('formatDuration renders NaN as an em dash', formatDuration(NaN) === '—')
-check('formatDistance renders sub-km values in metres', formatDistance(500) === '500.0 m')
-check('formatDistance renders km-scale values in kilometres', formatDistance(1500) === '1.50 km')
-check('formatDistance is exactly at the km boundary', formatDistance(1000) === '1.00 km')
 
 console.log(`\n${failures === 0 ? 'ALL STATS CHECKS PASSED' : `${failures} STATS CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)

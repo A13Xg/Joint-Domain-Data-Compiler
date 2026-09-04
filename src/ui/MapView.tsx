@@ -13,6 +13,7 @@ import { DensityLayer } from './DensityLayer'
 import { gradientColor } from './gradient'
 import { usePointSelection } from '../state/pointSelection'
 import { useAppSettings } from '../state/settings'
+import { formatAltitude } from '../core/units'
 import type { WorkspaceState } from '../state/workspace'
 import type { MapOverlayState } from '../state/mapOverlays'
 import type { KmlLibraryEntry } from '../types/desktop'
@@ -160,7 +161,7 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
     setBasemapStatus('unknown')
   }
   const { pointIndex, hoverIndex, indexRange, selectPoint, setHoverIndex, clearPointSelection, clearRangeSelection, clearHover } = usePointSelection(points)
-  const { mapPointBudget } = useAppSettings()
+  const { mapPointBudget, unitSystem } = useAppSettings()
 
   const valid = useMemo(
     () => points.map((point, index) => ({ point, index })).filter(({ point }) => isValidLat(point.lat) && isValidLon(point.lon)),
@@ -310,7 +311,7 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
                 eventHandlers={{ click: () => selectPoint(selected ? null : index), mouseover: () => setHoverIndex(index), mouseout: clearHover }}
               >
                 <Tooltip>
-                  <div className="map-tip mono"><div>#{index} · {point.lat.toFixed(6)}, {point.lon.toFixed(6)}</div>{notional && <div>⚠ notional (interpolated, not observed)</div>}{inRange && <div>selected range</div>}{point.ele !== undefined && <div>ele {point.ele.toFixed(1)} m</div>}{point.time !== undefined && <div>{epochMsToIso(point.time)}</div>}{point.name && <div>{point.name}</div>}{colorBy !== 'none' && channelValue(point, colorBy) !== null && <div>{colorBy}: {fmt(channelValue(point, colorBy)!)}</div>}</div>
+                  <div className="map-tip mono"><div>#{index} · {point.lat.toFixed(6)}, {point.lon.toFixed(6)}</div>{notional && <div>⚠ notional (interpolated, not observed)</div>}{inRange && <div>selected range</div>}{point.ele !== undefined && <div>ele {formatAltitude(point.ele, unitSystem, 1)}</div>}{point.time !== undefined && <div>{epochMsToIso(point.time)}</div>}{point.name && <div>{point.name}</div>}{colorBy !== 'none' && channelValue(point, colorBy) !== null && <div>{colorBy}: {fmt(channelValue(point, colorBy)!)}</div>}</div>
                 </Tooltip>
               </CircleMarker>
             )

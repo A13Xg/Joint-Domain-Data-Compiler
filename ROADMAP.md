@@ -9,8 +9,121 @@ audit of parsers, exporters, accessibility, settings, tests, desktop integration
 checks; the rest are carryover, which is why the total list is longer than that — nothing was
 trimmed to hit a number.
 
-**Current Release:** v0.3.0 (in development)
-**Latest Stable:** v0.2.0
+**Current Release:** v0.4.0
+**Latest Stable:** v0.4.0
+
+---
+
+## Shipped in 0.4.0
+
+- [x] **Comparison results reach the HTML report (part 1 of 2)** — `buildComparisonSection` and
+  `ReportComparisonSummary` had existed in `htmlReport.ts` since the report was built, but no
+  caller ever passed a `comparison` field, so every exported report claimed comparison results
+  were "not yet captured in report export" no matter what the Comparison tab showed. The report
+  export now **re-derives** the comparison from the persisted `workspace.comparison` settings
+  rather than reading a live result out of the tab. That choice matters: it needs no new props
+  (`ProjectPanel` already receives `datasets`, `activeId`, and the whole `workspace`), it cannot
+  go stale, and it populates the section even when the Comparison tab was never opened this
+  session — verified by a dedicated e2e case that exports a report without ever clicking Compare.
+  Three functions moved into a new `core/analytics/comparisonSummary.ts` —
+  `resolveComparisonDatasetIds`, `computeComparisonSamples`, `summarizeComparisonRanges` — and
+  `ComparisonPanel` now calls the same three, so the tab and the report cannot disagree about the
+  numbers or about *which pair* is being compared. Deliberately **not** extracted: along/cross-track,
+  the clock-drift estimate, and the closest-approach sample, none of which the report shows and one
+  of which (`estimateClockDrift`) exists only to fill a UI row.
+  Three states are kept distinct rather than collapsed, because the report's wording depends on
+  which one it is: no comparison configured at all returns `undefined` (the honest "not captured"
+  placeholder); a blocked or failed comparison returns both dataset names plus the error, since
+  the section renders it as "{reference} vs {target}: {error}" and would otherwise read "vs : …";
+  and a configured comparison that simply aligned nothing returns `sampleCount: 0` with the range
+  fields absent, rendering "Unavailable" rows instead of falsely claiming no comparison exists.
+  `summarizeComparisonRanges` reduces rather than spreading into `Math.min(...ranges)` — the report
+  path applies no sample cap, and a long comparison would have overflowed the argument limit
+  (covered by a 200k-sample check). Verified three ways: 43 new checks in
+  `test/comparison-summary.ts`, and two live Playwright cases in
+  `test/e2e/comparison-report.spec.ts` that export a real report and assert the section carries a
+  populated numeric "Mean range" row rather than a table of "Unavailable".
+  **Part 2 — the stats helper (median/p95/stddev) and binned histogram — remains open below.**
+- [x] **Unit-system preference (metric / knots+feet)** — Settings → Display units switches every
+  distance, altitude, and speed *readout* between metric (m/km, m/s) and aviation/marine
+  (ft/NM, kn). Done in the order this roadmap specified: `PointVisualizerPanel.tsx`'s duplicate
+  local `formatDistance` was collapsed into the shared one **first**, as its own step, before any
+  unit parameter existed.
+  A new pure `core/units.ts` holds the type, the conversion factors, and the three formatters.
+  `core/` does not import `state/settings.ts`: the choice is passed in as an argument, so the
+  formatters stay pure functions Node can test without a `window`. None of them takes a default
+  unit argument — a call site that forgets to pass the preference is a compile error rather than a
+  readout that silently stays metric while the rest of its view converts, which is exactly the
+  half-converted failure this item was flagged for. Factors are written as their defining ratios
+  (`0.3048`, `1852`, `1852 / 3600`) rather than rounded decimals (`3.28084`, `1.94384`), so the
+  conversion can be checked against the definition; `test/units.ts` (49 checks) pins both forms,
+  every unit-switch boundary, and the non-finite fallbacks.
+  Converted: `StatsPanel`, `TrackMetricsPanel`, `PointVisualizerPanel`, `ComparisonPanel` (metric
+  cards, closest-approach line, and the 250-row sample table, whose column headers now carry the
+  active unit so the cells can stay bare numbers), `MapView`'s point tooltip, and
+  `TimeSeriesChart`'s window readout.
+  Deliberately **not** converted, each for a stated reason: `ext` channel values and the unit
+  labels inferred from their key suffixes (`_mps`, `_deg`, `Hz`) — an arbitrary channel is not
+  metres and converting one would corrupt it; operation *inputs* such as the map's density cell
+  size (converting an input means bidirectional parsing, a different problem from a readout); and
+  bearings, sample rates, and time deltas, which have no unit-system dimension.
+  The HTML analysis report also stays canonical SI **by decision**: it is exported evidence that
+  leaves the machine, and GPX/EAG/GPB exports are already canonical. The Settings copy states this
+  outright rather than leaving it to be discovered. *Unit-aware report export* is left open below.
+  One display change fell out of collapsing the duplicate formatter: the Point Inspector's
+  inter-point distance now switches to km/NM at one whole unit (was 10 km) and renders at the
+  shared precision. Caught immediately by the existing jsdom check asserting `300 m` — which is
+  why `formatAltitude`/`formatSpeed` treat their precision argument as a *ceiling*, not a fixed
+  width, so a round 300 m does not become "300.000 m".
+  Verified live end to end: with the preference set to nautical, an elevation of 121.4 m reads
+  398.294 ft, an inter-point leg reads 383.5 ft at 22.72 kn, and the Compare tab's headers read
+  "Slant ft" / "Closure kn" — while bearing stayed in degrees and Δt in seconds.
+- [x] **e2e coverage for the Track Health repair flow** — the second concrete slice of "e2e coverage
+  gaps" below, and the highest-value one because 0.3.0 rewrote that engine (reconstruct-in-place
+  through the shared `trackReconstruction.ts`). Track Health's remediation button is the only UI
+  entry to it; unit tests cover the engine, but nothing covered scan → repair → accept-or-revert →
+  rescan as one flow. `test/e2e/track-health-repair.spec.ts` drives exactly that, and asserts the
+  properties that matter rather than that a click happened: **Revert** leaves the score and the
+  failing check untouched (the dialog is a gate, not a progress notice), **Accept** flips the
+  outlier check from fail to pass and raises the score, the track still has **all 40 points**
+  afterwards (proving points were refit in place, not deleted), and Track Metrics' point
+  accounting reports 6 **interpolated** points where it reported none before — a refitted sample
+  stays countable and distinguishable from a recorded one (non-negotiable #1).
+  Needed a new fixture: the flow only appears when the outlier check actually *fails*, which needs
+  more than `maxFlaggedFraction` (5%) of evaluated points flagged, and no real-capture fixture in
+  the corpus trips that. `test/fixtures/outlier-spikes.csv` is a smooth 40-sample eastbound leg
+  with three ~200 m lateral position spikes, documented as synthetic in the fixture README.
+
+- [x] **In-app user guide** — Built from a separate implementation plan rather than this roadmap,
+  recorded here because it is durable work. `public/user-guide.html` is a self-contained,
+  theme-aware manual covering every tab, control, and gesture, with worked examples and a
+  troubleshooting section, written from the new `FEATURE_INVENTORY.md`. It is opened by a **?**
+  button in the app header and on the Settings tab; in Electron the main process resolves the
+  packaged path itself and opens it through `shell.openPath`, so the renderer can never name an
+  arbitrary file to open. Nothing is fetched at runtime — no CDN fonts, scripts, or images — so it
+  renders identically from `file://` inside the packaged app with no network, which is asserted
+  rather than assumed.
+  The 20 screenshots are captured by `npm run guide:screenshots` against
+  `test/fixtures/demo-flight-a.csv`/`-b.csv`, a **synthetic** flight pair generated by
+  `npm run fixtures:demo-flight`. Synthetic by necessity, not convenience: the screenshots are
+  committed to a public repository *and* packaged into every release binary, and the flight-test
+  CSV the original plan named for this purpose is excluded by a deliberate root-anchored
+  `.gitignore` rule. Positions are integrated from a commanded heading/speed/vertical-rate profile
+  rather than drawn as a shape, so the Track Health checks see a physically consistent flight —
+  both tracks score 100/100. Phase transitions are smoothed over a 25-second window because an
+  airframe rolls into a change over seconds; stepping the commanded profile at a phase boundary put
+  a real discontinuity into the path, which the outlier detector flagged correctly, making a
+  healthy fixture look defective. The map basemap is set to the offline grid for the capture, which
+  keeps it independent of the network and keeps third-party map imagery out of a redistributed
+  document.
+- [x] **Accessible names for every control** — A concrete slice of the *WCAG 2.1 AA compliance* item
+  below. Audited by walking the live accessibility tree on all 13 tabs rather than grepping for
+  `aria-label`, which cannot tell that a control is already named by a wrapping `<label>`, its own
+  text, or `aria-labelledby` — nor that one named only by a `placeholder` is *not* named, since a
+  placeholder is not an accessible name and vanishes once the field has a value. Found four gaps
+  (Table row filter, bookmark label, Fusion source priorities, project file picker) and fixed them.
+  The audit is now `test/e2e/accessible-names.spec.ts`, so a control added without a name fails a
+  test instead of being noticed later.
 
 ---
 
@@ -204,18 +317,14 @@ session). Kept here only as the historical record other roadmap sections cross-r
 7. Y-axis zoom and pan ✅
 
 ### Comparison Module
-- [ ] **Wire comparison results into the HTML report, then enrich it** — Found while scoping
-  "richer comparison reports": `htmlReport.ts` already has a `buildComparisonSection` and a
-  `ReportComparisonSummary` type, but grepping every caller of `buildHtmlAnalysisReport` shows
-  `ProjectPanel.tsx`'s report export never passes a `comparison` field — the section exists in the
-  generator and is permanently dead code from the UI's side. So this is two items in sequence, not
-  one: (1) wire `ComparisonPanel`'s result into the report-export flow at all (small-medium — the
-  UI has to hold onto or re-derive the last comparison when the user opens the report dialog), then
-  (2) the originally-scoped enrichment — a stats helper (median/p95/stddev over
+- [ ] **Enrich the comparison report section (part 2 of 2)** — Part 1 shipped this session (see
+  *Comparison results reach the HTML report* above): `ProjectPanel`'s report export now passes a
+  re-derived `comparison`, so `buildComparisonSection` is live rather than permanently dead code.
+  What remains is the originally-scoped enrichment: a stats helper (median/p95/stddev over
   `horizontalRangeM`/`slantRangeM`/`relativeUpM`/`closureRateMps`, same shape as
-  `rangeStatistics.ts`) plus a binned-histogram render in `buildComparisonSection` (small once (1)
-  exists). Don't build (2) without (1); it would have nothing to render against outside the test
-  file that constructs `ReportComparisonSummary` directly.
+  `rangeStatistics.ts`) plus a binned-histogram render in `buildComparisonSection`. Small now that
+  the wiring exists and `core/analytics/comparisonSummary.ts` is the obvious place to add it —
+  `summarizeComparisonRanges` already walks exactly these sample arrays once.
 - [ ] **Multi-track comparison visualization** — Side-by-side trajectory divergence heatmaps.
 
 ### Transform Workflows
@@ -240,21 +349,18 @@ session). Kept here only as the historical record other roadmap sections cross-r
 
 ## New: Settings & Preferences
 
-- [ ] **Unit-system preference (metric / knots+feet)** — **Gated on a grep before sizing further;
-  the grep came back medium, not small.** Confirmed no single shared formatter to extend: `core/
-  stats.ts`'s `formatDistance`/`formatDuration` are used by `StatsPanel.tsx` and
-  `TrackMetricsPanel.tsx` for *some* readouts, but both files also have inline `toFixed(1)}
-  m/s`-style speed/altitude formatting that bypasses those helpers entirely (e.g.
-  `TrackMetricsPanel.tsx` max/min speed and altitude rows). `PointVisualizerPanel.tsx` has its own
-  *second, independent* local `formatDistance` function — a pre-existing near-duplicate of
-  `core/stats.ts`'s, not the same one — plus an inline `m/s` speed cell. `ComparisonPanel.tsx`
-  formats closure rate inline too. A real implementation touches at least four UI files with three
-  different formatting conventions between them, which is exactly the "half-converted readout"
-  risk this item was flagged for — not a same-session pass. Medium; do it as its own item with a
-  single shared formatter used everywhere (start by collapsing `PointVisualizerPanel.tsx`'s
-  duplicate `formatDistance` into `core/stats.ts`'s before adding a unit parameter to either).
-  `core/` must not import `state/settings.ts` — pass the unit choice in as an argument so the
-  formatter stays a pure function `core/stats.ts`'s own test file can exercise without a `window`.
+- [x] **Unit-system preference (metric / knots+feet)** — Shipped this session; see *Unit-system
+  preference* above for what converts, what deliberately does not, and why the HTML report stays
+  canonical SI.
+- [ ] **Unit-aware HTML report export** — Follow-up the item above deliberately left out of scope,
+  recorded here rather than left implicit. The report currently hardcodes `m` / `m/s` in
+  `buildComparisonSection` and the metric tiles, and stays SI regardless of the display
+  preference, because it is exported evidence that leaves the machine. Making it follow the
+  preference is a real option, not an oversight — it would mean threading a `unitSystem` through
+  `ReportOptions` (which is normalized, persisted per project, and surfaced in the export dialog),
+  and deciding whether a report's units follow the exporting operator or stay canonical for
+  whoever receives it. That is a policy question to settle before sizing, and the report's own
+  header should then state which units it used.
 
 ## New: Desktop (Electron)
 
@@ -277,9 +383,17 @@ session). Kept here only as the historical record other roadmap sections cross-r
 
 ## New: Testing
 
-- [ ] **e2e coverage gaps** — Settings shipped this session (see above, `test/e2e/settings.spec.ts`).
-  Still no e2e for Track Health's repair flow, Point Inspector, the 3D view, or non-GPX export
-  formats. Medium, pick one flow at a time rather than one large spec.
+- [ ] **e2e coverage gaps** — Two slices closed so far: Settings persistence (0.3.0,
+  `test/e2e/settings.spec.ts`, extended this session to cover the unit preference) and the Track
+  Health repair flow (this session, `test/e2e/track-health-repair.spec.ts`). The comparison →
+  HTML report path also gained live coverage (`test/e2e/comparison-report.spec.ts`). Still no e2e
+  for the Point Inspector, the 3D view, or non-GPX export formats. Medium; keep picking one flow
+  at a time rather than writing one large spec.
+
+  Note on wiring: `check:e2e` still runs only `ci-smoke` + `workbench-smoke`. The specs added
+  since (settings, comparison-report, track-health-repair) run under `npm run test:e2e`, which
+  runs everything. That split is the existing convention, not an oversight — but if the intent is
+  for CI to gate on these, `check:e2e` needs widening, which is a CI-runtime decision.
 
 ---
 
@@ -291,9 +405,11 @@ session). Kept here only as the historical record other roadmap sections cross-r
 - [ ] **Offline-first sync** — Local data persistence with optional cloud backup
 
 ### Accessibility
-- [ ] **WCAG 2.1 AA compliance** — Full keyboard navigation, screen reader support. *DataTable
-  keyboard navigation + ARIA* and *Map container aria-label* above shipped two concrete slices of
-  this found in-session; the rest of this item remains a broader audit.
+- [ ] **WCAG 2.1 AA compliance** — Full keyboard navigation, screen reader support. Three concrete
+  slices have shipped: *DataTable keyboard navigation + ARIA* and *Map container aria-label* (0.3.0),
+  and *Accessible names for every control* (above), which is now guarded by an e2e check. What
+  remains is the rest of a genuine audit — colour contrast ratios, focus-visible styling, heading
+  hierarchy, live-region announcements for async results, and reduced-motion support.
 - [ ] **Color-blind modes** — Alternative palettes for protanopia, deuteranopia, tritanopia
 - [ ] **High-contrast themes** — Explicit dark/light modes with adjustable text size
 
@@ -338,6 +454,12 @@ session). Kept here only as the historical record other roadmap sections cross-r
 - **Constraint:** 3D renderer is 2D canvas-based, not WebGL
   - **Timeline:** Phase 2+ (performance assessment first)
   - **Impact:** Keeps dependencies lean; performance limits ~100k points with optimizations
+
+- **Constraint:** Enabling the report's comparison section runs the alignment synchronously
+  - **Timeline:** Phase 1, alongside the ExportPanel async worker refactor above
+  - **Impact:** Ticking "Cross-dataset comparison analytics" re-derives the comparison inside the
+    export click handler, so two long tracks can briefly block the UI at export time. Same shape
+    as the GPX-preview constraint above; the work is skipped entirely when the section is off.
 
 ### Data Handling
 - **Constraint:** DOM parser capped at 100k points (memory limit)
@@ -478,4 +600,5 @@ See `ONBOARDING.md` for developer workflow, branch strategy, and CI/CD practices
 | 0.1.12  | 2026-08-27   | Fixed the non-starting packaged Windows/macOS builds (asar integrity), automatic Actions-run housekeeping |
 | 0.2.0   | 2026-09-02   | IRIG/range-time parsing, stale derived-channel badge, point deletion from Table/Charts, a Settings tab, chart image export, CSV-no-timestamp warning |
 | 0.3.0   | 2026-09-04   | Configurable settings (incl. persisted default motion profile), Y-axis zoom/pan (closes the editable-graph-view build order), area/scatter and real channel-vs-channel scatter chart rendering, turn-aware outlier detection with in-place reconstruction, unified fill-gaps/drop-outliers repair engine, NMEA VTG/ZDA/GSA/GSV support, GPS fix-quality Track Health check, map accessibility label, DataTable keyboard navigation + ARIA, expanded test coverage (`stats.ts`, `geoInterpolation.ts`, motion-profile reconstruction, NMEA sentence parsing, Settings e2e) |
+| 0.4.0   | 2026-09-04   | In-app illustrated user guide and feature inventory, unit-system preference (metric / knots+feet) across every readout, cross-dataset comparison wired into the HTML report, accessible names for every control, e2e coverage for the Track Health repair flow |
 | 1.0.0   | TBD          | Production-ready: mobile support, multi-user collaboration, advanced analysis |

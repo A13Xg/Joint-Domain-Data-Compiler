@@ -16,6 +16,10 @@ JDDC is a functional engineering workbench with a strong deterministic core. It 
 
 ### Documentation
 
+- **In-app user guide** — press the **?** button in the header (or in Settings) for the illustrated
+  guide to every tab, control, and keyboard gesture. It ships with the app and works offline;
+  the source is `public/user-guide.html`.
+- **`FEATURE_INVENTORY.md`** — Exhaustive reference for every control and behavior in the workbench.
 - **`CHANGELOG.md`** — User-visible changes grouped by release.
 - **`ROADMAP.md`** — Planned features, phases, and future direction.
 - **`FUTURE_CONSIDERATIONS.md`** — Strategic decisions, architecture trade-offs, and long-term vision.

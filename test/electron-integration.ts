@@ -26,7 +26,7 @@ function rejects(fn: () => unknown): boolean {
 }
 
 check('IPC channel names are unique', new Set(Object.values(IPC_CHANNELS)).size === Object.keys(IPC_CHANNELS).length)
-check('IPC surface exposes only the expected ten operations', Object.keys(IPC_CHANNELS).sort().join(',') === 'archiveFile,list,readText,remove,reseed,reveal,revealArchive,save,saveDiagnostics,setUnsavedChanges')
+check('IPC surface exposes only the expected eleven operations', Object.keys(IPC_CHANNELS).sort().join(',') === 'archiveFile,list,openUserGuide,readText,remove,reseed,reveal,revealArchive,save,saveDiagnostics,setUnsavedChanges')
 check('Exact development origin is allowed', isAllowedAppUrl(DEV_ORIGIN, true))
 check('Development origin paths are allowed', isAllowedAppUrl(`${DEV_ORIGIN}/index.html`, true))
 check('Lookalike development origins are blocked', !isAllowedAppUrl(`${DEV_ORIGIN}.attacker.invalid`, true))

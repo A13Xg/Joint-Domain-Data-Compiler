@@ -4,7 +4,9 @@
 // (each field is read/normalized independently), matching the roadmap's
 // "Settings page" requirement.
 import { MOTION_PROFILES, MOTION_PROFILE_IDS, type MotionProfileId } from '../core/operations/motionProfiles'
-import { DEFAULT_SETTINGS, SETTINGS_LIMITS, resetSettings, updateDefaultMotionProfile, updateSetting, useAppSettings, useSettingsStorageSync } from '../state/settings'
+import { DEFAULT_SETTINGS, SETTINGS_LIMITS, resetSettings, updateDefaultMotionProfile, updateSetting, updateUnitSystem, useAppSettings, useSettingsStorageSync } from '../state/settings'
+import { UNIT_SYSTEM_IDS, UNIT_SYSTEM_LABELS, type UnitSystem } from '../core/units'
+import { openUserGuide } from './userGuide'
 
 interface BudgetField {
   key: 'chartPointBudget' | 'mapPointBudget' | 'scenePointBudget'
@@ -35,11 +37,12 @@ export function SettingsPanel() {
   const settings = useAppSettings()
   const isDefault = BUDGET_FIELDS.every((field) => settings[field.key] === DEFAULT_SETTINGS[field.key])
     && settings.defaultMotionProfile === DEFAULT_SETTINGS.defaultMotionProfile
+    && settings.unitSystem === DEFAULT_SETTINGS.unitSystem
 
   return (
     <div className="settings-panel">
       <div className="settings-header">
-        <h3>Settings</h3>
+        <h3>Settings <button type="button" className="header-help" onClick={openUserGuide} title="Open the user guide" aria-label="Open the user guide">?</button></h3>
         <p className="muted small">Stored on this device, not inside any project — opening a different project keeps these values.</p>
       </div>
       <div className="settings-group">
@@ -66,6 +69,24 @@ export function SettingsPanel() {
             </div>
           )
         })}
+      </div>
+      <div className="settings-group">
+        <h4>Display units</h4>
+        <div className="settings-field">
+          <label className="num-field">
+            <span>Unit system</span>
+            <select
+              value={settings.unitSystem}
+              onChange={(event) => updateUnitSystem(event.target.value as UnitSystem)}
+            >
+              {UNIT_SYSTEM_IDS.map((id) => <option key={id} value={id}>{UNIT_SYSTEM_LABELS[id]}</option>)}
+            </select>
+          </label>
+          <p className="muted small settings-field-desc">
+            Changes distance, altitude, and speed readouts only. Stored data, every export, and the
+            HTML analysis report stay in canonical metres and m/s regardless of this setting.
+          </p>
+        </div>
       </div>
       <div className="settings-group">
         <h4>Transform defaults</h4>

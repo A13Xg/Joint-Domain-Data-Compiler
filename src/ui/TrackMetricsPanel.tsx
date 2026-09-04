@@ -8,7 +8,9 @@
 
 import { useMemo } from 'react'
 import type { Dataset } from '../core/model'
-import { computeStats, formatDistance, formatDuration } from '../core/stats'
+import { computeStats, formatDuration } from '../core/stats'
+import { formatAltitude, formatDistance, formatSpeed } from '../core/units'
+import { useAppSettings } from '../state/settings'
 import { epochMsToIso, formatBytes } from '../core/format'
 
 interface Props {
@@ -54,17 +56,18 @@ export function TrackMetricsPanel({ dataset }: Props) {
 
   const speed = stats.speed
   const elevation = stats.elevation
+  const { unitSystem } = useAppSettings()
 
   return <section className="stats-block track-metrics">
     <h3>Track metrics</h3>
 
     <div className="metric-grid">
       <Metric label="Elapsed" value={formatDuration(stats.durationMs)} />
-      <Metric label="Distance" value={formatDistance(stats.distanceMeters)} />
-      <Metric label="Max speed" value={speed ? `${speed.maxMps.toFixed(1)} m/s` : '—'} />
-      <Metric label="Min speed" value={speed ? `${speed.minMps.toFixed(1)} m/s` : '—'} />
-      <Metric label="Max altitude" value={elevation ? `${elevation.max.toFixed(0)} m` : '—'} />
-      <Metric label="Min altitude" value={elevation ? `${elevation.min.toFixed(0)} m` : '—'} />
+      <Metric label="Distance" value={formatDistance(stats.distanceMeters, unitSystem)} />
+      <Metric label="Max speed" value={speed ? formatSpeed(speed.maxMps, unitSystem) : '—'} />
+      <Metric label="Min speed" value={speed ? formatSpeed(speed.minMps, unitSystem) : '—'} />
+      <Metric label="Max altitude" value={elevation ? formatAltitude(elevation.max, unitSystem) : '—'} />
+      <Metric label="Min altitude" value={elevation ? formatAltitude(elevation.min, unitSystem) : '—'} />
     </div>
 
     <div className="metrics-columns">

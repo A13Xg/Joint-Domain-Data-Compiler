@@ -1,0 +1,843 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Joint Domain Data Compiler — User Guide</title>
+<style>
+/* Self-contained on purpose: this document ships inside the packaged desktop
+   app and must render with no network, so there are no external fonts,
+   stylesheets, or scripts anywhere in this file. */
+:root {
+  color-scheme: light dark;
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --ink: #16181d;
+  --muted: #5b6270;
+  --line: #d9dde4;
+  --accent: #c1440e;
+  --accent-soft: #fbeae3;
+  --code-bg: #eef1f5;
+  --ok: #1a7f4b;
+  --warn: #8a6100;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115;
+    --panel: #161a21;
+    --ink: #e6e8ec;
+    --muted: #9aa3b2;
+    --line: #262c36;
+    --accent: #ff6b3d;
+    --accent-soft: #2a1810;
+    --code-bg: #1c2129;
+    --ok: #4ade80;
+    --warn: #fbbf24;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+code, kbd, .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+code { background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.9em; }
+kbd {
+  background: var(--panel); border: 1px solid var(--line); border-bottom-width: 2px;
+  border-radius: 4px; padding: 0.1em 0.4em; font-size: 0.85em; white-space: nowrap;
+}
+a { color: var(--accent); }
+
+.masthead {
+  background: var(--panel); border-bottom: 1px solid var(--line);
+  padding: 28px 32px;
+}
+.masthead h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.01em; }
+.masthead p { margin: 0; color: var(--muted); max-width: 70ch; }
+
+.layout { display: flex; align-items: flex-start; gap: 32px; max-width: 1400px; margin: 0 auto; padding: 28px 32px 80px; }
+nav.toc {
+  position: sticky; top: 24px; flex: 0 0 232px; max-height: calc(100vh - 48px);
+  overflow-y: auto; font-size: 14px; border-right: 1px solid var(--line); padding-right: 16px;
+}
+nav.toc h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); margin: 0 0 10px; }
+nav.toc ol { list-style: none; margin: 0 0 18px; padding: 0; }
+nav.toc li { margin: 0 0 2px; }
+nav.toc a { display: block; padding: 4px 8px; border-radius: 5px; text-decoration: none; color: var(--ink); }
+nav.toc a:hover { background: var(--accent-soft); }
+nav.toc a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+main { flex: 1; min-width: 0; max-width: 900px; }
+section { margin: 0 0 56px; scroll-margin-top: 20px; }
+section > h2 {
+  font-size: 22px; margin: 0 0 4px; padding-bottom: 8px; border-bottom: 2px solid var(--accent);
+  display: inline-block;
+}
+section > p.lede { color: var(--muted); margin-top: 8px; max-width: 72ch; }
+h3 { font-size: 16px; margin: 28px 0 8px; }
+
+figure { margin: 20px 0; }
+figure img {
+  width: 100%; height: auto; display: block;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+}
+figcaption { font-size: 13px; color: var(--muted); margin-top: 8px; }
+
+table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 14.5px; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+td:first-child { white-space: nowrap; font-weight: 600; }
+.wrap td:first-child { white-space: normal; }
+.tablewrap { overflow-x: auto; }
+
+.note, .caution {
+  border-left: 3px solid var(--ok); background: var(--panel);
+  padding: 12px 16px; margin: 18px 0; border-radius: 0 6px 6px 0; font-size: 15px;
+}
+.caution { border-left-color: var(--warn); }
+.note strong, .caution strong { display: block; margin-bottom: 3px; }
+
+ol.steps { padding-left: 20px; }
+ol.steps li { margin: 0 0 10px; }
+
+footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px; color: var(--muted); font-size: 14px; }
+
+@media (max-width: 900px) {
+  .layout { flex-direction: column; padding: 20px; }
+  nav.toc { position: static; flex: none; width: 100%; max-height: none; border-right: 0; border-bottom: 1px solid var(--line); padding: 0 0 12px; }
+  nav.toc ol { display: flex; flex-wrap: wrap; gap: 4px; }
+}
+@media print {
+  nav.toc { display: none; }
+  section { break-inside: avoid-page; }
+  body { background: #fff; color: #000; }
+}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <h1>Joint Domain Data Compiler — User Guide</h1>
+  <p>A single-screen engineering workbench for TSPI (trajectory and flight-data) logs. Import seven
+  formats, normalise them into one internal dataset, then inspect, transform, compare, and re-export
+  them. Built for precision and auditability rather than dashboards.</p>
+</header>
+
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#start">Getting started</a></li>
+    <li><a href="#shell">The workbench</a></li>
+    <li><a href="#import">Importing data</a></li>
+    <li><a href="#mapping">CSV mapping</a></li>
+    <li><a href="#overview">Overview &amp; Track Health</a></li>
+    <li><a href="#map">Map</a></li>
+    <li><a href="#charts">Charts</a></li>
+    <li><a href="#table">Table</a></li>
+    <li><a href="#points">Points</a></li>
+    <li><a href="#compare">Compare</a></li>
+    <li><a href="#scene3d">3D</a></li>
+    <li><a href="#transform">Transform</a></li>
+    <li><a href="#repair">Repairing a track</a></li>
+    <li><a href="#fusion">Fusion</a></li>
+    <li><a href="#sources">Sources</a></li>
+    <li><a href="#export">Export</a></li>
+    <li><a href="#project">Project &amp; reports</a></li>
+    <li><a href="#settings">Settings</a></li>
+    <li><a href="#keys">Keyboard reference</a></li>
+    <li><a href="#workflows">Worked examples</a></li>
+    <li><a href="#integrity">How your data is treated</a></li>
+    <li><a href="#faq">Troubleshooting</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<section id="start">
+  <h2>Getting started</h2>
+  <p class="lede">Everything happens on one screen. Load a file, and the tabs across the top become
+  the different ways of looking at the same dataset — they are views, not a wizard, so you can move
+  between them freely and your selection follows you.</p>
+
+  <figure>
+    <img src="user-guide/01-app-shell.png" alt="The workbench on first launch, with an empty dataset list and the Import tab active.">
+    <figcaption>First launch. Only Import and Settings are available until a dataset is loaded.</figcaption>
+  </figure>
+
+  <ol class="steps">
+    <li>Press <strong>+ Load data</strong> (or drag files onto the Import tab).</li>
+    <li>A CSV takes you to <strong>CSV Mapping</strong> to confirm which columns are latitude, longitude, altitude, and time. Every other format loads straight through.</li>
+    <li>Work through the tabs: <strong>Overview</strong> for a health scan, <strong>Map</strong>/<strong>Charts</strong>/<strong>3D</strong> to look at it, <strong>Transform</strong> to fix it, <strong>Export</strong> to write it back out.</li>
+  </ol>
+
+  <div class="note">
+    <strong>Nothing leaves your machine.</strong>
+    Parsing, analysis, and export all run locally in the app. The only network requests are optional
+    map basemap tiles, and you can switch the Map tab to an offline grid to stop even those.
+  </div>
+</section>
+
+<section id="shell">
+  <h2>The workbench</h2>
+  <p class="lede">The frame around every view: what is loaded, what the app is doing, and what it has
+  logged.</p>
+
+  <div class="tablewrap"><table class="wrap">
+    <thead><tr><th>Element</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td>Dataset list</td><td>One row per loaded dataset, with its format and point count. Click a row to make it the active dataset — every view follows the active dataset. The <code>×</code> removes it along with its history, operation records, recipes, and bookmarks.</td></tr>
+      <tr><td>Status light</td><td>Idle, busy, ready, warning, or error, with a count. Errors take precedence over warnings, warnings over ready, so the worst current state is always what you see.</td></tr>
+      <tr><td>Tab bar</td><td>Tabs enable themselves as they become usable: most need an active dataset, Compare and Fusion need two, Project needs at least one. A disabled tab means the data it needs is not loaded yet.</td></tr>
+      <tr><td>Undo / Redo</td><td>Steps through applied transforms for the active dataset. History is per dataset, so undoing on one track never touches another.</td></tr>
+      <tr><td>Log dock</td><td>The bar along the bottom. Collapsed by default showing the last line; expand it for the full stream with level and text filters, plus Export and Clear.</td></tr>
+      <tr><td>Toasts</td><td>Transient confirmations in the corner, up to three at a time. They dismiss themselves; the same information is in the log if you miss one.</td></tr>
+      <tr><td>Unsaved-changes guard</td><td>Closing the desktop app with unsaved work prompts first. Saving a project clears the flag.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="import">
+  <h2>Importing data</h2>
+  <p class="lede">Seven input formats, all normalised into one internal shape: degrees, metres, and
+  epoch milliseconds. Conversion happens once, at import.</p>
+
+  <div class="tablewrap"><table>
+    <thead><tr><th>Format</th><th>Extensions</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>CSV / TSV</td><td><code>.csv .tsv .txt</code></td><td>Any column layout; you map the columns yourself on the next tab.</td></tr>
+      <tr><td>GPX</td><td><code>.gpx</code></td><td>Track points, including extension channels.</td></tr>
+      <tr><td>GeoJSON</td><td><code>.geojson .json</code></td><td>LineString and Point features.</td></tr>
+      <tr><td>KML / KMZ</td><td><code>.kml .kmz</code></td><td>Placemarks and Google <code>gx:Track</code>.</td></tr>
+      <tr><td>NMEA 0183</td><td><code>.nmea .gps .log</code></td><td>GGA, GLL, RMC, VTG, ZDA, GSA, and GSV sentences.</td></tr>
+      <tr><td>GPB</td><td><code>.gpb .bin</code></td><td>The app's own compact binary format.</td></tr>
+      <tr><td>EAG TSPI</td><td><code>.txt</code></td><td>NATO range instrumentation, including IRIG and range-time encodings.</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="caution">
+    <strong>Rejected records are counted, not hidden.</strong>
+    If a parser refuses rows — missing coordinates, a bad checksum, an unparseable timestamp — the
+    counts appear under <em>Dropped at import</em> on the Overview tab, and the reasons appear as
+    warnings. A file that loaded with fewer points than you expected will say why.
+  </div>
+</section>
+
+<section id="mapping">
+  <h2>CSV mapping</h2>
+  <p class="lede">A CSV has no agreed schema, so this tab is where you say what its columns mean. It
+  guesses first, and shows you how confident it is.</p>
+
+  <figure>
+    <img src="user-guide/02-csv-mapping.png" alt="The CSV Mapping tab showing a delimiter summary, a preview of sampled rows, and dropdowns for each mapped column.">
+    <figcaption>Detected columns with confidence percentages, over a preview of the raw sampled rows.</figcaption>
+  </figure>
+
+  <div class="tablewrap"><table class="wrap">
+    <thead><tr><th>Control</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td>Latitude / Longitude</td><td>Required. The Build button stays disabled until both are set. A confidence percentage next to each shows how sure the detector was.</td></tr>
+      <tr><td>Swap hint</td><td>If the values look transposed — latitudes outside ±90, say — a banner offers to swap them rather than silently importing a track on the wrong side of the world.</td></tr>
+      <tr><td>Elevation + unit</td><td>Optional. Pick the source unit; it is converted to metres on import.</td></tr>
+      <tr><td>Timestamp + format</td><td>Optional but strongly recommended: speed, resampling, gap filling, comparison, and most of Track Health all need time.</td></tr>
+      <tr><td>Header interpretation</td><td>Override when the first row is data rather than headers, or when data starts several rows down.</td></tr>
+      <tr><td>Build dataset from full CSV</td><td>Streams the whole file with a progress bar you can cancel. The preview above is a sample; this reads everything.</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="caution">
+    <strong>Importing without a timestamp is allowed, and warned about.</strong>
+    You will get a dataset, but any operation that needs time will be unavailable or will fall back
+    to a simpler behaviour. The warning says so at import rather than leaving you to discover it.
+  </div>
+</section>
+
+<section id="overview">
+  <h2>Overview &amp; Track Health</h2>
+  <p class="lede">The first thing to look at after loading. Track Health scores the track out of 100
+  across seven checks; below it, the metrics and statistics describe what actually came in.</p>
+
+  <figure>
+    <img src="user-guide/03-overview.png" alt="The Overview tab showing a Track Health score of 100 with seven passing checks.">
+    <figcaption>A clean track: all seven checks pass, so the score is 100.</figcaption>
+  </figure>
+
+  <div class="tablewrap"><table class="wrap">
+    <thead><tr><th>Check</th><th>Weight</th><th>What it asks</th></tr></thead>
+    <tbody>
+      <tr><td>Schema / Parse</td><td>Gate</td><td>Is the dataset structurally sound and are the coordinates valid? A failure here blocks the rest.</td></tr>
+      <tr><td>Altitude Profile</td><td>30</td><td>Does this look like a complete flight — a climb through 1000 ft, sustained time above it, and a descent back below before the track ends?</td></tr>
+      <tr><td>Speed Envelope</td><td>10</td><td>Does derived speed stay between 10 kt and Mach 2 while under way? The parked portion at the start of a file is ignored.</td></tr>
+      <tr><td>Time Order &amp; Span</td><td>20</td><td>Are timestamps non-decreasing, and is the total span plausible?</td></tr>
+      <tr><td>Outliers</td><td>20</td><td>Do more than 5% of samples break the local trend? Detection is turn-aware, so a sustained legitimate turn is not read as noise.</td></tr>
+      <tr><td>Stagnant</td><td>20</td><td>Is there a prolonged stationary segment in the middle of movement?</td></tr>
+      <tr><td>GPS Fix Quality</td><td>Informational</td><td>Reports degraded HDOP or low satellite count where the source carries them. Never affects the score.</td></tr>
+    </tbody>
+  </table></div>
+
+  <figure>
+    <img src="user-guide/04-track-health.png" alt="The Track Health panel showing the score badge and each check with its status, summary, and detail list.">
+    <figcaption>Each check states what it looked at and why it reached its verdict, rather than
+    reporting a bare pass or fail.</figcaption>
+  </figure>
+
+  <p>Every flagged sample becomes a chip you can click to jump straight to that point on the Map or
+  Charts tab. Where a check can offer a fix, it does — see <a href="#repair">Repairing a track</a>.</p>
+
+  <figure>
+    <img src="user-guide/05-track-metrics.png" alt="The Track metrics panel showing elapsed time, distance, speed and altitude extremes, and point accounting.">
+    <figcaption>Track metrics. <em>Point accounting</em> is the honest ledger: how many points carry
+    coordinates, timestamps, and elevation, and how many are flagged as interpolated or manually edited.</figcaption>
+  </figure>
+</section>
+
+<section id="map">
+  <h2>Map</h2>
+  <p class="lede">The track in plan view, with every other loaded track available as context.</p>
+
+  <figure>
+    <img src="user-guide/06-map.png" alt="The Map tab showing a flight track with two racetrack turns, a companion track alongside, and an airspace overlay.">
+    <figcaption>The active track in green, a companion track dotted alongside, and a Special Use Airspace overlay.</figcaption>
+  </figure>
+
+  <div class="tablewrap"><table class="wrap">
+    <thead><tr><th>Control</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td>display</td><td>Path + Points, Path only, or Points only. Points only is the one to use when you care about sample spacing rather than the route.</td></tr>
+      <tr><td>basemap</td><td>OpenStreetMap, OSM Dark, OSM Humanitarian, OpenTopoMap, or an offline grid. The offline grid needs no network at all.</td></tr>
+      <tr><td>color by</td><td>Shade points by elevation or by any numeric channel. A legend appears with the value range.</td></tr>
+      <tr><td>split gaps</td><td>Break the drawn path where the time gap exceeds this many minutes, so a pause does not become a straight line across the map.</td></tr>
+      <tr><td>density</td><td>A binned heat view for spotting where samples cluster. The cell size is in metres.</td></tr>
+      <tr><td>Fit active / visible / range</td><td>Zoom to the active track, to everything visible, or to the current selection.</td></tr>
+      <tr><td>Quality markers</td><td>Gaps and jumps are marked in place, so a problem is visible where it happened.</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="note">
+    <strong>The map draws a budget, not the whole track.</strong>
+    Above roughly 4,000 points (adjustable in Settings) the display is downsampled deterministically.
+    The readout tells you how many of how many are drawn. Statistics and export always use every point.
+  </div>
+</section>
+
+<section id="charts">
+  <h2>Charts</h2>
+  <p class="lede">Any numeric channel against time, sample index, distance, or — on a scatter — another
+  channel. Selections here are shared with every other view.</p>
+
+  <figure>
+    <img src="user-guide/07-charts.png" alt="The Charts tab showing an altitude-over-time trace with a channel chip row and preset selector.">
+    <figcaption>Altitude over time. Channel chips toggle series on and off; each series scales to its own units.</figcaption>
+  </figure>
+
+  <div class="tablewrap"><table class="wrap">
+    <thead><tr><th>Control</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td>Time Series / Scatter / Area</td><td>Line, points-only, or filled to the baseline. Scatter is the only type that accepts another channel as its x-axis, because a line through non-monotonic values would be meaningless.</td></tr>
+      <tr><td>preset</td><td>Ready-made channel groupings — altitude, speed, heading, timing, distance.</td></tr>
+      <tr><td>x-axis</td><td>Time, sample index, cumulative distance, or (scatter only) any numeric channel.</td></tr>
+      <tr><td>Export SVG / PNG</td><td>Writes the current chart to a file, at the resolution you see.</td></tr>
+      <tr><td>Reset zoom</td><td>Clears both axes back to the full extent.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Chart gestures</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Gesture</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td>Click</td><td>Select that point everywhere</td></tr>
+      <tr><td>Drag</td><td>Zoom to the dragged x-range</td></tr>
+      <tr><td>Wheel</td><td>Zoom the x-axis about the cursor</td></tr>
+      <tr><td><kbd>Shift</kbd> + wheel</td><td>Pan the x-axis</td></tr>
+      <tr><td><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + wheel</td><td>Zoom the y-axis</td></tr>
+      <tr><td><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Shift</kbd> + wheel</td><td>Pan the y-axis</td></tr>
+      <tr><td><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + click or drag</td><td>Add points to a delete set</td></tr>
+      <tr><td><kbd>Shift</kbd> + click</td><td>Extend the delete set</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="table">
+  <h2>Table</h2>
+  <p class="lede">Every sample as a row. Virtualised, so a hundred thousand points scroll without
+  complaint, and fully keyboard-operable.</p>
+
+  <figure>
+    <img src="user-guide/08-table.png" alt="The Table tab showing a virtualised grid of samples with a filter box and selection controls.">
+    <figcaption>The data grid. Flagged rows carry a ⚠ against their index.</figcaption>
+  </figure>
+
+  <div class="tablewrap"><table class="wrap">
+    <thead><tr><th>Control</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td>Filter</td><td>Substring match across every value in the row.</td></tr>
+      <tr><td>quality events only</td><td>Narrows to rows the quality detector flagged.</td></tr>
+      <tr><td>selected range only</td><td>Narrows to the current selection from any other view.</td></tr>
+      <tr><td>Column headers</td><td>Click to sort ascending, again for descending, again to return to file order.</td></tr>
+      <tr><td>Export visible CSV</td><td>Writes exactly what the filters and sort are showing, not the whole dataset.</td></tr>
+      <tr><td>Delete set</td><td>Removes the multi-selected rows as one undoable operation.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Grid keyboard control</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Key</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Move the focus ring one row</td></tr>
+      <tr><td><kbd>PageUp</kbd> <kbd>PageDown</kbd></td><td>Move a screenful</td></tr>
+      <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>Jump to the first or last row</td></tr>
+      <tr><td><kbd>Enter</kbd> / <kbd>Space</kbd></td><td>Select the focused row</td></tr>
+      <tr><td><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Enter</kbd></td><td>Add or remove it from the selection set</td></tr>
+      <tr><td><kbd>Shift</kbd> + <kbd>Enter</kbd></td><td>Extend the selection to it</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="points">
+  <h2>Points</h2>
+  <p class="lede">One sample at a time, in full, with its neighbours drawn around it. This is where you
+  go when a single point looks wrong.</p>
+
+  <figure>
+    <img src="user-guide/09-points.png" alt="The Points tab showing a single sample's fields, a neighbourhood plan view, and a table of legs to neighbouring samples.">
+    <figcaption>Every stored field for one sample, plus the legs to the samples either side of it.</figcaption>
+  </figure>
+
+  <div class="tablewrap"><table class="wrap">
+    <thead><tr><th>Element</th><th>What it shows</th></tr></thead>
+    <tbody>
+      <tr><td>Quality strip</td><td>The whole track as a colour bar by severity. Click anywhere in it to jump to that region.</td></tr>
+      <tr><td>Neighbourhood plan</td><td>A local, equal-aspect plot of the surrounding samples with a scale bar — the view that makes a position spike obvious.</td></tr>
+      <tr><td>Point fields</td><td>Latitude and longitude in both decimal and degrees-minutes-seconds, elevation, time in ISO and epoch milliseconds, and source provenance.</td></tr>
+      <tr><td>Neighbour deltas</td><td>Time, distance, implied speed, elevation change, and bearing to the previous and next samples. An implied speed over a zero or backward interval is left blank rather than shown as infinity.</td></tr>
+      <tr><td>Channels</td><td>Every extension channel on this sample, with a badge on any that a later edit made stale.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="compare">
+  <h2>Compare</h2>
+  <p class="lede">Two tracks, time-aligned, reduced to relative geometry: how far apart, in what
+  direction, closing or opening.</p>
+
+  <figure>
+    <img src="user-guide/10-compare.png" alt="The Compare tab showing dataset selectors, alignment settings, summary metric cards, and a table of aligned samples.">
+    <figcaption>Two tracks aligned within tolerance, summarised and then listed sample by sample.</figcaption>
+  </figure>
+
+  <div class="tablewrap"><table class="wrap">
+    <thead><tr><th>Control</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td>reference / target</td><td>Which track is the origin of the relative frame, and which is measured against it.</td></tr>
+      <tr><td>tolerance (ms)</td><td>How far apart two samples may be in time and still be paired. Widen it when the two sources log at different rates.</td></tr>
+      <tr><td>target offset (ms)</td><td>Shift the target in time before aligning, to correct a known clock offset.</td></tr>
+      <tr><td>interpolate target positions</td><td>Instead of pairing with the nearest real sample, interpolate the target's position at each reference timestamp. More precise ranges, at the cost of the clock-drift estimate, which is not meaningful in this mode and is shown as unavailable rather than as zero.</td></tr>
+      <tr><td>Export comparison CSV</td><td>Writes every aligned sample, not the first 250 the table displays.</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="caution">
+    <strong>Incompatible metadata blocks the comparison.</strong>
+    If the two tracks declare different altitude or time references, the app refuses to compare them
+    and says which fields disagree — rather than differencing two numbers that do not mean the same thing.
+  </div>
+</section>
+
+<section id="scene3d">
+  <h2>3D</h2>
+  <p class="lede">The trajectory in space, with playback. Useful for reading vertical structure that a
+  plan view flattens away.</p>
+
+  <figure>
+    <img src="user-guide/11-scene3d.png" alt="The 3D tab showing a trajectory rendered in perspective with camera and playback controls.">
+    <figcaption>The trajectory with a ground grid. Drag to orbit, wheel to zoom.</figcaption>
+  </figure>
+
+  <div class="tablewrap"><table class="wrap">
+    <thead><tr><th>Control</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td>altitude exaggeration</td><td>Scales the vertical axis from 0.1× to 100×. A long, shallow flight needs exaggeration before its profile is readable.</td></tr>
+      <tr><td>projection</td><td>Perspective for a natural view, orthographic for measuring shape without foreshortening.</td></tr>
+      <tr><td>ground grid / vertical curtain</td><td>A reference plane, and dropped lines from the track to it, to make altitude legible.</td></tr>
+      <tr><td>Reset / Top / Side / Fit</td><td>Preset camera positions.</td></tr>
+      <tr><td>Playback</td><td>Play, pause, restart, scrub, and 0.25×–4× speed. The cursor stays linked to the other views as it moves.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="transform">
+  <h2>Transform</h2>
+  <p class="lede">Every operation that changes the data. All of them are undoable, all of them are
+  recorded, and all of them preserve provenance.</p>
+
+  <figure>
+    <img src="user-guide/12-transform.png" alt="The Transform tab showing operation cards grouped into validity, outliers, density, resampling, and derive sections.">
+    <figcaption>Operation cards, grouped by what they do.</figcaption>
+  </figure>
+
+  <div class="tablewrap"><table class="wrap">
+    <thead><tr><th>Operation</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td>Sort by time</td><td>Reorders samples into ascending time.</td></tr>
+      <tr><td>Swap lat/lon</td><td>Fixes a transposed import.</td></tr>
+      <tr><td>Drop invalid</td><td>Removes samples with unusable coordinates.</td></tr>
+      <tr><td>De-jitter timestamps</td><td>Cleans up equal or backward timestamps by nudging, dropping, or averaging them.</td></tr>
+      <tr><td>Clip to time window</td><td>Keeps only samples inside a start/end window, with an explicit policy for untimed points.</td></tr>
+      <tr><td>Drop outliers</td><td>Finds samples breaking the local trend and, by default, refits them from their neighbours rather than deleting them. See <a href="#repair">below</a>.</td></tr>
+      <tr><td>Elevation filter</td><td>Median, exponential-moving-average, or Hampel smoothing of the altitude channel only.</td></tr>
+      <tr><td>Smooth</td><td>Windowed smoothing of position, elevation, or both.</td></tr>
+      <tr><td>Reduce points</td><td>Deduplicate, decimate by a factor, or simplify to a distance tolerance.</td></tr>
+      <tr><td>Round precision</td><td>Trims stored decimal places on coordinates, elevation, and channels.</td></tr>
+      <tr><td>Resample to fixed rate</td><td>Re-times the track onto a regular rate, optionally skipping large gaps instead of inventing across them.</td></tr>
+      <tr><td>Resample by distance</td><td>Re-samples at a fixed spacing along the path.</td></tr>
+      <tr><td>Fill gaps</td><td>Synthesises samples across time gaps above a threshold, gated by a motion profile so the fit stays physically plausible.</td></tr>
+      <tr><td>Derive kinematics</td><td>Computes distance, speed, heading, turn rate, and acceleration channels from position and time.</td></tr>
+      <tr><td>Shift time / Offset elevation</td><td>Applies a constant offset to every sample.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Motion profiles</h3>
+  <p>Drop outliers and Fill gaps both take a motion profile — Aircraft, Ground vehicle, Marine, or
+  None — which sets ceilings on speed, vertical speed, and turn rate. Any reconstructed sample that
+  would violate those ceilings is rejected rather than written. Aircraft is the default; the default
+  is configurable in Settings.</p>
+
+  <h3>Scope, history, and recipes</h3>
+  <div class="tablewrap"><table class="wrap">
+    <thead><tr><th>Control</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td>Scope to selection</td><td>Applies the next operation only to the selected range instead of the whole track.</td></tr>
+      <tr><td>Preview repairs</td><td>Routes operations with a visualisable difference through a before/after gate instead of applying them straight away.</td></tr>
+      <tr><td>Operation history</td><td>Everything applied to this dataset, in order, with parameters.</td></tr>
+      <tr><td>Replay verified history</td><td>Re-runs the recorded sequence against the original import, checked against a hash so replay cannot silently diverge.</td></tr>
+      <tr><td>Named recipes</td><td>Saves a sequence to re-apply to another dataset. Recipes show whether they are still replayable.</td></tr>
+      <tr><td>Restore original</td><td>Returns to the dataset exactly as imported, discarding every applied operation.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="repair">
+  <h2>Repairing a track</h2>
+  <p class="lede">When Track Health fails the outlier check, it offers the fix directly, using the same
+  detector settings it graded against — so what is reported and what is repaired cannot disagree.</p>
+
+  <figure>
+    <img src="user-guide/19-track-health-failing.png" alt="Track Health showing a failing outlier check with a Repair flagged points button and flag chips.">
+    <figcaption>A failing outlier check. The flagged samples are listed as chips, and the repair is offered inline.</figcaption>
+  </figure>
+
+  <figure>
+    <img src="user-guide/20-repair-preview.png" alt="The repair preview dialog showing the original track dashed, the proposed repair in red, moved points in yellow, and a summary of changes.">
+    <figcaption>The preview gate. Original dashed, proposal solid, moved samples highlighted — and a plain
+    statement of what would change. Nothing has been applied at this point.</figcaption>
+  </figure>
+
+  <ol class="steps">
+    <li>Press <strong>Repair flagged points</strong>. The repair is computed but not applied.</li>
+    <li>Read the fact list: how many points before and after, how many moved, and the largest position and elevation shift.</li>
+    <li><strong>Revert</strong> discards it and changes nothing. <strong>Accept</strong> applies it as a single undoable operation.</li>
+  </ol>
+
+  <div class="note">
+    <strong>Repaired points are refitted, not deleted — and they say so.</strong>
+    Flagged samples are re-derived from their surviving neighbours through the same plausibility-gated
+    engine Fill gaps uses, so the track keeps its point count. Each one is marked <code>interpolated</code>
+    in its provenance, counted on the Overview tab, and disclosed in the HTML report. A synthesised
+    sample is never presented as an observed one.
+  </div>
+
+  <div class="caution">
+    <strong>A track with any untimed sample falls back to deletion.</strong>
+    Reconstruction fits against time, so it cannot run without it. The app says so on the control
+    rather than failing when you press it.
+  </div>
+</section>
+
+<section id="fusion">
+  <h2>Fusion</h2>
+  <p class="lede">Combine several sources covering the same event into one track, with a record of
+  which source won at each moment.</p>
+
+  <figure>
+    <img src="user-guide/16-fusion.png" alt="The Fusion tab showing a source table with include checkboxes and priorities, and a time tolerance field.">
+    <figcaption>Sources with priorities, and the compatibility gate above the run button.</figcaption>
+  </figure>
+
+  <p>Select at least two sources, give each a priority, set the time tolerance that decides which
+  samples describe the same instant, and run Auto-Combine. The result is a new dataset — sources are
+  never modified. The decision timeline records every choice, and manual overrides let you force a
+  particular source over a chosen interval.</p>
+
+  <div class="caution">
+    <strong>Fusion will not invent a common reference frame.</strong>
+    Sources must declare the same coordinate system and have valid spatial coverage, or the run is
+    blocked with the reason. Reproject explicitly first.
+  </div>
+</section>
+
+<section id="sources">
+  <h2>Sources</h2>
+  <p class="lede">Which loaded datasets are drawn as context in the other views, and which one is active.</p>
+
+  <figure>
+    <img src="user-guide/17-sources.png" alt="The Sources tab listing datasets with colour chips, point counts, visibility checkboxes, and make-active buttons.">
+    <figcaption>Per-dataset colour, visibility, and active selection in one place.</figcaption>
+  </figure>
+</section>
+
+<section id="export">
+  <h2>Export</h2>
+  <p class="lede">Write the dataset back out. The preview pane shows what is actually about to be
+  written before you commit to it.</p>
+
+  <figure>
+    <img src="user-guide/13-export.png" alt="The Export tab showing format cards, an output name field, format options, and a live preview of the output.">
+    <figcaption>Format cards with a live preview of the first part of the output.</figcaption>
+  </figure>
+
+  <div class="tablewrap"><table class="wrap">
+    <thead><tr><th>Format</th><th>Carries</th></tr></thead>
+    <tbody>
+      <tr><td>GPX</td><td>Coordinates, elevation, time, and optionally extension channels. Options for sort-by-time, byte-order mark, and coordinate precision.</td></tr>
+      <tr><td>CSV</td><td>A flat table of every field and channel.</td></tr>
+      <tr><td>GeoJSON</td><td>Standard feature geometry.</td></tr>
+      <tr><td>KML</td><td>For Google Earth and similar viewers.</td></tr>
+      <tr><td>EAG TSPI</td><td>NATO range format, with platform type, exercise, and mission identifiers.</td></tr>
+      <tr><td>GPB</td><td>The app's compact binary format — the most faithful for coordinates and numeric channels.</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="caution">
+    <strong>Exporting notional points requires acknowledgement.</strong>
+    If a dataset contains synthesised samples — from Fill gaps, resampling, or a repair — export is
+    gated behind an explicit checkbox. It exists so derived data is never handed on as observed data
+    by accident.
+  </div>
+
+  <div class="note">
+    <strong>Every format is lossy in its own way, and the warnings say how.</strong>
+    GPB is numeric-only: it drops names, descriptions, and provenance including quality flags, and
+    coerces non-numeric channels to zero. GPX and EAG have their own limits. Read the export warnings
+    before treating a round trip as faithful.
+  </div>
+</section>
+
+<section id="project">
+  <h2>Project &amp; reports</h2>
+  <p class="lede">Save the whole session — datasets, history, selections, bookmarks, notes — or export a
+  self-contained report of what you found.</p>
+
+  <figure>
+    <img src="user-guide/14-project.png" alt="The Project tab showing project name and notes fields, save and open buttons, and a summary metric grid.">
+    <figcaption>The project archive holds the datasets and their full undo history, not just the current state.</figcaption>
+  </figure>
+
+  <div class="tablewrap"><table class="wrap">
+    <thead><tr><th>Action</th><th>What it produces</th></tr></thead>
+    <tbody>
+      <tr><td>Save complete project</td><td>A <code>.jddc-project</code> archive: every dataset, its history snapshots, operation records, recipes, bookmarks, notes, and workspace state.</td></tr>
+      <tr><td>Open project</td><td>Restores all of the above. Confirms first, since it replaces the current session.</td></tr>
+      <tr><td>Export manifest only</td><td>The human-readable project description with no embedded point data.</td></tr>
+      <tr><td>Export HTML report</td><td>A self-contained analysis report — see below.</td></tr>
+      <tr><td>Export diagnostic bundle</td><td>Logs and environment details for a bug report, with a note you write yourself.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>The HTML analysis report</h3>
+  <figure>
+    <img src="user-guide/15-report-dialog.png" alt="The report export dialog showing a title field, filename field, and a checklist of evidence sections.">
+    <figcaption>Choose what the report includes before it is generated. Nothing downloads until you confirm.</figcaption>
+  </figure>
+
+  <p>Nine evidence sections can be included or left out: source metadata, import warnings, quality
+  events, bookmarks, operation history, cross-dataset comparison, fusion decisions, data quality, and
+  the map overlay inventory. Comparison, fusion, and overlays are off by default; the rest are on.
+  <em>Remember these settings for this project</em> saves your choice with the project — it is
+  unchecked by default and nothing is persisted unless you tick it.</p>
+
+  <div class="note">
+    <strong>Reports are always in metres and m/s.</strong>
+    The display-unit preference changes what you see on screen; it deliberately does not change the
+    report, exports, or stored data, so a report means the same thing to whoever receives it.
+  </div>
+</section>
+
+<section id="settings">
+  <h2>Settings</h2>
+  <p class="lede">Stored on this device, not inside any project — opening a different project keeps these values.</p>
+
+  <figure>
+    <img src="user-guide/18-settings.png" alt="The Settings tab showing point budget inputs, a unit system selector, and a default motion profile selector.">
+    <figcaption>Point budgets, display units, and transform defaults.</figcaption>
+  </figure>
+
+  <div class="tablewrap"><table class="wrap">
+    <thead><tr><th>Setting</th><th>What it changes</th></tr></thead>
+    <tbody>
+      <tr><td>Chart / Map / 3D point budget</td><td>How many samples each renderer draws. Display only — statistics, analysis, and export always use every point. Raise it for fidelity, lower it for responsiveness on very large tracks.</td></tr>
+      <tr><td>Unit system</td><td>Metric (m, km, m/s) or aviation/marine (ft, NM, kn). Changes distance, altitude, and speed <em>readouts</em> only. Channel values keep their own units, and stored data, exports, and reports stay in metres and m/s.</td></tr>
+      <tr><td>Default motion profile</td><td>Which profile Drop outliers and Fill gaps open on each session.</td></tr>
+      <tr><td>Reset to defaults</td><td>Restores every setting above. Disabled when nothing differs from the defaults.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="keys">
+  <h2>Keyboard reference</h2>
+  <p class="lede">Selection keys work in whichever view has focus, and the selection is shared across
+  all of them.</p>
+
+  <div class="tablewrap"><table>
+    <thead><tr><th>Key</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Move the synchronised cursor one sample</td></tr>
+      <tr><td><kbd>Shift</kbd> + <kbd>←</kbd>/<kbd>→</kbd></td><td>Extend the selected range</td></tr>
+      <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>Jump to the first or last sample</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td>Select the sample under the cursor</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Clear the selection. Inside a dialog, closes it without applying.</td></tr>
+      <tr><td><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + click</td><td>Add or remove one item from a multi-selection</td></tr>
+      <tr><td><kbd>Shift</kbd> + click</td><td>Extend a multi-selection to the clicked item</td></tr>
+    </tbody>
+  </table></div>
+  <p>Chart and table gestures are listed under <a href="#charts">Charts</a> and <a href="#table">Table</a>.</p>
+</section>
+
+<section id="workflows">
+  <h2>Worked examples</h2>
+
+  <h3>Importing and mapping a CSV</h3>
+  <ol class="steps">
+    <li><strong>+ Load data</strong>, choose the file. The CSV Mapping tab opens with its guesses filled in.</li>
+    <li>Confirm latitude and longitude. Check the confidence figures, and take the swap hint seriously if it appears.</li>
+    <li>Set the timestamp column and its format. Without it, speed, resampling, gap filling, and most of Track Health are unavailable.</li>
+    <li>Set the elevation column and its source unit.</li>
+    <li><strong>Build dataset from full CSV</strong>, then go to <strong>Overview</strong> and read the health scan before doing anything else.</li>
+  </ol>
+
+  <h3>Comparing two tracks</h3>
+  <ol class="steps">
+    <li>Load both. The Compare tab enables once there are two datasets.</li>
+    <li>Pick reference and target. The reference defines the origin of the relative frame.</li>
+    <li>If nothing aligns, raise the tolerance — the two sources probably log at different rates.</li>
+    <li>If they are offset by a known clock error, put it in <em>target offset</em> rather than editing timestamps.</li>
+    <li>Read the summary cards, then <strong>Export comparison CSV</strong> for every aligned sample rather than the 250 shown.</li>
+  </ol>
+
+  <h3>Repairing outliers</h3>
+  <ol class="steps">
+    <li><strong>Overview</strong> → look at the Outliers check. If it failed, the flagged samples are listed as chips.</li>
+    <li>Click a chip to inspect that sample on the Map or Charts tab, and confirm it is genuinely bad rather than a real manoeuvre.</li>
+    <li><strong>Repair flagged points</strong>, read the preview, then Accept or Revert.</li>
+    <li>Re-scan. The score should improve and the point count should be unchanged.</li>
+    <li>If you disagree with the result, undo it — or use Transform → Drop outliers to run the same operation with your own thresholds and motion profile.</li>
+  </ol>
+
+  <h3>Exporting a dataset</h3>
+  <ol class="steps">
+    <li><strong>Export</strong>, choose the format card. Read the warnings listed for that format.</li>
+    <li>Set the output name and any format options.</li>
+    <li>Check the live preview — it is the real output, not a mock-up.</li>
+    <li>If the dataset contains synthesised samples, acknowledge the notional-data gate.</li>
+    <li>Export. For a record of how the data got to this state, also export the HTML report from the Project tab.</li>
+  </ol>
+</section>
+
+<section id="integrity">
+  <h2>How your data is treated</h2>
+  <p class="lede">The rules the app holds itself to. They explain most of its more cautious behaviour.</p>
+
+  <div class="tablewrap"><table class="wrap">
+    <thead><tr><th>Rule</th><th>What it means for you</th></tr></thead>
+    <tbody>
+      <tr><td>Never fabricate data</td><td>Downsampling is display-only; export always writes the full dataset. Any synthesised sample is flagged in provenance, counted on Overview, and disclosed in reports. If a value cannot be honestly derived, it is dropped with a warning rather than guessed.</td></tr>
+      <tr><td>Transforms are pure</td><td>An operation produces a new dataset and preserves provenance and quality flags. Nothing is edited in place behind your back, which is why undo can always take you back.</td></tr>
+      <tr><td>Coordinate maths is antimeridian-safe</td><td>Tracks crossing 180° longitude interpolate the short way round, including angular channels like heading.</td></tr>
+      <tr><td>Untrusted input is validated at the boundary</td><td>Operation parameters and restored project files are checked before use, and malformed data is rejected loudly rather than half-applied.</td></tr>
+      <tr><td>One canonical unit system</td><td>Degrees, metres, and epoch milliseconds internally. Conversion happens once at import, and the display-unit preference never changes what is stored.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="faq">
+  <h2>Troubleshooting</h2>
+
+  <h3>A tab is greyed out</h3>
+  <p>It needs data it does not have. Most tabs need an active dataset; Compare and Fusion need two;
+  Project needs at least one. CSV Mapping only appears while a CSV is waiting to be built.</p>
+
+  <h3>A button is disabled</h3>
+  <p>Usually a missing prerequisite rather than a fault. <em>Build dataset</em> needs latitude and
+  longitude mapped. <em>Reset to defaults</em> is disabled when nothing differs from the defaults.
+  Reconstruction options are disabled on a track with untimed samples, with a tooltip saying so.</p>
+
+  <h3>The map is blank or the basemap will not load</h3>
+  <p>Basemap tiles need a network connection. A banner appears when they fail, offering to switch to
+  the offline grid — your track data is fully usable either way.</p>
+
+  <h3>Fewer points loaded than the file contains</h3>
+  <p>Check <em>Dropped at import</em> on the Overview tab and the import warnings. Records with
+  unusable coordinates, bad checksums, or unparseable timestamps are counted and reported rather
+  than silently included.</p>
+
+  <h3>The track looks fine but Track Health scores it badly</h3>
+  <p>Read the individual checks — the score is their weighted sum. The altitude profile check expects
+  a complete takeoff-to-landing flight, so a mid-flight excerpt or a ground vehicle will legitimately
+  fail it. A low score means "this is not the shape I expected", not "this data is corrupt".</p>
+
+  <h3>Every point is flagged as an outlier</h3>
+  <p>Check the motion profile. Detection is turn-aware, but a profile whose ceilings are far below the
+  vehicle's real performance will flag normal manoeuvring. Try a profile that matches the platform,
+  or None to disable the physical constraints.</p>
+
+  <h3>Speeds or altitudes are in the wrong units</h3>
+  <p>Settings → Display units switches every readout between metric and aviation/marine. If the values
+  themselves are wrong rather than the units, check the elevation unit you chose at CSV mapping.</p>
+
+  <h3>I need to get back to the original data</h3>
+  <p>Undo steps back one operation at a time. Transform → <em>Restore original</em> returns the
+  dataset exactly as imported, however many operations have been applied.</p>
+
+  <h3>Something crashed or behaved oddly</h3>
+  <p>Project → <em>Export diagnostic bundle</em> collects the logs and environment details, with a
+  note you write yourself. It contains no point data.</p>
+</section>
+
+<footer>
+  <p>Joint Domain Data Compiler — user guide. The exact version you are running is shown on the
+  Project tab. Screenshots are taken against a synthetic demo flight, not recorded telemetry.</p>
+</footer>
+
+</main>
+</div>
+
+<script>
+// Highlight the current section in the contents. No dependencies: this file has
+// to work from a file:// URL inside the packaged app with no network.
+(function () {
+  var links = Array.prototype.slice.call(document.querySelectorAll('nav.toc a'))
+  var sections = links
+    .map(function (link) { return document.querySelector(link.getAttribute('href')) })
+    .filter(Boolean)
+  if (!sections.length || !('IntersectionObserver' in window)) return
+
+  var visible = new Map()
+  var observer = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (entry.isIntersecting) visible.set(entry.target.id, entry.intersectionRatio)
+      else visible.delete(entry.target.id)
+    })
+    var best = null
+    visible.forEach(function (ratio, id) { if (!best || ratio > best.ratio) best = { id: id, ratio: ratio } })
+    if (!best) return
+    links.forEach(function (link) {
+      link.classList.toggle('active', link.getAttribute('href') === '#' + best.id)
+    })
+  }, { rootMargin: '-10% 0px -70% 0px', threshold: [0, 0.25, 0.5, 1] })
+  sections.forEach(function (section) { observer.observe(section) })
+})()
+</script>
+
+</body>
+</html>

@@ -21,6 +21,7 @@ const IPC_CHANNELS = Object.freeze({
   reseed: 'kml-library:reseed',
   reveal: 'kml-library:reveal',
   revealArchive: 'file-archive:reveal',
+  openUserGuide: 'user-guide:open',
   saveDiagnostics: 'diagnostics:save',
   setUnsavedChanges: 'window:set-unsaved-changes',
 })

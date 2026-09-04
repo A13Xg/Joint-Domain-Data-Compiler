@@ -142,7 +142,7 @@ export function FusionPanel({ datasets, fusionArtifacts = [], onCreateDataset }:
               <td><input type="checkbox" checked={configs[dataset.id]?.included ?? false} onChange={() => toggleIncluded(dataset.id)} aria-label={`Include ${dataset.name} as a fusion source`} /></td>
               <td>{dataset.name}</td>
               <td className="mono">{dataset.points.length.toLocaleString()}</td>
-              <td><input type="number" min={0} step={1} value={configs[dataset.id]?.priority ?? 1} disabled={!configs[dataset.id]?.included} onChange={(event) => setPriority(dataset.id, Math.max(0, Number(event.target.value) || 0))} /></td>
+              <td><input type="number" aria-label={`Fusion priority for ${dataset.name}`} title="Higher priority wins when two sources describe the same instant" min={0} step={1} value={configs[dataset.id]?.priority ?? 1} disabled={!configs[dataset.id]?.included} onChange={(event) => setPriority(dataset.id, Math.max(0, Number(event.target.value) || 0))} /></td>
             </tr>
           ))}
         </tbody>

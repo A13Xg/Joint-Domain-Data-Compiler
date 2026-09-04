@@ -1,17 +1,15 @@
 import { useMemo } from 'react'
 import type { Dataset } from '../core/model'
 import {
-  alignTracksByInterpolation,
-  alignTracksByNearestTime,
   computeAlongCrossTrack,
-  deriveInterpolatedRelativePosition,
-  deriveRelativePosition,
   estimateClockDrift,
   type ClockDriftEstimate,
   type RelativePointSample,
 } from '../core/analytics/relative'
-import { assessDatasetCompatibility } from '../core/metadataCompatibility'
+import { computeComparisonSamples, summarizeComparisonRanges } from '../core/analytics/comparisonSummary'
 import { buildComparisonCsv } from '../core/analytics/comparisonReport'
+import { convertDistance, convertSpeed, distanceUnitLabel, speedUnitLabel } from '../core/units'
+import { useAppSettings } from '../state/settings'
 import type { WorkspaceState } from '../state/workspace'
 import { logger } from '../core/logger'
 import { errorMessage } from '../core/errors'
@@ -33,6 +31,9 @@ interface ComparisonResult {
 }
 
 export function ComparisonPanel({ datasets, activeId, workspace, onWorkspaceChange, onSelectReferenceSample }: { datasets: Dataset[]; activeId: string | null; workspace: WorkspaceState['comparison']; onWorkspaceChange: (next: WorkspaceState['comparison']) => void; onSelectReferenceSample: (datasetId: string, pointIndex: number) => void }) {
+  const { unitSystem } = useAppSettings()
+  const distanceUnit = distanceUnitLabel(unitSystem)
+  const speedUnit = speedUnitLabel(unitSystem)
   const referenceId = workspace.referenceDatasetId ?? activeId ?? datasets[0]?.id ?? ''
   const targetId = workspace.targetDatasetId ?? datasets.find((dataset) => dataset.id !== referenceId)?.id ?? ''
   const { toleranceMs, targetOffsetMs, interpolateTarget } = workspace
@@ -41,17 +42,15 @@ export function ComparisonPanel({ datasets, activeId, workspace, onWorkspaceChan
     const reference = datasets.find((dataset) => dataset.id === referenceId)
     const target = datasets.find((dataset) => dataset.id === targetId)
     if (!reference || !target || reference.id === target.id) return null
-    const compatibility = assessDatasetCompatibility(reference, target)
-    if (compatibility.level === 'blocked') return { samples: [], error: compatibility.reasons.join(' ') }
+    // Alignment and the range statistics come from core so the HTML report,
+    // which re-derives this comparison from the same persisted settings, can
+    // never disagree with what this tab shows.
+    const { samples, error } = computeComparisonSamples(reference, target, { referenceDatasetId: referenceId, targetDatasetId: targetId, toleranceMs, targetOffsetMs, interpolateTarget })
+    if (error) return { samples, error }
+    if (samples.length === 0) return { samples, error: null }
     try {
-      const samples = interpolateTarget
-        ? deriveInterpolatedRelativePosition(reference.points, target.points, alignTracksByInterpolation(reference.points, target.points, { maxBracketGapMs: toleranceMs, targetTimeOffsetMs: targetOffsetMs }))
-        : deriveRelativePosition(reference.points, target.points, alignTracksByNearestTime(reference.points, target.points, { toleranceMs, targetTimeOffsetMs: targetOffsetMs }))
-      if (samples.length === 0) return { samples, error: null }
+      const stats = summarizeComparisonRanges(samples)
       const ranges = samples.map((sample) => sample.slantRangeM)
-      const horizontal = samples.map((sample) => sample.horizontalRangeM)
-      const closures = samples.map((sample) => sample.closureRateMps).filter((value): value is number => value !== undefined)
-      const minRange = Math.min(...ranges)
       const alongCross = computeAlongCrossTrack(reference.points, samples)
       const alongTrack = alongCross.map((sample) => sample.alongTrackM)
       const crossTrack = alongCross.map((sample) => sample.crossTrackM)
@@ -74,12 +73,12 @@ export function ComparisonPanel({ datasets, activeId, workspace, onWorkspaceChan
       return {
         samples,
         error: null,
-        minRange,
-        maxRange: Math.max(...ranges),
-        meanRange: mean(ranges),
-        meanHorizontal: mean(horizontal),
-        meanClosure: closures.length > 0 ? mean(closures) : undefined,
-        closest: samples[ranges.indexOf(minRange)],
+        minRange: stats.minRangeMeters,
+        maxRange: stats.maxRangeMeters,
+        meanRange: stats.meanRangeMeters,
+        meanHorizontal: stats.meanHorizontalRangeMeters,
+        meanClosure: stats.meanClosureRateMps,
+        closest: stats.minRangeMeters === undefined ? undefined : samples[ranges.indexOf(stats.minRangeMeters)],
         meanAlongTrack: alongTrack.length > 0 ? mean(alongTrack) : undefined,
         meanCrossTrack: crossTrack.length > 0 ? mean(crossTrack) : undefined,
         maxCrossTrack: crossTrack.length > 0 ? Math.max(...crossTrack.map((value) => Math.abs(value))) : undefined,
@@ -108,20 +107,20 @@ export function ComparisonPanel({ datasets, activeId, workspace, onWorkspaceChan
         <>
           <div className="metric-grid">
             <Metric label="aligned samples" value={result.samples.length.toLocaleString()} />
-            <Metric label="closest slant range" value={`${format(result.minRange)} m`} />
-            <Metric label="mean slant range" value={`${format(result.meanRange)} m`} />
-            <Metric label="maximum slant range" value={`${format(result.maxRange)} m`} />
-            <Metric label="mean horizontal range" value={`${format(result.meanHorizontal)} m`} />
-            <Metric label="mean closure rate" value={result.meanClosure === undefined ? 'n/a' : `${format(result.meanClosure)} m/s`} />
-            <Metric label="mean along-track" value={result.meanAlongTrack === undefined ? 'n/a' : `${format(result.meanAlongTrack)} m`} />
-            <Metric label="mean cross-track" value={result.meanCrossTrack === undefined ? 'n/a' : `${format(result.meanCrossTrack)} m`} />
-            <Metric label="max |cross-track|" value={result.maxCrossTrack === undefined ? 'n/a' : `${format(result.maxCrossTrack)} m`} />
+            <Metric label="closest slant range" value={`${format(convertDistance(result.minRange!, unitSystem))} ${distanceUnit}`} />
+            <Metric label="mean slant range" value={`${format(convertDistance(result.meanRange!, unitSystem))} ${distanceUnit}`} />
+            <Metric label="maximum slant range" value={`${format(convertDistance(result.maxRange!, unitSystem))} ${distanceUnit}`} />
+            <Metric label="mean horizontal range" value={`${format(convertDistance(result.meanHorizontal!, unitSystem))} ${distanceUnit}`} />
+            <Metric label="mean closure rate" value={result.meanClosure === undefined ? 'n/a' : `${format(convertSpeed(result.meanClosure, unitSystem))} ${speedUnit}`} />
+            <Metric label="mean along-track" value={result.meanAlongTrack === undefined ? 'n/a' : `${format(convertDistance(result.meanAlongTrack, unitSystem))} ${distanceUnit}`} />
+            <Metric label="mean cross-track" value={result.meanCrossTrack === undefined ? 'n/a' : `${format(convertDistance(result.meanCrossTrack, unitSystem))} ${distanceUnit}`} />
+            <Metric label="max |cross-track|" value={result.maxCrossTrack === undefined ? 'n/a' : `${format(convertDistance(result.maxCrossTrack, unitSystem))} ${distanceUnit}`} />
             <Metric label="estimated clock offset" value={interpolateTarget ? 'n/a — not meaningful with interpolation enabled' : result.drift === undefined ? 'n/a' : `${format(result.drift.offsetMs)} ms (n=${result.drift.sampleCount})`} title={result.drift === undefined ? undefined : `Offset valid at reference epoch ${new Date(result.drift.referenceEpochMs).toISOString()} (${result.drift.referenceEpochMs} ms); drift rate extrapolates away from this epoch.`} />
             <Metric label="estimated clock drift" value={interpolateTarget ? 'n/a — not meaningful with interpolation enabled' : result.drift === undefined ? 'n/a' : `${format(result.drift.driftRatePerMs * 1_000_000)} ppm (n=${result.drift.sampleCount})`} title={result.drift === undefined ? undefined : `Offset valid at reference epoch ${new Date(result.drift.referenceEpochMs).toISOString()} (${result.drift.referenceEpochMs} ms); drift rate extrapolates away from this epoch.`} />
           </div>
           <button type="button" onClick={() => downloadComparison(result.samples, referenceId, targetId, result.drift)}>Export comparison CSV</button>
-          {result.closest && <div className="analysis-summary mono">Closest approach at reference index {result.closest.referenceIndex}, target index {result.closest.targetIndex}: bearing {format(result.closest.bearingDeg)}°, Δt {format(result.closest.deltaTimeMs)} ms, vertical separation {format(result.closest.relativeUpM)} m.</div>}
-          <div className="compact-table"><table><thead><tr><th>Ref</th><th>Target</th><th>Kind</th><th>Δt ms</th><th>Slant m</th><th>Horizontal m</th><th>Bearing°</th><th>Up m</th><th>Closure m/s</th></tr></thead><tbody>{result.samples.slice(0, 250).map((sample) => <tr key={`${sample.referenceIndex}-${sample.targetIndex}`}><td><button type="button" className="link-button" aria-label={`Select reference point ${sample.referenceIndex}`} onClick={() => onSelectReferenceSample(referenceId, sample.referenceIndex)}>{sample.referenceIndex}</button></td><td>{sample.targetIndex}</td><td>{sample.derived ? 'interpolated' : 'observed'}</td><td>{format(sample.deltaTimeMs)}</td><td>{format(sample.slantRangeM)}</td><td>{format(sample.horizontalRangeM)}</td><td>{format(sample.bearingDeg)}</td><td>{format(sample.relativeUpM)}</td><td>{sample.closureRateMps === undefined ? '' : format(sample.closureRateMps)}</td></tr>)}</tbody></table></div>
+          {result.closest && <div className="analysis-summary mono">Closest approach at reference index {result.closest.referenceIndex}, target index {result.closest.targetIndex}: bearing {format(result.closest.bearingDeg)}°, Δt {format(result.closest.deltaTimeMs)} ms, vertical separation {format(convertDistance(result.closest.relativeUpM, unitSystem))} {distanceUnit}.</div>}
+          <div className="compact-table"><table><thead><tr><th>Ref</th><th>Target</th><th>Kind</th><th>Δt ms</th><th>Slant {distanceUnit}</th><th>Horizontal {distanceUnit}</th><th>Bearing°</th><th>Up {distanceUnit}</th><th>Closure {speedUnit}</th></tr></thead><tbody>{result.samples.slice(0, 250).map((sample) => <tr key={`${sample.referenceIndex}-${sample.targetIndex}`}><td><button type="button" className="link-button" aria-label={`Select reference point ${sample.referenceIndex}`} onClick={() => onSelectReferenceSample(referenceId, sample.referenceIndex)}>{sample.referenceIndex}</button></td><td>{sample.targetIndex}</td><td>{sample.derived ? 'interpolated' : 'observed'}</td><td>{format(sample.deltaTimeMs)}</td><td>{format(convertDistance(sample.slantRangeM, unitSystem))}</td><td>{format(convertDistance(sample.horizontalRangeM, unitSystem))}</td><td>{format(sample.bearingDeg)}</td><td>{format(convertDistance(sample.relativeUpM, unitSystem))}</td><td>{sample.closureRateMps === undefined ? '' : format(convertSpeed(sample.closureRateMps, unitSystem))}</td></tr>)}</tbody></table></div>
           {result.samples.length > 250 && <div className="muted small">Showing the first 250 aligned samples.</div>}
         </>
       )}

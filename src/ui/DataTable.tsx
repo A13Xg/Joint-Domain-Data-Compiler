@@ -255,7 +255,7 @@ export function DataTable({ points, channels, onDeletePoints }: { points: TrackP
   return (
     <div className="data-table">
       <div className="data-table-toolbar">
-        <input className="data-search" placeholder="filter rows…" value={query} onChange={(event) => setQuery(event.target.value)} />
+        <input className="data-search" aria-label="Filter rows" title="Substring match across every value in the row" placeholder="filter rows…" value={query} onChange={(event) => setQuery(event.target.value)} />
         <span className="data-meta">{total.toLocaleString()} / {points.length.toLocaleString()} rows</span>
         <button type="button" disabled={sorted.length === 0} onClick={() => downloadRows(sorted, columns)}>Export visible CSV</button>
         {qualityEvents.length > 0 && <label className="chk"><input type="checkbox" checked={flaggedOnly} onChange={(event) => setFlaggedOnly(event.target.checked)} />quality events only</label>}

@@ -16,6 +16,7 @@
 // human-editable or shared outside the app, which none of these are.
 import { useEffect, useSyncExternalStore } from 'react'
 import { MOTION_PROFILE_IDS, type MotionProfileId } from '../core/operations/motionProfiles'
+import { UNIT_SYSTEM_IDS, type UnitSystem } from '../core/units'
 
 export interface AppSettings {
   /** Point budget for `TimeSeriesChart`'s line/point rendering. Below this
@@ -36,6 +37,10 @@ export interface AppSettings {
   /** Default `profile` TransformPanel's Drop outliers and Fill gaps cards
    *  open with each session, instead of always resetting to Aircraft. */
   defaultMotionProfile: MotionProfileId
+  /** Which units every distance/speed/altitude *readout* is displayed in.
+   *  Display only: stored data, exports, and the HTML analysis report stay in
+   *  canonical metres and m/s (AGENTS.md non-negotiable #5). */
+  unitSystem: UnitSystem
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -43,12 +48,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
   mapPointBudget: 4000,
   scenePointBudget: 20_000,
   defaultMotionProfile: 'aircraft',
+  unitSystem: 'metric',
 }
 
 /** The subset of `AppSettings` that are plain clamped numbers — everything
- *  except `defaultMotionProfile`, which is a closed string enum and is
- *  normalized/set through its own path below rather than forced through the
- *  numeric clamp machinery. */
+ *  except `defaultMotionProfile` and `unitSystem`, which are closed string
+ *  enums and are normalized/set through their own paths below rather than
+ *  forced through the numeric clamp machinery. */
 type NumericSettingKey = 'chartPointBudget' | 'mapPointBudget' | 'scenePointBudget'
 const NUMERIC_SETTING_KEYS: readonly NumericSettingKey[] = ['chartPointBudget', 'mapPointBudget', 'scenePointBudget']
 
@@ -87,6 +93,10 @@ export function normalizeSettings(value: unknown): AppSettings {
   result.defaultMotionProfile = typeof profile === 'string' && (MOTION_PROFILE_IDS as readonly string[]).includes(profile)
     ? profile as MotionProfileId
     : DEFAULT_SETTINGS.defaultMotionProfile
+  const units = record.unitSystem
+  result.unitSystem = typeof units === 'string' && (UNIT_SYSTEM_IDS as readonly string[]).includes(units)
+    ? units as UnitSystem
+    : DEFAULT_SETTINGS.unitSystem
   return result
 }
 
@@ -133,6 +143,13 @@ export function updateSetting(key: NumericSettingKey, value: number): void {
 export function updateDefaultMotionProfile(value: MotionProfileId): void {
   if (settings.defaultMotionProfile === value) return
   settings = { ...settings, defaultMotionProfile: value }
+  persist()
+  emit()
+}
+
+export function updateUnitSystem(value: UnitSystem): void {
+  if (settings.unitSystem === value) return
+  settings = { ...settings, unitSystem: value }
   persist()
   emit()
 }

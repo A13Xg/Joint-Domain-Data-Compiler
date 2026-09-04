@@ -20,6 +20,7 @@ import { ChartLegend } from './ChartLegend'
 import { SelectionChip } from './SelectionChip'
 import { useConfirm } from './confirmContext'
 import { useAppSettings } from '../state/settings'
+import { convertDistance, distanceUnitLabel } from '../core/units'
 import { archiveFile } from '../desktop/fileArchive'
 import { logger } from '../core/logger'
 import { errorMessage } from '../core/errors'
@@ -99,7 +100,7 @@ export function TimeSeriesChart({ points, channels, jumpRequested = false, onJum
   // geometry back to it rather than letting it bleed into the axis margins.
   const plotClipId = useId()
   const confirm = useConfirm()
-  const { chartPointBudget } = useAppSettings()
+  const { chartPointBudget, unitSystem } = useAppSettings()
   const { pointIndex, hoverIndex, indexRange, indexSet, selectPoint, setHoverIndex, toggleInSet, extendSetRange, unionSetRange, clearPointSelection, clearRangeSelection, clearSet, clearHover } = usePointSelection(points)
   const indexSetLookup = useMemo(() => new Set(indexSet), [indexSet])
 
@@ -595,7 +596,7 @@ export function TimeSeriesChart({ points, channels, jumpRequested = false, onJum
 
           <div className="chart-readout chart-readout--persistent mono"><span className="chart-readout-x">{cursorX !== null ? `cursor ${formatX(cursorX, effectiveX)}` : 'Move over the plot for point details'}</span>{series.map((item) => { const nearest = cursorX === null ? null : nearestValue(item.values, cursorX); return <span key={item.key} style={{ color: item.color }}>{item.key} ({channelUnit(item.key)}): {nearest ? fmt(nearest.y) : '—'}</span> })}</div>
           {xDomain && <div className="chart-time-range mono"><span>{effectiveX === 'time' ? 'time range' : `${xAxisLabel(effectiveX)} range`}</span><strong>start {formatX(xDomain.lo, effectiveX)}</strong><strong>end {formatX(xDomain.hi, effectiveX)}</strong>{isZoomed && <span>(zoomed view shown above)</span>}</div>}
-          {statistics && <div className="chart-readout mono"><strong>{statistics.pointCount.toLocaleString()} pts</strong><span>{fmt(statistics.distanceMeters)} m</span>{statistics.durationSeconds !== undefined && <span>{fmt(statistics.durationSeconds)} s</span>}{Object.entries(statistics.channels).map(([id, summary]) => <span key={id}>{id}: μ {fmt(summary.mean)} · {fmt(summary.min)}–{fmt(summary.max)}</span>)}</div>}
+          {statistics && <div className="chart-readout mono"><strong>{statistics.pointCount.toLocaleString()} pts</strong><span>{fmt(convertDistance(statistics.distanceMeters, unitSystem))} {distanceUnitLabel(unitSystem)}</span>{statistics.durationSeconds !== undefined && <span>{fmt(statistics.durationSeconds)} s</span>}{Object.entries(statistics.channels).map(([id, summary]) => <span key={id}>{id}: μ {fmt(summary.mean)} · {fmt(summary.min)}–{fmt(summary.max)}</span>)}</div>}
           {qualityEvents.length > 0 && <div className="muted small chart-event-legend">⚠ {qualityEvents.length} quality event{qualityEvents.length === 1 ? '' : 's'} detected (solid = error, dashed = warning, dotted = info) — hover a marker for details.</div>}
           <div className="muted small">
             Click to select a point; drag to zoom; wheel to zoom, shift+wheel (or a trackpad swipe) to pan. Ctrl/⌘+wheel zooms the Y axis, ctrl/⌘+shift+wheel pans it.

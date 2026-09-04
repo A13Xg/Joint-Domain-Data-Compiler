@@ -1,7 +1,7 @@
 {
   "name": "joint-domain-data-compiler",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Local-first trajectory and TSPI workbench for importing, analyzing, transforming, comparing, visualizing, saving, and exporting track data.",
   "desktopName": "JointDomainDataCompiler",
   "author": {
@@ -25,6 +25,8 @@
     "test:e2e:ci": "playwright test test/e2e/ci-smoke.spec.ts",
     "test:legacy": "esbuild test/validate.ts --bundle --platform=node --format=esm --outfile=.test-build/validate.mjs && node .test-build/validate.mjs",
     "bench": "node --expose-gc scripts/run-benchmarks.mjs",
+    "fixtures:demo-flight": "node scripts/generate-demo-flight.mjs",
+    "guide:screenshots": "playwright test test/e2e/user-guide-screenshots.spec.ts --reporter=line",
     "bench:map": "playwright test test/e2e/map-performance.spec.ts --reporter=line",
     "lint": "eslint .",
     "check:unit": "npm run lint && npm test",

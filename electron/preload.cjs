@@ -16,6 +16,7 @@ const IPC_CHANNELS = Object.freeze({
   reseed: 'kml-library:reseed',
   reveal: 'kml-library:reveal',
   revealArchive: 'file-archive:reveal',
+  openUserGuide: 'user-guide:open',
   saveDiagnostics: 'diagnostics:save',
   setUnsavedChanges: 'window:set-unsaved-changes',
 })
@@ -34,6 +35,10 @@ contextBridge.exposeInMainWorld('jointDomainCompiler', {
   diagnostics: {
     save: (text) => ipcRenderer.invoke(IPC_CHANNELS.saveDiagnostics, text),
   },
+  // Opens the packaged user guide in the OS default browser. Takes no argument
+  // on purpose: the path is resolved in the main process, so the renderer can
+  // never ask it to open an arbitrary file.
+  openUserGuide: () => ipcRenderer.invoke(IPC_CHANNELS.openUserGuide),
   fileArchive: {
     save: (direction, name, bytes) => ipcRenderer.invoke(IPC_CHANNELS.archiveFile, direction, name, bytes),
     reveal: () => ipcRenderer.invoke(IPC_CHANNELS.revealArchive),
