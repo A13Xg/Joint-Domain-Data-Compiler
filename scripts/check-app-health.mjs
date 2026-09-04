@@ -17,7 +17,10 @@ const html = readFileSync(indexPath, 'utf-8')
 
 check(html.length > 0, 'index.html exists and has content')
 check(html.includes('<!doctype html>'), 'HTML has valid doctype')
-check(html.includes('<div id="root"></div>'), 'React root element exists')
+// Not `<div id="root"></div>` verbatim: the root now carries a static
+// loading skeleton (see index.html) that createRoot(...).render() replaces
+// wholesale on mount, so the built HTML has real markup inside it.
+check(/<div id="root">/.test(html), 'React root element exists')
 check(html.includes('<script'), 'JavaScript is loaded')
 
 // Test 2: Built output structure - check all required files exist

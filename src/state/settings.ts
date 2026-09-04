@@ -15,6 +15,7 @@
 // mechanism on both platforms. Revisit only if a settings value needs to be
 // human-editable or shared outside the app, which none of these are.
 import { useEffect, useSyncExternalStore } from 'react'
+import { MOTION_PROFILE_IDS, type MotionProfileId } from '../core/operations/motionProfiles'
 
 export interface AppSettings {
   /** Point budget for `TimeSeriesChart`'s line/point rendering. Below this
@@ -32,13 +33,24 @@ export interface AppSettings {
   mapPointBudget: number
   /** Point budget for the 3D trajectory renderer (`Trajectory3dPanel`). */
   scenePointBudget: number
+  /** Default `profile` TransformPanel's Drop outliers and Fill gaps cards
+   *  open with each session, instead of always resetting to Aircraft. */
+  defaultMotionProfile: MotionProfileId
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   chartPointBudget: 1500,
   mapPointBudget: 4000,
   scenePointBudget: 20_000,
+  defaultMotionProfile: 'aircraft',
 }
+
+/** The subset of `AppSettings` that are plain clamped numbers — everything
+ *  except `defaultMotionProfile`, which is a closed string enum and is
+ *  normalized/set through its own path below rather than forced through the
+ *  numeric clamp machinery. */
+type NumericSettingKey = 'chartPointBudget' | 'mapPointBudget' | 'scenePointBudget'
+const NUMERIC_SETTING_KEYS: readonly NumericSettingKey[] = ['chartPointBudget', 'mapPointBudget', 'scenePointBudget']
 
 /** Inclusive clamp ranges. Chosen so a budget can never disable the surface
  *  it governs (too low) or flood the DOM/canvas with more elements than any
@@ -46,7 +58,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
  *  ceiling is far lower than the map's or scene's: every chart sample below
  *  budget becomes an individually hit-tested SVG `<circle>`, where the map
  *  and 3D renderers draw to a canvas regardless of point count. */
-export const SETTINGS_LIMITS: Record<keyof AppSettings, { min: number; max: number }> = {
+export const SETTINGS_LIMITS: Record<NumericSettingKey, { min: number; max: number }> = {
   chartPointBudget: { min: 100, max: 5_000 },
   mapPointBudget: { min: 500, max: 20_000 },
   scenePointBudget: { min: 1_000, max: 100_000 },
@@ -54,7 +66,7 @@ export const SETTINGS_LIMITS: Record<keyof AppSettings, { min: number; max: numb
 
 const STORAGE_KEY = 'jddc.settings.v1'
 
-function clampSetting(key: keyof AppSettings, value: number): number {
+function clampSetting(key: NumericSettingKey, value: number): number {
   const { min, max } = SETTINGS_LIMITS[key]
   return Math.min(max, Math.max(min, Math.round(value)))
 }
@@ -67,10 +79,14 @@ function clampSetting(key: keyof AppSettings, value: number): number {
 export function normalizeSettings(value: unknown): AppSettings {
   const record = typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
   const result = {} as AppSettings
-  for (const key of Object.keys(DEFAULT_SETTINGS) as Array<keyof AppSettings>) {
+  for (const key of NUMERIC_SETTING_KEYS) {
     const raw = record[key]
     result[key] = typeof raw === 'number' && Number.isFinite(raw) ? clampSetting(key, raw) : DEFAULT_SETTINGS[key]
   }
+  const profile = record.defaultMotionProfile
+  result.defaultMotionProfile = typeof profile === 'string' && (MOTION_PROFILE_IDS as readonly string[]).includes(profile)
+    ? profile as MotionProfileId
+    : DEFAULT_SETTINGS.defaultMotionProfile
   return result
 }
 
@@ -106,10 +122,17 @@ export function getSettings(): AppSettings {
   return settings
 }
 
-export function updateSetting<K extends keyof AppSettings>(key: K, value: number): void {
+export function updateSetting(key: NumericSettingKey, value: number): void {
   const clamped = clampSetting(key, value)
   if (settings[key] === clamped) return
   settings = { ...settings, [key]: clamped }
+  persist()
+  emit()
+}
+
+export function updateDefaultMotionProfile(value: MotionProfileId): void {
+  if (settings.defaultMotionProfile === value) return
+  settings = { ...settings, defaultMotionProfile: value }
   persist()
   emit()
 }

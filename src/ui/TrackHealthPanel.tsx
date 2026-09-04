@@ -131,11 +131,15 @@ export function TrackHealthPanel({ dataset, onDrillDown, onDropOutliers }: Props
               {/* The scan could only ever point at bad samples. The outlier check
                   offers the repair too, running drop-outliers with the same
                   detector settings it graded against, so what is reported and
-                  what is removed cannot disagree. */}
+                  what is repaired cannot disagree. */}
               {check.id === 'outlier' && check.status === 'fail' && check.flags.length > 0 && (
                 <div className="check-remediation">
-                  <button type="button" onClick={onDropOutliers}>Drop flagged points</button>
-                  <span className="muted small">Applies drop-outliers at this scan's thresholds. Undoable.</span>
+                  <button type="button" onClick={onDropOutliers}>Repair flagged points</button>
+                  <span className="muted small">
+                    {dataset.points.every((point) => point.time !== undefined)
+                      ? "Reconstructs the flagged points from their neighbours at the Aircraft profile, at this scan's thresholds. Undoable."
+                      : "Removes the flagged points — reconstruction needs every point timed, and this track has untimed points. Undoable."}
+                  </span>
                 </div>
               )}
 

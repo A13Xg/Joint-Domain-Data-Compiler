@@ -27,6 +27,10 @@ export function DataTable({ points, channels, onDeletePoints }: { points: TrackP
   const [scrollTop, setScrollTop] = useState(0)
   const [rangeOnly, setRangeOnly] = useState(false)
   const [flaggedOnly, setFlaggedOnly] = useState(false)
+  // The row a screen reader/keyboard user is "on". Kept separate from click-selection
+  // (pointIndex/indexSet) — moving focus with arrow keys must not itself select a row,
+  // the same way moving a mouse cursor over rows without clicking doesn't.
+  const [focusedIndex, setFocusedIndex] = useState<number | null>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
   const headerRef = useRef<HTMLDivElement>(null)
   // Set immediately before this grid's own rows publish a hover, and consumed by
@@ -164,6 +168,90 @@ export function DataTable({ points, channels, onDeletePoints }: { points: TrackP
     else { setSortKey(null); setSortDir(null) }
   }
 
+  // Falls back to the first visible row once the focused one drops out of the current
+  // filter/sort (e.g. it no longer matches the search query) rather than pointing
+  // `aria-activedescendant` at a row id that no longer exists.
+  const activeIndex = focusedIndex !== null && sorted.some((entry) => entry.index === focusedIndex)
+    ? focusedIndex
+    : sorted[0]?.index ?? null
+
+  // Row-only scroll, distinct from scrollToSelection's smooth badge-jump: instant so
+  // repeated arrow-key presses don't queue up animations behind each other.
+  const scrollRowIntoView = (target: number) => {
+    const row = sorted.findIndex((entry) => entry.index === target)
+    if (row < 0) return
+    const rowTop = (headerRef.current?.offsetHeight ?? 0) + row * ROW_HEIGHT
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const visibleTop = viewport.scrollTop
+    const visibleBottom = visibleTop + viewportHeight - ROW_HEIGHT
+    if (rowTop >= visibleTop && rowTop <= visibleBottom) return
+    viewport.scrollTo({ top: Math.max(0, rowTop - viewportHeight / 2), behavior: 'auto' })
+  }
+
+  // Shared by both the mouse click handler and the keyboard Enter/Space handler so
+  // selection behavior never drifts between the two input paths.
+  const activateRow = (index: number, shift: boolean, ctrlOrMeta: boolean) => {
+    selfDrivenHoverRef.current = true
+    setFocusedIndex(index)
+    if (shift) {
+      if (naturalOrder) extendSetRange(index)
+      else toggleInSet(index)
+      return
+    }
+    if (ctrlOrMeta) {
+      toggleInSet(index)
+      return
+    }
+    selectPoint(pointIndex === index ? null : index)
+  }
+
+  const handleGridKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (sorted.length === 0) return
+    const currentPos = activeIndex !== null ? sorted.findIndex((entry) => entry.index === activeIndex) : -1
+    const basePos = currentPos < 0 ? 0 : currentPos
+    const clampPos = (pos: number) => Math.max(0, Math.min(sorted.length - 1, pos))
+    const moveTo = (pos: number) => {
+      const target = sorted[clampPos(pos)]!.index
+      setFocusedIndex(target)
+      scrollRowIntoView(target)
+    }
+    const page = Math.max(1, Math.floor(viewportHeight / ROW_HEIGHT))
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault()
+        moveTo(basePos + 1)
+        break
+      case 'ArrowUp':
+        event.preventDefault()
+        moveTo(basePos - 1)
+        break
+      case 'Home':
+        event.preventDefault()
+        moveTo(0)
+        break
+      case 'End':
+        event.preventDefault()
+        moveTo(sorted.length - 1)
+        break
+      case 'PageDown':
+        event.preventDefault()
+        moveTo(basePos + page)
+        break
+      case 'PageUp':
+        event.preventDefault()
+        moveTo(basePos - page)
+        break
+      case 'Enter':
+      case ' ':
+        event.preventDefault()
+        if (activeIndex !== null) activateRow(activeIndex, event.shiftKey, event.ctrlKey || event.metaKey)
+        break
+      default:
+        break
+    }
+  }
+
   return (
     <div className="data-table">
       <div className="data-table-toolbar">
@@ -178,18 +266,42 @@ export function DataTable({ points, channels, onDeletePoints }: { points: TrackP
         {indexSet.length > 0 && <SelectionChip label={`set of ${indexSet.length}`} tone="set" onJump={() => scrollToSelection(indexSet[0]!)} jumpTitle="Scroll to the first selected point" onClear={clearSet} clearLabel="Clear multi-select" />}
         {indexSet.length > 0 && <button type="button" onClick={() => void handleDeleteSet()}>Delete {indexSet.length} point(s)</button>}
       </div>
-      <div className="data-table-hint">Ctrl/⌘+click a row to add or remove it from a delete set{naturalOrder ? '; shift+click extends it to a range' : ' (sort/filter active — shift+click adds one row at a time)'}.</div>
+      <div className="data-table-hint">Ctrl/⌘+click a row to add or remove it from a delete set{naturalOrder ? '; shift+click extends it to a range' : ' (sort/filter active — shift+click adds one row at a time)'}. Arrow keys move the focused row, Enter/Space selects it, with the same Ctrl/⌘/Shift modifiers.</div>
       {/* Header and rows share one scroll container so a grid wider than the
           panel scrolls both together and the labels stay over their columns
           instead of being clipped at the right edge. Keeping the header in a
           separate synced element cannot hold alignment: only the body reserves
           a vertical scrollbar, so the two scrollports differ in width and the
           header runs out of travel first. Sticky keeps it pinned vertically. */}
-      <div ref={viewportRef} className="grid-viewport mono" style={{ height: viewportHeight }} onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}>
+      <div
+        ref={viewportRef}
+        className="grid-viewport mono"
+        style={{ height: viewportHeight }}
+        onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+        role="grid"
+        aria-label={`Track points, ${total.toLocaleString()} of ${points.length.toLocaleString()} rows shown`}
+        aria-rowcount={total}
+        aria-colcount={columns.length + 1}
+        aria-multiselectable="true"
+        tabIndex={0}
+        onKeyDown={handleGridKeyDown}
+        aria-activedescendant={activeIndex !== null ? `row-${activeIndex}` : undefined}
+      >
         <div style={{ minWidth: gridMinWidth }}>
-          <div ref={headerRef} className="grid-header" style={{ gridTemplateColumns: gridTemplate }}>
-            <div className="grid-cell grid-idx">#</div>
-            {columns.map((column) => <button key={column.key} type="button" className="grid-cell grid-th" onClick={() => toggleSort(column.key)}>{column.label}{sortKey === column.key && <span className="sort-arrow">{sortDir === 'asc' ? '▲' : '▼'}</span>}</button>)}
+          <div ref={headerRef} className="grid-header" role="row" aria-rowindex={1} style={{ gridTemplateColumns: gridTemplate }}>
+            <div className="grid-cell grid-idx" role="columnheader">#</div>
+            {columns.map((column) => (
+              <button
+                key={column.key}
+                type="button"
+                role="columnheader"
+                aria-sort={sortKey === column.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                className="grid-cell grid-th"
+                onClick={() => toggleSort(column.key)}
+              >
+                {column.label}{sortKey === column.key && <span className="sort-arrow">{sortDir === 'asc' ? '▲' : '▼'}</span>}
+              </button>
+            ))}
           </div>
           <div style={{ height: total * ROW_HEIGHT, position: 'relative' }}>
           {slice.map(({ point, index }, offset) => {
@@ -198,11 +310,24 @@ export function DataTable({ points, channels, onDeletePoints }: { points: TrackP
             const inRange = indexRange !== null && index >= indexRange.start && index <= indexRange.end
             const inSet = indexSetLookup.has(index)
             const flagged = flaggedIndices.has(index)
+            const focused = activeIndex === index
             const eventKinds = qualityEvents.filter((event) => event.startIndex <= index && event.endIndex >= index).map((event) => event.kind).join(', ')
             return (
-              <div key={index} className={`grid-row${selected ? ' selected' : ''}${hovered ? ' hovered' : ''}${inRange ? ' in-range' : ''}${inSet ? ' in-set' : ''}${flagged ? ' quality-flagged' : ''}`} title={eventKinds ? `Quality events: ${eventKinds}` : undefined} onMouseEnter={() => { selfDrivenHoverRef.current = true; setHoverIndex(index) }} onMouseLeave={clearHover} onClick={(event) => { selfDrivenHoverRef.current = true; if (event.shiftKey) { if (naturalOrder) extendSetRange(index); else toggleInSet(index); return } if (event.ctrlKey || event.metaKey) { toggleInSet(index); return } selectPoint(selected ? null : index) }} style={{ position: 'absolute', top: (startIndex + offset) * ROW_HEIGHT, height: ROW_HEIGHT, gridTemplateColumns: gridTemplate, cursor: 'pointer' }}>
-                <div className="grid-cell grid-idx">{flagged ? '⚠ ' : ''}{index}</div>
-                {columns.map((column) => <div key={column.key} className="grid-cell" title={fmtCell(column.get(point))}>{fmtCell(column.get(point))}</div>)}
+              <div
+                key={index}
+                id={`row-${index}`}
+                role="row"
+                aria-rowindex={startIndex + offset + 2}
+                aria-selected={selected || inSet}
+                className={`grid-row${selected ? ' selected' : ''}${hovered ? ' hovered' : ''}${inRange ? ' in-range' : ''}${inSet ? ' in-set' : ''}${flagged ? ' quality-flagged' : ''}${focused ? ' kbd-focused' : ''}`}
+                title={eventKinds ? `Quality events: ${eventKinds}` : undefined}
+                onMouseEnter={() => { selfDrivenHoverRef.current = true; setHoverIndex(index) }}
+                onMouseLeave={clearHover}
+                onClick={(event) => activateRow(index, event.shiftKey, event.ctrlKey || event.metaKey)}
+                style={{ position: 'absolute', top: (startIndex + offset) * ROW_HEIGHT, height: ROW_HEIGHT, gridTemplateColumns: gridTemplate, cursor: 'pointer' }}
+              >
+                <div className="grid-cell grid-idx" role="gridcell">{flagged ? '⚠ ' : ''}{index}</div>
+                {columns.map((column) => <div key={column.key} className="grid-cell" role="gridcell" title={fmtCell(column.get(point))}>{fmtCell(column.get(point))}</div>)}
               </div>
               )
             })}

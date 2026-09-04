@@ -1,10 +1,50 @@
 import { haversineMeters, isValidLat, isValidLon, type TrackPoint } from '../model'
 import type { TrackHealthCheckDefinition, TrackHealthCheckResult, TrackHealthFlag } from './trackHealthTypes'
-import { detectOutliers } from './outliers'
+import type { TrackHealthConfig } from './trackHealthConfig'
+import { detectOutliers, estimateTurnPositionFloorMeters } from './outliers'
 import { derivePointSpeeds } from './movementWindow'
 
 /** Cap on individually-listed drill-down chips, so one bad track can't render thousands of buttons. */
 const MAX_LISTED_FLAGS = 20
+
+/**
+ * Turn-rate ceiling used only to widen the outlier check's position floor for
+ * legitimate maneuvering, not as a hard limit like `speedEnvelopeCheck`'s.
+ * Matches the 'aircraft' motion profile in operations/motionProfiles.ts;
+ * duplicated rather than imported to keep this module below operations/ in
+ * the dependency graph, same as the Mach 2 / 1000 ft numbers this file's
+ * other checks already bake in independently.
+ */
+const TURN_RATE_CEILING_DPS = 30
+
+/**
+ * Widens the outlier check's position floor to cover a sustained turn at
+ * `TURN_RATE_CEILING_DPS`, at the track's own fastest observed speed and
+ * sample cadence — see `estimateTurnPositionFloorMeters`. Without this, a
+ * MAD-based scale reads a steady turn's large-but-constant residual as
+ * near-zero local scatter, so every point in a real turn scores as an
+ * outlier and the check fails a maneuvering flight for maneuvering.
+ */
+function widenedPositionFloor(points: readonly TrackPoint[], settings: TrackHealthConfig['outlier']): number {
+  const sampleIntervalSeconds = medianSampleIntervalSeconds(points)
+  if (sampleIntervalSeconds === null) return settings.minPositionScaleMeters
+  const speeds = derivePointSpeeds(points).filter((value): value is number => value !== undefined && Number.isFinite(value) && value > 0)
+  if (speeds.length === 0) return settings.minPositionScaleMeters
+  const turnFloor = estimateTurnPositionFloorMeters(Math.max(...speeds), TURN_RATE_CEILING_DPS, settings.windowSize, sampleIntervalSeconds)
+  return Math.max(settings.minPositionScaleMeters, turnFloor)
+}
+
+function medianSampleIntervalSeconds(points: readonly TrackPoint[]): number | null {
+  const deltas: number[] = []
+  for (let index = 1; index < points.length; index++) {
+    const previous = points[index - 1]?.time
+    const current = points[index]?.time
+    if (previous === undefined || current === undefined) continue
+    const dt = (current - previous) / 1000
+    if (dt > 0) deltas.push(dt)
+  }
+  return deltas.length > 0 ? median(deltas)! : null
+}
 
 interface IndexedPoint {
   point: TrackPoint
@@ -295,7 +335,7 @@ export const outlierCheck: TrackHealthCheckDefinition = {
     const result = detectOutliers(points, {
       windowSize: settings.windowSize,
       scoreThreshold: settings.scoreThreshold,
-      minPositionScaleMeters: settings.minPositionScaleMeters,
+      minPositionScaleMeters: widenedPositionFloor(points, settings),
       minElevationScaleMeters: settings.minElevationScaleMeters,
       minSpeedScaleMps: settings.minSpeedScaleMps,
     })
@@ -388,6 +428,62 @@ export const stagnantCheck: TrackHealthCheckDefinition = {
   },
 }
 
+/**
+ * Informational only (weight 0: never scored, never blocks). GPX/NMEA
+ * imports commonly carry `hdop`/`sat` as `ext` channels, but until this
+ * check nothing ever read them — a track with long stretches of poor fix
+ * quality reported the same confidence as one with an excellent fix
+ * throughout, even though the data to tell them apart was already in the
+ * point stream. There is no universally agreed pass/fail HDOP threshold the
+ * way there is for e.g. a speed envelope, so this stays advisory rather than
+ * score-affecting.
+ */
+export const gpsFixQualityCheck: TrackHealthCheckDefinition = {
+  id: 'gps-fix-quality',
+  label: 'GPS Fix Quality',
+  weight: 0,
+  isApplicable: (points) => points.some((point) => typeof point.ext?.hdop === 'number' || typeof point.ext?.sat === 'number'),
+  run: (points, _dataset, config) => {
+    const { hdopThreshold, minSatellites, maxPoorFraction } = config.gpsFixQuality
+    const flags: TrackHealthFlag[] = []
+    let evaluated = 0
+    let poor = 0
+
+    for (let index = 0; index < points.length; index++) {
+      const point = points[index]
+      const hdop = typeof point?.ext?.hdop === 'number' ? point.ext.hdop : undefined
+      const sat = typeof point?.ext?.sat === 'number' ? point.ext.sat : undefined
+      if (hdop === undefined && sat === undefined) continue
+      evaluated++
+
+      const badHdop = hdop !== undefined && hdop > hdopThreshold
+      const badSat = sat !== undefined && sat < minSatellites
+      if (!badHdop && !badSat) continue
+      poor++
+      const reason = badHdop && badSat ? `HDOP ${hdop.toFixed(1)}, ${sat} sat` : badHdop ? `HDOP ${hdop.toFixed(1)}` : `${sat} sat`
+      flags.push({ pointIndex: index, label: `Degraded fix at #${index} (${reason})` })
+    }
+
+    if (evaluated === 0) return notApplicable('gps-fix-quality', 'GPS Fix Quality', gpsFixQualityCheck.weight, 'No hdop/sat data in this track', 'map')
+
+    const poorFraction = poor / evaluated
+    const pass = poorFraction <= maxPoorFraction
+    return {
+      id: 'gps-fix-quality',
+      label: 'GPS Fix Quality',
+      status: pass ? 'pass' : 'fail',
+      weight: gpsFixQualityCheck.weight,
+      pointsAwarded: pass ? gpsFixQualityCheck.weight : 0,
+      summary: pass
+        ? `Fix quality within normal range (${poor} of ${evaluated} point(s) degraded, ${(poorFraction * 100).toFixed(1)}%)`
+        : `${poor} of ${evaluated} point(s) (${(poorFraction * 100).toFixed(1)}%) had a degraded fix (HDOP > ${hdopThreshold} or fewer than ${minSatellites} satellites)`,
+      flags: flags.slice(0, MAX_LISTED_FLAGS),
+      preferredTab: 'map',
+      measurements: { evaluated, poor, poorFraction },
+    }
+  },
+}
+
 /** The schema gate runs first; computeTrackHealth relies on it being the blocking entry. */
 export const TRACK_HEALTH_CHECKS: TrackHealthCheckDefinition[] = [
   schemaParseCheck,
@@ -396,4 +492,5 @@ export const TRACK_HEALTH_CHECKS: TrackHealthCheckDefinition[] = [
   timeOrderSpanCheck,
   outlierCheck,
   stagnantCheck,
+  gpsFixQualityCheck,
 ]

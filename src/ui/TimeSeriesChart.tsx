@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { Dataset, TrackPoint } from '../core/model'
 import { epochMsToIso } from '../core/format'
 import { calculateRangeStatistics } from '../core/analytics/rangeStatistics'
 import { detectQualityEvents, type QualityEvent } from '../core/quality/events'
 import {
   BUILT_IN_CHART_PRESETS,
+  channelIdFromXAxis,
   computeXDomain,
   extractChartSeries,
+  numericChannelValue,
   resolvePresetChannels,
   type ChartXAxis,
 } from '../visualization/charts/series'
@@ -46,6 +48,8 @@ interface Series {
 }
 
 const PALETTE = ['#ea4f2f', '#0f8c6f', '#3b82f6', '#eab308', '#a855f7', '#ec4899', '#14b8a6']
+/** Y-zoom is a fraction of each series' own span, not an absolute value domain — see `yZoomDomain`. */
+const FULL_Y_DOMAIN: Domain = { lo: 0, hi: 1 }
 /** Below this pixel span, a mouse-up is a click rather than a drag. */
 const CLICK_PIXEL_THRESHOLD = 5
 /** How close (in screen pixels) a click/drag endpoint must land to a
@@ -82,7 +86,18 @@ export function TimeSeriesChart({ points, channels, jumpRequested = false, onJum
   // (zoom vs. marquee-add-to-delete-set) before the user lets go.
   const [dragModifiers, setDragModifiers] = useState<{ ctrl: boolean; shift: boolean }>({ ctrl: false, shift: false })
   const [zoomedDomain, setZoomedDomain] = useState<Domain | null>(null)
+  // Fraction of each series' own [min, max] span currently in view — shared
+  // across series rather than a single absolute value domain, because series
+  // are independently auto-scaled and can be in entirely different units
+  // (e.g. elevation in metres alongside a turn rate in degrees/second). Null
+  // means fully zoomed out, i.e. the full {0,1} span, same convention as
+  // `zoomedDomain`.
+  const [yZoomDomain, setYZoomDomain] = useState<Domain | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
+  // Y-zoom (unlike X-zoom) doesn't filter the underlying series data, so a
+  // zoomed-in line/point can compute outside the plot rect; this clips that
+  // geometry back to it rather than letting it bleed into the axis margins.
+  const plotClipId = useId()
   const confirm = useConfirm()
   const { chartPointBudget } = useAppSettings()
   const { pointIndex, hoverIndex, indexRange, indexSet, selectPoint, setHoverIndex, toggleInSet, extendSetRange, unionSetRange, clearPointSelection, clearRangeSelection, clearSet, clearHover } = usePointSelection(points)
@@ -157,7 +172,18 @@ export function TimeSeriesChart({ points, channels, jumpRequested = false, onJum
 
   const hasTime = useMemo(() => points.some((point) => point.time !== undefined), [points])
   const hasDistance = useMemo(() => points.some((point) => typeof point.ext?.distance_m === 'number'), [points])
-  const effectiveX: ChartXAxis = xAxis === 'time' && !hasTime ? 'index' : xAxis === 'distance' && !hasDistance ? 'index' : xAxis
+  // A channel x-axis is only ever offered in the toolbar while chartType === 'scatter' (see the
+  // <select> below), but the underlying `xAxis` state is not force-reset when the chart type
+  // changes away from scatter — same non-mutating fallback pattern as hasTime/hasDistance above,
+  // so switching back to scatter later restores the channel choice. A line/area chart drawn
+  // through non-monotonic channel values would be a scribble, not a chart, so this is a hard gate.
+  const xAxisChannelId = channelIdFromXAxis(xAxis)
+  const channelAxisUsable = xAxisChannelId !== null && chartType === 'scatter' && available.includes(xAxisChannelId)
+  const effectiveX: ChartXAxis = xAxisChannelId !== null
+    ? (channelAxisUsable ? xAxis : 'index')
+    : xAxis === 'time' && !hasTime ? 'index'
+      : xAxis === 'distance' && !hasDistance ? 'index'
+        : xAxis
   const qualityEvents = useMemo(() => detectQualityEvents(points), [points])
 
   // Full-extent domain computed once from raw points — never from a (possibly downsampled)
@@ -165,7 +191,11 @@ export function TimeSeriesChart({ points, channels, jumpRequested = false, onJum
   const xDomain = useMemo(() => computeXDomain(points, effectiveX), [points, effectiveX])
 
   const effectiveDomain = zoomedDomain ?? xDomain
-  const isZoomed = zoomedDomain !== null && xDomain !== null && !isFullyZoomedOut(zoomedDomain, xDomain)
+  const effectiveYDomain = yZoomDomain ?? FULL_Y_DOMAIN
+  const isXZoomed = zoomedDomain !== null && xDomain !== null && !isFullyZoomedOut(zoomedDomain, xDomain)
+  const isYZoomed = yZoomDomain !== null && !isFullyZoomedOut(yZoomDomain, FULL_Y_DOMAIN)
+  const isZoomed = isXZoomed || isYZoomed
+  const resetZoom = () => { setZoomedDomain(null); setYZoomDomain(null) }
 
   // Filtering to `effectiveDomain` before downsampling is what makes zooming recover resolution:
   // each zoom level re-spends the same sample budget over just the visible window instead of
@@ -259,12 +289,23 @@ export function TimeSeriesChart({ points, channels, jumpRequested = false, onJum
     setPresetId(id)
     setXAxis(preset.xAxis)
     setSelected(resolved.length > 0 ? resolved : ['elevation'])
-    setZoomedDomain(null)
+    resetZoom()
   }
 
   const toggle = (key: string) => setSelected((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key])
 
   const xToPx = (x: number) => effectiveDomain ? pad.left + ((x - effectiveDomain.lo) / (effectiveDomain.hi - effectiveDomain.lo)) * plotW : pad.left
+
+  // The visible slice of a series' own [min, max], per `effectiveYDomain`'s fraction.
+  const yRange = (item: Series) => {
+    const span = item.max - item.min
+    return { min: item.min + effectiveYDomain.lo * span, max: item.min + effectiveYDomain.hi * span }
+  }
+  const yToPx = (item: Series, value: number) => {
+    const { min, max } = yRange(item)
+    const span = max - min || 1
+    return pad.top + plotH - ((value - min) / span) * plotH
+  }
 
   // Converts a screen point to this SVG's own user-space (viewBox)
   // coordinates via its screen CTM, rather than the naive
@@ -277,7 +318,7 @@ export function TimeSeriesChart({ points, channels, jumpRequested = false, onJum
   // conversion silently ignores that letterbox margin and mis-locates every
   // click by however wide the margin is; the CTM already knows the real
   // transform because it's what the browser used to paint the shapes.
-  const screenToViewBox = (clientX: number, clientY: number): { x: number; scale: number } | null => {
+  const screenToViewBox = (clientX: number, clientY: number): { x: number; y: number; scale: number } | null => {
     const svg = svgRef.current
     if (!svg) return null
     const ctm = svg.getScreenCTM()
@@ -285,7 +326,8 @@ export function TimeSeriesChart({ points, channels, jumpRequested = false, onJum
     const point = svg.createSVGPoint()
     point.x = clientX
     point.y = clientY
-    return { x: point.matrixTransform(ctm.inverse()).x, scale: ctm.a }
+    const transformed = point.matrixTransform(ctm.inverse())
+    return { x: transformed.x, y: transformed.y, scale: ctm.a }
   }
 
   const eventX = (event: React.MouseEvent<SVGSVGElement>): number | null => {
@@ -299,11 +341,33 @@ export function TimeSeriesChart({ points, channels, jumpRequested = false, onJum
   // Trackpad horizontal swipe reports a non-zero deltaX on its own; shift+wheel
   // is the conventional way to pan with a plain vertical scroll wheel. Either
   // one pans instead of zooming — a single wheel gesture never does both.
+  //
+  // Ctrl/⌘+wheel zooms the Y axis instead of X — cursor-anchored the same
+  // way, but against `yZoomDomain`'s {0,1} fraction-of-span rather than an
+  // absolute value domain (see `yZoomDomain`'s own comment for why). Ctrl/⌘
+  // is otherwise only read on click/drag (the delete-set gesture), never on
+  // wheel, so there is nothing to conflict with here. Ctrl/⌘+shift+wheel
+  // pans Y the same way shift+wheel pans X.
   const onWheelZoom = (event: WheelEvent) => {
     if (!xDomain) return
     const converted = screenToViewBox(event.clientX, event.clientY)
     if (!converted) return
     event.preventDefault()
+
+    if (event.ctrlKey || event.metaKey) {
+      const currentY = yZoomDomain ?? FULL_Y_DOMAIN
+      if (event.shiftKey) {
+        const deltaFraction = (event.deltaY / converted.scale) / plotH
+        setYZoomDomain(panDomain(currentY, FULL_Y_DOMAIN, deltaFraction))
+        return
+      }
+      // Screen Y grows downward, value grows upward — invert to a value fraction.
+      const valueFraction = 1 - (converted.y - pad.top) / plotH
+      const factor = event.deltaY > 0 ? 1.2 : 1 / 1.2
+      setYZoomDomain(zoomDomain(currentY, FULL_Y_DOMAIN, valueFraction, factor))
+      return
+    }
+
     const current = zoomedDomain ?? xDomain
     if (event.deltaX !== 0 || event.shiftKey) {
       const deltaPx = event.deltaX !== 0 ? event.deltaX : event.deltaY
@@ -332,6 +396,13 @@ export function TimeSeriesChart({ points, channels, jumpRequested = false, onJum
   if (available.length === 0) return <div className="chart-empty">No numeric channels available to plot.</div>
 
   const onMouseDown = (event: React.MouseEvent<SVGSVGElement>) => {
+    // Without this, a drag that starts here still lets the browser run its
+    // native text selection over whatever <text> axis labels the drag passes
+    // under, highlighting them alongside the intended zoom/select gesture.
+    // `user-select: none` on `.chart-svg` (index.css) stops selection from
+    // *starting* inside the chart, but not one that starts here and is
+    // dragged outward — only preventDefault on mousedown does that.
+    event.preventDefault()
     setDragStart(eventX(event))
     setDragModifiers({ ctrl: event.ctrlKey || event.metaKey, shift: event.shiftKey })
   }
@@ -448,28 +519,44 @@ export function TimeSeriesChart({ points, channels, jumpRequested = false, onJum
           <div className="chart-toolbar">
             <label className="chart-xaxis">preset<select value={presetId} onChange={(event) => applyPreset(event.target.value)}>{BUILT_IN_CHART_PRESETS.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}</select></label>
             <div className="chart-channels">{available.map((key) => <button key={key} type="button" className={`chip${selected.includes(key) ? ' chip-on' : ''}`} style={selected.includes(key) ? { borderColor: PALETTE[selected.indexOf(key) % PALETTE.length] } : undefined} onClick={() => toggle(key)}><span className="chip-dot" style={{ background: selected.includes(key) ? PALETTE[selected.indexOf(key) % PALETTE.length] : '#475569' }} />{key}</button>)}</div>
-            <label className="chart-xaxis">x-axis<select value={effectiveX} onChange={(event) => { setPresetId('custom'); setXAxis(event.target.value as ChartXAxis); setZoomedDomain(null) }}>{hasTime && <option value="time">time</option>}<option value="index">index</option>{hasDistance && <option value="distance">distance</option>}</select></label>
+            <label className="chart-xaxis">x-axis<select value={effectiveX} onChange={(event) => { setPresetId('custom'); setXAxis(event.target.value as ChartXAxis); resetZoom() }}>{hasTime && <option value="time">time</option>}<option value="index">index</option>{hasDistance && <option value="distance">distance</option>}{chartType === 'scatter' && available.map((key) => <option key={key} value={`channel:${key}`}>{key} (channel)</option>)}</select></label>
             {pointIndex !== null && <SelectionChip label={`point #${pointIndex}`} onJump={() => zoomToSelection('point')} jumpTitle="Zoom the chart to this point" onClear={clearPointSelection} clearLabel="Clear point selection" />}
             {indexRange && <SelectionChip label={`range ${indexRange.start}–${indexRange.end}`} tone="range" onJump={() => zoomToSelection('range')} jumpTitle="Zoom the chart to this range" onClear={clearRangeSelection} clearLabel="Clear range selection" />}
             {indexSet.length > 0 && <SelectionChip label={`set of ${indexSet.length}`} tone="set" onClear={clearSet} clearLabel="Clear multi-select" />}
             {indexSet.length > 0 && onDeletePoints && <button type="button" onClick={() => void handleDeleteSet()}>Delete {indexSet.length} point(s)</button>}
-            {isZoomed && <button type="button" className="chip" onClick={() => setZoomedDomain(null)}>Reset zoom ×</button>}
+            {isZoomed && <button type="button" className="chip" onClick={resetZoom}>Reset zoom ×</button>}
             <button type="button" onClick={() => void exportChart('svg')} title="Export the current chart view as a standalone SVG file">Export SVG</button>
             <button type="button" onClick={() => void exportChart('png')} title="Export the current chart view as a PNG image">Export PNG</button>
           </div>
 
           <svg ref={svgRef} className="chart-svg" viewBox={`0 0 ${width} ${height}`} onMouseMove={(event) => { const x = eventX(event); setHover(x); const nearest = x === null ? null : nearestValue(series[0]?.values ?? [], x); setHoverIndex(nearest?.sourceIndex ?? null); if (dragStart !== null) setDragModifiers({ ctrl: event.ctrlKey || event.metaKey, shift: event.shiftKey }) }} onMouseLeave={() => { setHover(null); setDragStart(null); clearHover() }} onMouseDown={onMouseDown} onMouseUp={onMouseUp} style={{ cursor: 'crosshair' }}>
+            <defs><clipPath id={plotClipId}><rect x={pad.left} y={pad.top} width={plotW} height={plotH} /></clipPath></defs>
             {[0, 0.25, 0.5, 0.75, 1].map((grid) => <line key={grid} x1={pad.left} x2={width - pad.right} y1={pad.top + grid * plotH} y2={pad.top + grid * plotH} className="chart-grid" />)}
             {rangeX && <rect x={Math.min(xToPx(rangeX.start), xToPx(rangeX.end))} y={pad.top} width={Math.abs(xToPx(rangeX.end) - xToPx(rangeX.start))} height={plotH} fill="rgba(234,79,47,0.12)" />}
+            <g clipPath={`url(#${plotClipId})`}>
             {series.map((item) => {
               if (item.values.length < 2) return null
-              const span = item.max - item.min || 1
-              const path = item.values.map((value, index) => {
+              // Scatter is points-only — no line to connect samples that (per
+              // `validator.ts`'s scatter rule) aren't necessarily in a
+              // meaningful sequence along this axis. Its circles render below
+              // regardless of chart type, so returning null here is enough.
+              if (chartType === 'scatter') return null
+              const linePath = item.values.map((value, index) => {
                 const x = xToPx(value.x)
-                const y = pad.top + plotH - ((value.y - item.min) / span) * plotH
+                const y = yToPx(item, value.y)
                 return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`
               }).join(' ')
-              return <path key={item.key} d={path} className="chart-line" style={{ stroke: item.color }} />
+              if (chartType !== 'area') return <path key={item.key} d={linePath} className="chart-line" style={{ stroke: item.color }} />
+              const baseline = pad.top + plotH
+              const firstX = xToPx(item.values[0]!.x).toFixed(1)
+              const lastX = xToPx(item.values[item.values.length - 1]!.x).toFixed(1)
+              const areaPath = `${linePath} L${lastX},${baseline} L${firstX},${baseline} Z`
+              return (
+                <g key={item.key}>
+                  <path d={areaPath} fill={item.color} fillOpacity={0.18} stroke="none" />
+                  <path d={linePath} className="chart-line" style={{ stroke: item.color }} />
+                </g>
+              )
             })}
             {series.map((item) => item.downsampled ? null : (
               // Below the render budget every point in the window is present in `item.values`
@@ -477,7 +564,6 @@ export function TimeSeriesChart({ points, channels, jumpRequested = false, onJum
               // sample rather than an extrema-preserving stand-in for a bucket of them.
               <g key={`${item.key}-points`}>
                 {item.values.map((value) => {
-                  const span = item.max - item.min || 1
                   const isSelected = value.sourceIndex === pointIndex
                   const isHovered = value.sourceIndex === hoverIndex
                   const isInSet = indexSetLookup.has(value.sourceIndex)
@@ -485,7 +571,7 @@ export function TimeSeriesChart({ points, channels, jumpRequested = false, onJum
                     <circle
                       key={value.sourceIndex}
                       cx={xToPx(value.x)}
-                      cy={pad.top + plotH - ((value.y - item.min) / span) * plotH}
+                      cy={yToPx(item, value.y)}
                       r={isSelected || isInSet ? 5 : isHovered ? 4 : 2.5}
                       className="chart-point"
                       style={{ fill: item.color, stroke: isSelected ? '#ea4f2f' : isInSet ? '#a855f7' : 'none', strokeWidth: isSelected || isInSet ? 2 : 0 }}
@@ -495,11 +581,12 @@ export function TimeSeriesChart({ points, channels, jumpRequested = false, onJum
                 })}
               </g>
             ))}
+            </g>
             {xDomain && eventMarkers.map(({ event, x }) => <line key={event.id} x1={xToPx(x)} x2={xToPx(x)} y1={pad.top} y2={pad.top + plotH} className={`chart-event-marker chart-event-${event.severity}`} strokeDasharray={EVENT_SEVERITY_DASH[event.severity]}><title>{`${event.kind} (${event.severity}): ${event.explanation}`}</title></line>)}
             {cursorX !== null && xDomain && <line x1={xToPx(cursorX)} x2={xToPx(cursorX)} y1={pad.top} y2={pad.top + plotH} className="chart-crosshair" />}
             {dragStart !== null && hover !== null && <rect x={Math.min(xToPx(dragStart), xToPx(hover))} y={pad.top} width={Math.abs(xToPx(hover) - xToPx(dragStart))} height={plotH} fill={(dragModifiers.ctrl || dragModifiers.shift) && !series[0]?.downsampled ? 'rgba(168,85,247,0.16)' : 'rgba(59,130,246,0.14)'} />}
             {selectedX !== null && xDomain && <line x1={xToPx(selectedX)} x2={xToPx(selectedX)} y1={pad.top} y2={pad.top + plotH} style={{ stroke: '#ea4f2f', strokeWidth: 2 }} />}
-            {series.filter((item) => item.values.length > 1).map((item, row) => <g key={item.key}><text x={4} y={pad.top + 4 + row * 11} className="chart-axis-label" style={{ fill: item.color }}>{item.key} ({channelUnit(item.key)}) max {fmt(item.max)}</text><text x={4} y={pad.top + plotH - row * 11} className="chart-axis-label" style={{ fill: item.color }}>{item.key} ({channelUnit(item.key)}) min {fmt(item.min)}</text></g>)}
+            {series.filter((item) => item.values.length > 1).map((item, row) => { const { min, max } = yRange(item); return <g key={item.key}><text x={4} y={pad.top + 4 + row * 11} className="chart-axis-label" style={{ fill: item.color }}>{item.key} ({channelUnit(item.key)}) max {fmt(max)}</text><text x={4} y={pad.top + plotH - row * 11} className="chart-axis-label" style={{ fill: item.color }}>{item.key} ({channelUnit(item.key)}) min {fmt(min)}</text></g> })}
             {effectiveDomain && <>
               <text x={pad.left} y={height - 7} className="chart-axis-label chart-axis-label--strong" textAnchor="start">{formatX(effectiveDomain.lo, effectiveX)}</text>
               <text x={width - pad.right} y={height - 7} className="chart-axis-label chart-axis-label--strong" textAnchor="end">{formatX(effectiveDomain.hi, effectiveX)}</text>
@@ -507,11 +594,11 @@ export function TimeSeriesChart({ points, channels, jumpRequested = false, onJum
           </svg>
 
           <div className="chart-readout chart-readout--persistent mono"><span className="chart-readout-x">{cursorX !== null ? `cursor ${formatX(cursorX, effectiveX)}` : 'Move over the plot for point details'}</span>{series.map((item) => { const nearest = cursorX === null ? null : nearestValue(item.values, cursorX); return <span key={item.key} style={{ color: item.color }}>{item.key} ({channelUnit(item.key)}): {nearest ? fmt(nearest.y) : '—'}</span> })}</div>
-          {xDomain && <div className="chart-time-range mono"><span>{effectiveX === 'time' ? 'time range' : `${effectiveX} range`}</span><strong>start {formatX(xDomain.lo, effectiveX)}</strong><strong>end {formatX(xDomain.hi, effectiveX)}</strong>{isZoomed && <span>(zoomed view shown above)</span>}</div>}
+          {xDomain && <div className="chart-time-range mono"><span>{effectiveX === 'time' ? 'time range' : `${xAxisLabel(effectiveX)} range`}</span><strong>start {formatX(xDomain.lo, effectiveX)}</strong><strong>end {formatX(xDomain.hi, effectiveX)}</strong>{isZoomed && <span>(zoomed view shown above)</span>}</div>}
           {statistics && <div className="chart-readout mono"><strong>{statistics.pointCount.toLocaleString()} pts</strong><span>{fmt(statistics.distanceMeters)} m</span>{statistics.durationSeconds !== undefined && <span>{fmt(statistics.durationSeconds)} s</span>}{Object.entries(statistics.channels).map(([id, summary]) => <span key={id}>{id}: μ {fmt(summary.mean)} · {fmt(summary.min)}–{fmt(summary.max)}</span>)}</div>}
           {qualityEvents.length > 0 && <div className="muted small chart-event-legend">⚠ {qualityEvents.length} quality event{qualityEvents.length === 1 ? '' : 's'} detected (solid = error, dashed = warning, dotted = info) — hover a marker for details.</div>}
           <div className="muted small">
-            Click to select a point; drag to zoom; wheel to zoom, shift+wheel (or a trackpad swipe) to pan.
+            Click to select a point; drag to zoom; wheel to zoom, shift+wheel (or a trackpad swipe) to pan. Ctrl/⌘+wheel zooms the Y axis, ctrl/⌘+shift+wheel pans it.
             {series[0] && !series[0].downsampled
               ? ' Ctrl/⌘+click or +drag adds points to a delete set, shift+click extends it.'
               : ' Zoom in until individual points render to build a delete set.'}
@@ -531,6 +618,8 @@ function pointX(point: TrackPoint | undefined, index: number, axis: ChartXAxis):
   if (!point) return null
   if (axis === 'time') return point.time ?? null
   if (axis === 'distance') return typeof point.ext?.distance_m === 'number' ? point.ext.distance_m : null
+  const channelId = channelIdFromXAxis(axis)
+  if (channelId !== null) return numericChannelValue(point, channelId)
   return index
 }
 
@@ -560,7 +649,14 @@ function nearestValueWithinPixels(values: SeriesValue[], x: number, xToPx: (x: n
 function formatX(value: number, axis: ChartXAxis): string {
   if (axis === 'time') return epochMsToIso(value)
   if (axis === 'distance') return `${fmt(value)} m`
+  const channelId = channelIdFromXAxis(axis)
+  if (channelId !== null) return `${fmt(value)} ${channelUnit(channelId)}`
   return `index ${Math.round(value)}`
+}
+
+/** Display label for an axis: the bare channel name for a `channel:` axis, the axis id itself otherwise. */
+function xAxisLabel(axis: ChartXAxis): string {
+  return channelIdFromXAxis(axis) ?? axis
 }
 
 function channelUnit(key: string): string {

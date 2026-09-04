@@ -98,6 +98,19 @@ check('clicking an enabled chart-type button switches the active selection', typ
 check('the previously active button is no longer active', typeButtonsAfterClick[0]?.classList.contains('active') === false)
 check('switching to a still-valid type shows no mismatch warning', container.querySelector('.chart-mismatch-warning') === null)
 check('the existing chart rendering is still present after switching types', container.querySelector('.chart-svg') !== null)
+check('scatter draws no connecting line', container.querySelector('.chart-line') === null)
+check('scatter still draws its point markers', container.querySelector('.chart-point') !== null)
+
+// --- Scenario 3b: switch to Area — the connecting line returns, plus a filled area under it ---
+const timeSeriesButton = Array.from(container.querySelectorAll('.chart-type-selector button'))[0] as unknown as HTMLButtonElement
+flushSync(() => { timeSeriesButton.dispatchEvent(new window.Event('click', { bubbles: true })) })
+check('switching back to Time Series restores the connecting line', container.querySelector('.chart-line') !== null)
+const areaButton = Array.from(container.querySelectorAll('.chart-type-selector button')).find((button) => button.textContent?.includes('Area')) as HTMLButtonElement | undefined
+flushSync(() => { areaButton?.dispatchEvent(new window.Event('click', { bubbles: true })) })
+check('area is a selectable chart type here', areaButton !== undefined)
+check('area still draws its connecting line', container.querySelector('.chart-line') !== null)
+const areaFill = Array.from(container.querySelectorAll('path')).find((path) => path.getAttribute('fill-opacity') !== null)
+check('area draws a filled path under the line', areaFill !== undefined)
 
 // --- Scenario 4: mount directly on untimed data with only 1 channel (elevation) ---
 // Both timeSeries and area need timestamps; only scatter is possible, but
@@ -168,6 +181,55 @@ const largeDataset: TrackPoint[] = Array.from({ length: 2000 }, (_, index) => ({
 const { container: largeContainer } = renderChart(largeDataset, [])
 check('No point markers render for the full-extent view of an over-budget dataset', largeContainer.querySelectorAll('.chart-point').length === 0)
 check('The line still renders for the over-budget dataset', largeContainer.querySelector('.chart-line') !== null)
+
+// --- Scenario 8: channel-vs-channel scatter X-axis --------------------------
+// A channel axis (`channel:speed_mps`) is only offered in the x-axis <select>
+// while chartType === 'scatter', and switching away from scatter must not
+// leave a line/area chart trying to draw through non-monotonic channel
+// values. timestampedPoints has two numeric channels (elevation, speed_mps),
+// so both timeSeries and scatter are valid chart types to switch between.
+{
+  const { container: chContainer } = renderChart(timestampedPoints, ['speed_mps'])
+  const xAxisSelect = () => Array.from(chContainer.querySelectorAll('.chart-xaxis select'))[1] as HTMLSelectElement
+
+  check('no "(channel)" option in the x-axis select while on Time Series (default)', !Array.from(xAxisSelect().options).some((opt) => opt.textContent?.includes('(channel)')))
+
+  const scatterBtn = Array.from(chContainer.querySelectorAll('.chart-type-selector button'))[1] as unknown as HTMLButtonElement
+  flushSync(() => { scatterBtn.dispatchEvent(new window.Event('click', { bubbles: true })) })
+
+  const channelOptions = Array.from(xAxisSelect().options).filter((opt) => opt.textContent?.includes('(channel)'))
+  check('x-axis select gains a "(channel)" option per numeric channel once on Scatter', channelOptions.length > 0)
+  check('one of the channel options is speed_mps', channelOptions.some((opt) => opt.value === 'channel:speed_mps'))
+
+  flushSync(() => {
+    // linkedom's <select>.value has no setter, and its getter doesn't track
+    // `.selectedIndex` either — only an <option>'s own `.selected` flag
+    // actually moves it (mirrors what a browser does internally before
+    // firing 'change').
+    const select = xAxisSelect()
+    const targetOption = Array.from(select.options).find((opt) => opt.value === 'channel:speed_mps') as HTMLOptionElement
+    targetOption.selected = true
+    select.dispatchEvent(new window.Event('change', { bubbles: true }))
+  })
+  check('selecting a channel axis is reflected back in the select\'s value', xAxisSelect().value === 'channel:speed_mps')
+  check('the readout range label uses the channel name, not the raw "channel:speed_mps" id', chContainer.querySelector('.chart-time-range')?.textContent?.includes('speed_mps range') === true)
+  check('scatter with a channel x-axis still draws no connecting line', chContainer.querySelector('.chart-line') === null)
+  check('scatter with a channel x-axis still draws its point markers', chContainer.querySelector('.chart-point') !== null)
+
+  // Switch back to Time Series: the channel axis must not carry over into a line
+  // chart (that would draw a scribble through non-monotonic x values) — the
+  // component silently falls back to a safe axis instead.
+  const timeSeriesBtn2 = Array.from(chContainer.querySelectorAll('.chart-type-selector button'))[0] as unknown as HTMLButtonElement
+  flushSync(() => { timeSeriesBtn2.dispatchEvent(new window.Event('click', { bubbles: true })) })
+  check('switching back to Time Series falls back off the channel axis', xAxisSelect().value !== 'channel:speed_mps')
+  check('Time Series with the channel axis abandoned still renders its connecting line', chContainer.querySelector('.chart-line') !== null)
+
+  // Switching back to Scatter restores the previously-picked channel axis
+  // (the underlying xAxis state was never mutated, only shadowed).
+  const scatterBtn2 = Array.from(chContainer.querySelectorAll('.chart-type-selector button'))[1] as unknown as HTMLButtonElement
+  flushSync(() => { scatterBtn2.dispatchEvent(new window.Event('click', { bubbles: true })) })
+  check('switching back to Scatter restores the previously-selected channel axis', xAxisSelect().value === 'channel:speed_mps')
+}
 
 console.log(`\n${failures === 0 ? 'ALL TIME SERIES CHART INTEGRATION CHECKS PASSED' : `${failures} TIME SERIES CHART INTEGRATION CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)

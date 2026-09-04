@@ -66,10 +66,68 @@ function medianOf(values: readonly number[]): number | undefined {
   return median([...values].sort((left, right) => left - right))
 }
 
+/** True for a point already synthesized by another operation (a gap fill or a repair), rather than measured. */
+export function isSynthesized(point: TrackPoint): boolean {
+  const flags = point.provenance?.qualityFlags
+  return flags !== undefined && (flags.includes('interpolated') || flags.includes('notional'))
+}
+
 /** Robust scale for a residual series, floored so sub-noise residuals can't be amplified. */
 function robustScale(residuals: readonly number[], floor: number): number {
   const finite = residuals.filter((value) => Number.isFinite(value))
   return Math.max(medianAbsoluteDeviation(finite) * MAD_TO_SIGMA, floor)
+}
+
+/**
+ * Estimates the position-channel floor a *legitimate*, sustained turn at
+ * `turnRateDps` produces under this detector's own window-median-vs-chord
+ * math (see the position residual computed below), by running that same
+ * math against a synthetic planar arc at the track's own characteristic
+ * speed and sample cadence rather than deriving it in closed form — the
+ * discrete median-of-window geometry does not reduce to a clean formula at
+ * the turn rates real platforms use, and an approximation risks being wrong
+ * in either direction. A MAD-derived scale cannot catch this on its own:
+ * residuals across a steady turn are large but nearly constant sample to
+ * sample, so their local scatter (what MAD measures) stays near zero even
+ * though the absolute deviation from the backward/forward chord is not —
+ * every point in the turn ends up scoring as an outlier. A straight track,
+ * or one whose speed or cadence isn't known, returns 0 and leaves the
+ * caller's own floor in charge.
+ */
+export function estimateTurnPositionFloorMeters(
+  characteristicSpeedMps: number,
+  turnRateDps: number,
+  windowSize: number,
+  sampleIntervalSeconds: number,
+): number {
+  if (!Number.isFinite(turnRateDps) || turnRateDps <= 0) return 0
+  if (!(characteristicSpeedMps > 0) || !(sampleIntervalSeconds > 0) || windowSize < 1) return 0
+
+  const omega = turnRateDps * Math.PI / 180
+  const n = windowSize * 2 + 3
+  const center = windowSize + 1
+  const xs: number[] = []
+  const ys: number[] = []
+  let x = 0
+  let y = 0
+  let heading = 0
+  for (let i = 0; i < n; i++) {
+    xs.push(x)
+    ys.push(y)
+    heading += omega * sampleIntervalSeconds
+    x += characteristicSpeedMps * sampleIntervalSeconds * Math.cos(heading)
+    y += characteristicSpeedMps * sampleIntervalSeconds * Math.sin(heading)
+  }
+
+  const backX = median([...xs.slice(center - windowSize, center)].sort((a, b) => a - b))
+  const backY = median([...ys.slice(center - windowSize, center)].sort((a, b) => a - b))
+  const fwdX = median([...xs.slice(center + 1, center + windowSize + 1)].sort((a, b) => a - b))
+  const fwdY = median([...ys.slice(center + 1, center + windowSize + 1)].sort((a, b) => a - b))
+  const dist = (ax: number, ay: number, bx: number, by: number) => Math.hypot(ax - bx, ay - by)
+  const toBack = dist(xs[center]!, ys[center]!, backX, backY)
+  const toFwd = dist(xs[center]!, ys[center]!, fwdX, fwdY)
+  const chord = dist(backX, backY, fwdX, fwdY)
+  return Math.max(0, (toBack + toFwd - chord) / 2)
 }
 
 /**
@@ -126,6 +184,14 @@ export function detectOutliers(points: readonly TrackPoint[], config: OutlierCon
   for (let index = window; index < points.length - window; index++) {
     const point = points[index]
     if (!point) continue
+    // A point already marked interpolated or notional is a synthesized fit,
+    // not a measurement — judging it against the same trend test used on raw
+    // samples would score the fit's own small residual (a spline is rarely
+    // pixel-perfect through its neighbours) as a fresh anomaly, which is how
+    // a repair ends up flagging points right next to the one it just fixed.
+    // It still contributes to its real neighbours' backward/forward window
+    // medians below; it just cannot be flagged itself.
+    if (isSynthesized(point)) continue
 
     const backward = points.slice(index - window, index)
     const forward = points.slice(index + 1, index + window + 1)

@@ -1,11 +1,13 @@
 // App-level preferences — see `state/settings.ts` for why these live outside
-// any project. Deliberately small: three point budgets today, but the store
-// takes new settings without restructuring (each field is read/normalized
-// independently), matching the roadmap's "Settings page" requirement.
-import { DEFAULT_SETTINGS, SETTINGS_LIMITS, resetSettings, updateSetting, useAppSettings, useSettingsStorageSync, type AppSettings } from '../state/settings'
+// any project. Deliberately small: three point budgets and a default motion
+// profile today, but the store takes new settings without restructuring
+// (each field is read/normalized independently), matching the roadmap's
+// "Settings page" requirement.
+import { MOTION_PROFILES, MOTION_PROFILE_IDS, type MotionProfileId } from '../core/operations/motionProfiles'
+import { DEFAULT_SETTINGS, SETTINGS_LIMITS, resetSettings, updateDefaultMotionProfile, updateSetting, useAppSettings, useSettingsStorageSync } from '../state/settings'
 
 interface BudgetField {
-  key: keyof AppSettings
+  key: 'chartPointBudget' | 'mapPointBudget' | 'scenePointBudget'
   label: string
   description: string
 }
@@ -32,6 +34,7 @@ export function SettingsPanel() {
   useSettingsStorageSync()
   const settings = useAppSettings()
   const isDefault = BUDGET_FIELDS.every((field) => settings[field.key] === DEFAULT_SETTINGS[field.key])
+    && settings.defaultMotionProfile === DEFAULT_SETTINGS.defaultMotionProfile
 
   return (
     <div className="settings-panel">
@@ -63,8 +66,25 @@ export function SettingsPanel() {
             </div>
           )
         })}
-        <button type="button" disabled={isDefault} onClick={resetSettings}>Reset to defaults</button>
       </div>
+      <div className="settings-group">
+        <h4>Transform defaults</h4>
+        <div className="settings-field">
+          <label className="num-field">
+            <span>Default motion profile</span>
+            <select
+              value={settings.defaultMotionProfile}
+              onChange={(event) => updateDefaultMotionProfile(event.target.value as MotionProfileId)}
+            >
+              {MOTION_PROFILE_IDS.map((id) => <option key={id} value={id}>{MOTION_PROFILES[id].label}</option>)}
+            </select>
+          </label>
+          <p className="muted small settings-field-desc">
+            Opens Drop outliers and Fill gaps on this profile each session, instead of always resetting to Aircraft.
+          </p>
+        </div>
+      </div>
+      <button type="button" disabled={isDefault} onClick={resetSettings}>Reset to defaults</button>
     </div>
   )
 }

@@ -32,6 +32,16 @@ export interface MotionProfile {
   maxTurnRateDps: number
   /** Ceiling on |along-track acceleration| implied by the filled points. */
   maxHorizontalAccelMps2: number
+  /**
+   * `'spline'` fits a Fritsch–Carlson monotone cubic through the real context
+   * points either side of a gap, matching the trajectory's tangent going in
+   * and coming out. `'unconstrained'` has no plausibility ceiling to check a
+   * curve's tangents against, so it takes `'linear'` instead — a straight
+   * secant between the two real endpoints, i.e. a raw position/time vector,
+   * which is what makes it the predictable "none" escape hatch rather than a
+   * curve fit with the safety rails removed.
+   */
+  interpolation: 'spline' | 'linear'
 }
 
 export const MOTION_PROFILES: Record<MotionProfileId, MotionProfile> = {
@@ -45,6 +55,7 @@ export const MOTION_PROFILES: Record<MotionProfileId, MotionProfile> = {
     maxVerticalSpeedMps: 100,
     maxTurnRateDps: 30,
     maxHorizontalAccelMps2: 30,
+    interpolation: 'spline',
   },
   ground: {
     id: 'ground',
@@ -56,6 +67,7 @@ export const MOTION_PROFILES: Record<MotionProfileId, MotionProfile> = {
     // A vehicle can pivot far faster than an aircraft can turn.
     maxTurnRateDps: 90,
     maxHorizontalAccelMps2: 15,
+    interpolation: 'spline',
   },
   marine: {
     id: 'marine',
@@ -66,15 +78,17 @@ export const MOTION_PROFILES: Record<MotionProfileId, MotionProfile> = {
     maxVerticalSpeedMps: 2,
     maxTurnRateDps: 20,
     maxHorizontalAccelMps2: 5,
+    interpolation: 'spline',
   },
   unconstrained: {
     id: 'unconstrained',
-    label: 'Unconstrained',
-    description: 'No plausibility limits. Every gap within the threshold is filled.',
+    label: 'None (vector-only)',
+    description: 'No plausibility limits and no curve fit — a straight line (vector) between the two real points either side. Every gap within the threshold is filled.',
     maxGroundSpeedMps: Number.POSITIVE_INFINITY,
     maxVerticalSpeedMps: Number.POSITIVE_INFINITY,
     maxTurnRateDps: Number.POSITIVE_INFINITY,
     maxHorizontalAccelMps2: Number.POSITIVE_INFINITY,
+    interpolation: 'linear',
   },
 }
 

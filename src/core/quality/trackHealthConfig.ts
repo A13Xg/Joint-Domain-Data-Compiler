@@ -69,6 +69,19 @@ export interface TrackHealthConfig {
     /** 3 min. */
     maxDurationMs: number
   }
+  gpsFixQuality: {
+    /** HDOP above this is a degraded fix — 5 is a commonly cited "moderate,
+     *  accuracy noticeably reduced" threshold (1-2 excellent, 2-5 good,
+     *  5-10 moderate, 10-20 fair, 20+ poor). */
+    hdopThreshold: number
+    /** Fewer satellites than this is a marginal fix — 4 is the theoretical
+     *  minimum for a 3D position solution. */
+    minSatellites: number
+    /** Share of hdop/sat-carrying points allowed to be flagged before this
+     *  check reports fail. Informational (weight 0): never blocks or scores,
+     *  only surfaces where a track's own fix quality was already degraded. */
+    maxPoorFraction: number
+  }
   movementWindow: {
     /**
      * Deliberately equal to speedEnvelope.minSpeedMps: the window marks where the vehicle
@@ -118,6 +131,11 @@ export const DEFAULT_TRACK_HEALTH_CONFIG: TrackHealthConfig = {
   stagnant: {
     radiusMeters: 402.34,
     maxDurationMs: 180_000,
+  },
+  gpsFixQuality: {
+    hdopThreshold: 5,
+    minSatellites: 4,
+    maxPoorFraction: 0.1,
   },
   movementWindow: {
     speedThresholdMps: MIN_SPEED_MPS,

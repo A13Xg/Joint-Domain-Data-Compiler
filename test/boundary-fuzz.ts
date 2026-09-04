@@ -198,8 +198,8 @@ const VALID_OPERATION_PARAMS: Record<string, unknown[]> = {
     { startMs: -5000, endMs: -5000, untimedPolicy: 'drop' },
   ],
   'drop-outliers': [
-    { channels: ['position'], windowSize: 5, scoreThreshold: 3, minPositionScaleMeters: 1, minElevationScaleMeters: 1, minSpeedScaleMps: 0.5 },
-    { channels: ['position', 'elevation', 'speed'], windowSize: 1, scoreThreshold: 0.5, minPositionScaleMeters: 0.1, minElevationScaleMeters: 0.1, minSpeedScaleMps: 0.1 },
+    { channels: ['position'], windowSize: 5, scoreThreshold: 3, minPositionScaleMeters: 1, minElevationScaleMeters: 1, minSpeedScaleMps: 0.5, profile: 'aircraft', reconstruct: true, contextPoints: 4 },
+    { channels: ['position', 'elevation', 'speed'], windowSize: 1, scoreThreshold: 0.5, minPositionScaleMeters: 0.1, minElevationScaleMeters: 0.1, minSpeedScaleMps: 0.1, profile: 'unconstrained', reconstruct: false, contextPoints: 2 },
   ],
   'elevation-filter': [
     { mode: 'median', window: 5 },

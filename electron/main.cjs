@@ -41,6 +41,14 @@ function createWindow() {
     minWidth: 1100,
     minHeight: 700,
     backgroundColor: '#0f172a',
+    // Held back until 'ready-to-show' below instead of appearing immediately:
+    // an immediately-shown window is blank until the renderer's first paint,
+    // which on a slow launch is exactly the "did this even open?" window the
+    // loading skeleton (index.html) exists to avoid. Because that skeleton is
+    // static HTML with no script dependency, 'ready-to-show' -- which waits
+    // for a first paint, not for the app to finish loading -- fires with the
+    // skeleton already on screen rather than after the full bundle is ready.
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -49,6 +57,18 @@ function createWindow() {
       webSecurity: true,
       allowRunningInsecureContent: false,
     },
+  })
+
+  // Defensive: if 'ready-to-show' is ever swallowed (observed to be flaky on
+  // some Linux/GPU combinations for other Electron apps), the window must
+  // not stay permanently invisible with no way for the user to know why. Short
+  // timeout rather than a cautious long one -- the skeleton means showing
+  // early costs nothing, while showing late is exactly the failure this
+  // change exists to avoid.
+  const forceShowTimer = setTimeout(() => { if (!window.isDestroyed()) window.show() }, 1000)
+  window.once('ready-to-show', () => {
+    clearTimeout(forceShowTimer)
+    window.show()
   })
 
   window.webContents.setWindowOpenHandler(({ url }) => {

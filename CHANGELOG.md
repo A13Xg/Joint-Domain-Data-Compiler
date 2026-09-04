@@ -3,6 +3,50 @@
 Notable user-facing and operational changes are recorded here. This project follows Semantic
 Versioning; release tags use the `vX.Y.Z` form.
 
+## 0.3.0 - 2026-09-04
+
+### Added
+
+- Y-axis zoom and pan on the Charts tab, closing out the editable-graph-view work: ctrl/⌘+wheel
+  zooms cursor-anchored the same way X already did, ctrl/⌘+shift+wheel pans. Because each plotted
+  series auto-scales to its own unit (elevation in metres next to a turn rate in °/s), the zoom is
+  a shared fraction of each series' own span rather than one absolute value domain.
+- Real channel-vs-channel scatter: the Charts tab's x-axis can now be set to any numeric channel,
+  not just time/index/distance, once Scatter is the active chart type — a line/area chart never
+  accepts a channel axis, since a polyline through non-monotonic values would be a scribble.
+  Switching chart types away from and back to Scatter preserves the chosen axis.
+- Area and points-only Scatter rendering: Area now fills down to the plot baseline; Scatter draws
+  no connecting line, matching what the label implies instead of rendering as a relabeled line
+  chart.
+- "Drop outliers" now reconstructs flagged points in place from their surviving neighbours by
+  default, through the same plausibility-gated spline/linear fit engine "Fill gaps" uses, instead
+  of leaving a hole. Falls back to plain deletion (not a crash) when a track has any untimed
+  point. Motion-profile presets (Aircraft/Ground vehicle/Marine/None) are now shared between the
+  two repairs, with Aircraft as the default for both.
+- Outlier detection no longer flags an entire sustained, legitimate turn: the position noise
+  floor now accounts for a synthetic arc at the track's own fastest observed speed and the
+  motion profile's turn-rate ceiling, rather than reading a turn's steady (near-zero local
+  scatter) residual as signal.
+- A persisted default motion profile setting (Settings tab): Drop outliers and Fill gaps now
+  open on whichever profile was last chosen, instead of always resetting to Aircraft.
+- NMEA parser support for VTG (course/speed over ground), ZDA (date/time), GSA (PDOP/HDOP/VDOP +
+  active satellites), and GSV (satellites in view). Each rides its values onto the next GGA/GLL
+  fix that doesn't already carry an equivalent field of its own; RMC's own speed/heading is
+  deliberately not propagated the same way, since that would attribute a different sentence's
+  measurement, at a different timestamp, to a fix that never took it.
+- A GPS fix-quality Track Health check, informational only (never affects the score or blocks):
+  flags stretches of degraded HDOP or low satellite count using `hdop`/`sat` data every GPX/NMEA
+  import already carries but no check previously read.
+- Full keyboard navigation and ARIA roles for the Table tab's data grid: arrow keys move a focus
+  ring, Enter/Space selects (with the same Ctrl/⌘/Shift modifiers the mouse gestures use), and
+  `aria-rowcount`/`aria-rowindex`/`aria-activedescendant` report correctly even though the grid is
+  virtualized and only renders on-screen rows.
+- An `aria-label` on the Map tab naming the loaded point count and any other visible track layers.
+- Chart drag-to-zoom no longer highlights the axis text it passes over mid-drag.
+- Expanded automated test coverage: `core/stats.ts`, `core/geoInterpolation.ts`, the motion-profile
+  reconstruction engine, every new NMEA sentence type, and a new end-to-end spec covering Settings
+  persistence across a real page reload.
+
 ## 0.2.0 - 2026-09-02
 
 ### Added

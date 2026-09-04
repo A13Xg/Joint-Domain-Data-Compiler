@@ -11,9 +11,50 @@
     <meta name="description" content="Local-first trajectory and TSPI workbench for importing, analyzing, transforming, comparing, visualizing, saving, and exporting track data." />
     <meta name="color-scheme" content="dark" />
     <title>Joint Domain Data Compiler</title>
+    <style>
+      /* Self-contained: index.css/analysis.css load as part of the module
+         graph, so this can't depend on them without reintroducing the same
+         wait it exists to cover. Duplicates a handful of tokens from
+         index.css's :root by hand instead. */
+      #app-loading {
+        position: fixed; inset: 0;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 14px;
+        background: #0b0f17;
+        color: #9fb0c8;
+        font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      #app-loading .mark {
+        width: 44px; height: 44px;
+        display: grid; place-items: center;
+        background: linear-gradient(135deg, #ea4f2f, #b3361c);
+        border-radius: 10px;
+        color: #e6edf6; font-weight: 800; font-size: 16px; letter-spacing: 0.5px;
+        box-shadow: 0 4px 14px rgba(234, 79, 47, 0.35);
+      }
+      #app-loading .spinner {
+        width: 22px; height: 22px;
+        border-radius: 50%;
+        border: 2.5px solid #1d2738;
+        border-top-color: #ea4f2f;
+        animation: app-loading-spin 0.8s linear infinite;
+      }
+      #app-loading p { margin: 0; font-size: 12.5px; letter-spacing: 0.2px; }
+      @keyframes app-loading-spin { to { transform: rotate(360deg); } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Replaced wholesale the moment main.tsx calls createRoot(root).render(...);
+           nothing here needs cleanup. This paints on HTML parse, before the
+           module script below has even finished downloading, so the window
+           never shows as a bare dark rectangle while the bundle loads. -->
+      <div id="app-loading" role="status" aria-live="polite">
+        <div class="mark" aria-hidden="true">JD</div>
+        <div class="spinner" aria-hidden="true"></div>
+        <p id="app-loading-label">Starting Joint Domain Data Compiler…</p>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

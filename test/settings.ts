@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, SETTINGS_LIMITS, getSettings, normalizeSettings, resetSettings, updateSetting } from '../src/state/settings.ts'
+import { DEFAULT_SETTINGS, SETTINGS_LIMITS, getSettings, normalizeSettings, resetSettings, updateDefaultMotionProfile, updateSetting } from '../src/state/settings.ts'
 
 let failures = 0
 function check(name: string, condition: boolean, detail = ''): void {
@@ -44,6 +44,18 @@ check('updateSetting clamps out-of-range input', getSettings().chartPointBudget 
 
 resetSettings()
 check('resetSettings restores every field to its default', JSON.stringify(getSettings()) === JSON.stringify(DEFAULT_SETTINGS))
+
+// --- defaultMotionProfile: a closed string enum, not the numeric clamp path --
+check('defaultMotionProfile defaults to aircraft', DEFAULT_SETTINGS.defaultMotionProfile === 'aircraft')
+check('an unrecognized profile string falls back to the default', normalizeSettings({ defaultMotionProfile: 'blimp' }).defaultMotionProfile === DEFAULT_SETTINGS.defaultMotionProfile)
+check('a non-string profile value falls back to the default', normalizeSettings({ defaultMotionProfile: 5 }).defaultMotionProfile === DEFAULT_SETTINGS.defaultMotionProfile)
+check('a valid profile string is kept', normalizeSettings({ defaultMotionProfile: 'marine' }).defaultMotionProfile === 'marine')
+
+updateDefaultMotionProfile('ground')
+check('updateDefaultMotionProfile changes the field', getSettings().defaultMotionProfile === 'ground')
+check('updateDefaultMotionProfile leaves numeric fields untouched', getSettings().chartPointBudget === DEFAULT_SETTINGS.chartPointBudget)
+resetSettings()
+check('resetSettings also restores defaultMotionProfile', getSettings().defaultMotionProfile === DEFAULT_SETTINGS.defaultMotionProfile)
 
 console.log(`\n${failures === 0 ? 'ALL SETTINGS CHECKS PASSED' : `${failures} SETTINGS CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)

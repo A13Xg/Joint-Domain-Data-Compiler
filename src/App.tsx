@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CsvAnalysisResult, DetectedColumn } from './types/converter'
 import type { Dataset, TrackPoint } from './core/model'
 import { withPoints } from './core/transforms'
 import { detectFormat, makeDataset, parseFileToDataset, INPUT_FORMATS, resolveTextFormat } from './core/parsers'
-import { streamCsvFileToPoints, CsvImportCancelledError, type CsvMapping } from './core/parsers/csv'
+import type { CsvMapping } from './core/parsers/csv'
 import { assertByteBudget, assertPointBudget, DEFAULT_FORMAT_BUDGETS } from './core/parsers/limits'
 import { describeSignatureMismatch, sniffTextSignature } from './core/parsers/contentSignature'
 import { sha256Hex } from './core/checksum'
@@ -14,27 +14,10 @@ import { LogConsole } from './ui/LogConsole'
 import { ToastStack } from './ui/Toast'
 import type { ToastMessage, ToastTone } from './ui/toastModel'
 import { StatusLight, type StatusTone } from './ui/StatusLight'
-import { MapView, type OtherTrack } from './ui/MapView'
-import { SourcesPanel } from './ui/SourcesPanel'
+import type { OtherTrack } from './ui/MapView'
 import { restoreWorkspaceDisplay, syncWorkspaceDisplay, type WorkspaceDisplay } from './state/workspaceDisplay'
-import { TimeSeriesChart } from './ui/TimeSeriesChart'
-import { PointInspectorPanel } from './ui/PointInspectorPanel'
 import type { EditPointFields } from './core/operations/edit-point'
-import { DataTable } from './ui/DataTable'
-import { PointVisualizerPanel } from './ui/PointVisualizerPanel'
-import { StatsPanel } from './ui/StatsPanel'
-import { TrackMetricsPanel } from './ui/TrackMetricsPanel'
-import { TransformPanel } from './ui/TransformPanel'
-import { NotionalSmoothingPanel } from './ui/NotionalSmoothingPanel'
-import { FusionPanel } from './ui/FusionPanel'
-import { ExportPanel } from './ui/ExportPanel'
-import { SettingsPanel } from './ui/SettingsPanel'
-import { MappingPanel } from './ui/MappingPanel'
 import { ImportView } from './ui/ImportView'
-import { ComparisonPanel } from './ui/ComparisonPanel'
-import { Trajectory3dPanel } from './ui/Trajectory3dPanel'
-import { ProjectPanel } from './ui/ProjectPanel'
-import { TrackHealthPanel } from './ui/TrackHealthPanel'
 import { getSelectedPointIndex, getSelectedRange, restorePointSelection } from './state/pointSelection'
 import type { ProjectArchive, ProjectDatasetHistory } from './persistence/project/archive'
 import { namedRecipesFromManifest, type ProjectBookmark } from './persistence/project/manifest'
@@ -58,6 +41,32 @@ import { executeOperation } from './core/recipes/executor'
 import { computeTrackDiff } from './core/repair/diff'
 import { RepairPreviewDialog, type RepairPreviewRequest } from './ui/RepairPreviewDialog'
 import { DEFAULT_TRACK_HEALTH_CONFIG } from './core/quality/trackHealthConfig'
+
+// Every tab but the first (Import, above) is loaded on demand instead of
+// bundled into the entry chunk. Import is what a cold launch actually shows,
+// so it stays eager; Map alone pulls in Leaflet, and CSV mapping pulls in
+// papaparse (see the dynamic import in buildCsvDataset below), so leaving
+// all of these static made every session pay for every tab whether it was
+// ever opened or not. None of these have a default export, hence the
+// `.then(m => ({ default: m.X }))` on each.
+const MapView = lazy(() => import('./ui/MapView').then((m) => ({ default: m.MapView })))
+const SourcesPanel = lazy(() => import('./ui/SourcesPanel').then((m) => ({ default: m.SourcesPanel })))
+const TimeSeriesChart = lazy(() => import('./ui/TimeSeriesChart').then((m) => ({ default: m.TimeSeriesChart })))
+const PointInspectorPanel = lazy(() => import('./ui/PointInspectorPanel').then((m) => ({ default: m.PointInspectorPanel })))
+const DataTable = lazy(() => import('./ui/DataTable').then((m) => ({ default: m.DataTable })))
+const PointVisualizerPanel = lazy(() => import('./ui/PointVisualizerPanel').then((m) => ({ default: m.PointVisualizerPanel })))
+const StatsPanel = lazy(() => import('./ui/StatsPanel').then((m) => ({ default: m.StatsPanel })))
+const TrackMetricsPanel = lazy(() => import('./ui/TrackMetricsPanel').then((m) => ({ default: m.TrackMetricsPanel })))
+const TransformPanel = lazy(() => import('./ui/TransformPanel').then((m) => ({ default: m.TransformPanel })))
+const NotionalSmoothingPanel = lazy(() => import('./ui/NotionalSmoothingPanel').then((m) => ({ default: m.NotionalSmoothingPanel })))
+const FusionPanel = lazy(() => import('./ui/FusionPanel').then((m) => ({ default: m.FusionPanel })))
+const ExportPanel = lazy(() => import('./ui/ExportPanel').then((m) => ({ default: m.ExportPanel })))
+const SettingsPanel = lazy(() => import('./ui/SettingsPanel').then((m) => ({ default: m.SettingsPanel })))
+const MappingPanel = lazy(() => import('./ui/MappingPanel').then((m) => ({ default: m.MappingPanel })))
+const ComparisonPanel = lazy(() => import('./ui/ComparisonPanel').then((m) => ({ default: m.ComparisonPanel })))
+const Trajectory3dPanel = lazy(() => import('./ui/Trajectory3dPanel').then((m) => ({ default: m.Trajectory3dPanel })))
+const ProjectPanel = lazy(() => import('./ui/ProjectPanel').then((m) => ({ default: m.ProjectPanel })))
+const TrackHealthPanel = lazy(() => import('./ui/TrackHealthPanel').then((m) => ({ default: m.TrackHealthPanel })))
 
 ensureBuiltinDerivationsRegistered()
 ensureBuiltinOperationsRegistered()
@@ -373,6 +382,13 @@ export default function App() {
     if (!pendingCsv) return
     cancelCsvRef.current = false
     setBuilding(true); setBusy(`Building dataset from ${pendingCsv.file.name}`); setProgress(0)
+    // Dynamic: papaparse only needs to load for a session that actually
+    // builds a CSV, not for every launch. MappingPanel (the 'mapping' tab)
+    // already pulls this same module in as part of its own lazy chunk, so by
+    // the time Build is clicked this import resolves from cache. Outside the
+    // try below (rather than destructured inside it) so the catch clause can
+    // still reach CsvImportCancelledError.
+    const { streamCsvFileToPoints, CsvImportCancelledError } = await import('./core/parsers/csv')
     try {
       // Rows are mapped into TrackPoints as each chunk streams in, so only the
       // point array — the representation the rest of the app needs — is held
@@ -671,12 +687,20 @@ export default function App() {
    *
    * Runs the registered drop-outliers operation with DEFAULT_TRACK_HEALTH_CONFIG's
    * outlier settings — the exact config the scan graded against — so the points
-   * removed are the points the scan flagged, and the run lands in history as a
-   * replayable record like any other transform.
+   * acted on are the points the scan flagged, and the run lands in history as a
+   * replayable record like any other transform. Reconstructs by default (see
+   * `drop-outliers.ts`), so a successful repair leaves the point count
+   * unchanged — the dataset returned is a *new* object either way (`withPoints`
+   * always makes one), so "nothing was flagged" is read off object identity
+   * with the input, not a point-count delta.
    */
   const dropHealthOutliers = useCallback(() => {
     if (!active) return
     const settings = DEFAULT_TRACK_HEALTH_CONFIG.outlier
+    // Reconstruction fits a time-parameterised spline, so it needs every
+    // point timed; a track with any untimed point falls back to plain
+    // removal rather than throwing on an otherwise-ordinary remediation click.
+    const reconstruct = active.points.every((point) => point.time !== undefined)
     try {
       const execution = executeOperation(active, 'drop-outliers', {
         channels: ['position', 'elevation', 'speed'],
@@ -685,17 +709,19 @@ export default function App() {
         minPositionScaleMeters: settings.minPositionScaleMeters,
         minElevationScaleMeters: settings.minElevationScaleMeters,
         minSpeedScaleMps: settings.minSpeedScaleMps,
+        profile: 'aircraft',
+        reconstruct,
+        contextPoints: 4,
       })
-      const removed = active.points.length - execution.dataset.points.length
-      if (removed === 0) { flashToast('No points exceeded the scan threshold', 'info'); return }
+      if (execution.dataset === active) { flashToast('No points exceeded the scan threshold', 'info'); return }
       setPendingHealthRepair({
         datasetId: active.id,
         points: execution.dataset.points,
         summary: execution.record.summary,
         record: execution.record,
         request: {
-          title: 'Drop flagged points',
-          summary: `Removes the ${removed.toLocaleString()} points the Track Health scan flagged as outliers, at the thresholds it graded against.`,
+          title: 'Repair flagged points',
+          summary: execution.record.summary,
           warnings: execution.record.warnings,
           before: active.points,
           after: execution.dataset.points,
@@ -704,7 +730,7 @@ export default function App() {
         },
       })
     } catch (error) {
-      logger.error('transform', `Drop flagged points failed: ${errorMessage(error)}`)
+      logger.error('transform', `Repair flagged points failed: ${errorMessage(error)}`)
     }
   }, [active, flashToast])
 
@@ -857,22 +883,26 @@ export default function App() {
           <nav className="tab-bar">{tabs.map((item) => <button key={item.id} type="button" disabled={!item.enabled} className={`tab${tab === item.id ? ' active' : ''}`} onClick={() => selectTab(item.id)}>{item.label}</button>)}{active && <span className="tab-active-name mono">{active.name}</span>}</nav>
           <section className="tab-content">
             {progress !== null && <div className="global-progress"><ProgressBar value={progress} label={busy ?? 'Working'} />{building && <button type="button" onClick={cancelCsvBuild}>Cancel</button>}</div>}
-            {tab === 'import' && <ImportView dragActive={dragActive} setDragActive={setDragActive} onFiles={onFiles} openPicker={() => fileInputRef.current?.click()} />}
-            {tab === 'mapping' && pendingCsv && <MappingPanel analysis={pendingCsv.analysis} mapping={pendingCsv.mapping} onChange={(mapping) => setPendingCsv((current) => current ? { ...current, mapping } : current)} additionalHeaders={pendingCsv.additionalHeaders} onToggleAdditionalHeaders={(additionalHeaders) => setPendingCsv((current) => current ? { ...current, additionalHeaders } : current)} dataStartRow={pendingCsv.dataStartRow} onDataStartRowChange={(dataStartRow) => setPendingCsv((current) => current ? { ...current, dataStartRow } : current)} onBuild={onBuildCsv} building={building} />}
-            {tab === 'overview' && active && <div className="overview-panels"><TrackHealthPanel dataset={active} onDrillDown={handleHealthDrillDown} onDropOutliers={dropHealthOutliers} /><TrackMetricsPanel dataset={active} /><StatsPanel dataset={active} bookmarks={bookmarks} onBookmarksChange={(next) => { setBookmarks(next); setProjectDirty(true) }} /></div>}
-            {tab === 'map' && <MapView points={active?.points ?? []} channels={active?.channels ?? []} workspace={workspace.map} onWorkspaceChange={(map) => { setWorkspace((current) => ({ ...current, map })); setProjectDirty(true) }} otherTracks={otherTracks} overlayState={workspace.mapOverlays} onOverlayStateChange={onMapOverlayStateChange} onImportOverlayAsTrack={onImportOverlayAsTrack} browserOverlayFiles={browserOverlayFiles} onBrowserOverlayFile={onBrowserOverlayFile} jumpRequested={pendingJump === 'map'} onJumpHandled={clearPendingJump} />}
-            {tab === 'charts' && active && <div className="charts-workspace"><TimeSeriesChart points={active.points} channels={active.channels} jumpRequested={pendingJump === 'charts'} onJumpHandled={clearPendingJump} onDeletePoints={deletePoints} /><PointInspectorPanel dataset={active} onEditPoint={editPoint} /></div>}
-            {tab === 'table' && active && <DataTable points={active.points} channels={active.channels} onDeletePoints={deletePoints} />}
-            {tab === 'points' && active && <PointVisualizerPanel dataset={active} />}
-            {tab === 'compare' && <ComparisonPanel datasets={datasets} activeId={activeId} workspace={workspace.comparison} onWorkspaceChange={(comparison) => { setWorkspace((current) => ({ ...current, comparison })); setProjectDirty(true) }} onSelectReferenceSample={(datasetId, pointIndex) => { const reference = datasets.find((dataset) => dataset.id === datasetId); if (!reference) return; restorePointSelection(reference.points, pointIndex, null); setActiveId(datasetId) }} />}
-            {tab === 'scene3d' && active && <Trajectory3dPanel dataset={active} datasets={datasets} workspace={workspace.scene3d} onWorkspaceChange={(scene3d) => { setWorkspace((current) => ({ ...current, scene3d })); setProjectDirty(true) }} />}
-            {tab === 'transform' && active && <div className="transform-workspace"><TransformPanel dataset={active} onApply={applyTransform} onUndo={undo} onRedo={redo} canUndo={!!history && history.past.length > 0} canRedo={!!history && history.future.length > 0} operationHistory={operationRecords[active.id] ?? []} replaySource={history?.past[0]} namedRecipes={namedRecipes[active.id] ?? []} onSaveRecipe={(recipe) => { setNamedRecipes((current) => ({ ...current, [active.id]: [...(current[active.id] ?? []), recipe] })); setProjectDirty(true) }} onDeleteRecipe={(recipeId) => { setNamedRecipes((current) => ({ ...current, [active.id]: (current[active.id] ?? []).filter((recipe) => recipe.id !== recipeId) })); setProjectDirty(true) }} onReplay={applyReplay} onRestoreOriginal={restoreOriginal} onNotify={flashToast} previewRepairs={previewRepairs} onPreviewRepairsChange={setPreviewRepairs} /><NotionalSmoothingPanel dataset={active} onCreateDataset={addDataset} /></div>}
-            {tab === 'project' && <ProjectPanel datasets={datasets} histories={histories} activeId={activeId} activeTab={workspace.lastWorkspaceTab} workspace={workspace} datasetDisplay={syncedDisplay} bookmarks={bookmarks} operationRecords={operationRecords} namedRecipes={namedRecipes} fusionArtifacts={fusionArtifacts} projectName={projectName} projectNotes={projectNotes} projectDirty={projectDirty} onWorkspaceChange={(next) => { setWorkspace(next); setProjectDirty(true) }} onProjectNameChange={(name) => { setProjectName(name); setProjectDirty(true) }} onProjectNotesChange={(notes) => { setProjectNotes(notes); setProjectDirty(true) }} onProjectSaved={() => setProjectDirty(false)} onRestoreProject={restoreProject} />}
+            {/* Only Import is bundled eagerly (see the lazy() declarations above);
+                every other panel below suspends here on its first visit per session. */}
+            <Suspense fallback={<div className="tab-content-loading"><Spinner label="Loading…" /></div>}>
+              {tab === 'import' && <ImportView dragActive={dragActive} setDragActive={setDragActive} onFiles={onFiles} openPicker={() => fileInputRef.current?.click()} />}
+              {tab === 'mapping' && pendingCsv && <MappingPanel analysis={pendingCsv.analysis} mapping={pendingCsv.mapping} onChange={(mapping) => setPendingCsv((current) => current ? { ...current, mapping } : current)} additionalHeaders={pendingCsv.additionalHeaders} onToggleAdditionalHeaders={(additionalHeaders) => setPendingCsv((current) => current ? { ...current, additionalHeaders } : current)} dataStartRow={pendingCsv.dataStartRow} onDataStartRowChange={(dataStartRow) => setPendingCsv((current) => current ? { ...current, dataStartRow } : current)} onBuild={onBuildCsv} building={building} />}
+              {tab === 'overview' && active && <div className="overview-panels"><TrackHealthPanel dataset={active} onDrillDown={handleHealthDrillDown} onDropOutliers={dropHealthOutliers} /><TrackMetricsPanel dataset={active} /><StatsPanel dataset={active} bookmarks={bookmarks} onBookmarksChange={(next) => { setBookmarks(next); setProjectDirty(true) }} /></div>}
+              {tab === 'map' && <MapView points={active?.points ?? []} channels={active?.channels ?? []} workspace={workspace.map} onWorkspaceChange={(map) => { setWorkspace((current) => ({ ...current, map })); setProjectDirty(true) }} otherTracks={otherTracks} overlayState={workspace.mapOverlays} onOverlayStateChange={onMapOverlayStateChange} onImportOverlayAsTrack={onImportOverlayAsTrack} browserOverlayFiles={browserOverlayFiles} onBrowserOverlayFile={onBrowserOverlayFile} jumpRequested={pendingJump === 'map'} onJumpHandled={clearPendingJump} />}
+              {tab === 'charts' && active && <div className="charts-workspace"><TimeSeriesChart points={active.points} channels={active.channels} jumpRequested={pendingJump === 'charts'} onJumpHandled={clearPendingJump} onDeletePoints={deletePoints} /><PointInspectorPanel dataset={active} onEditPoint={editPoint} /></div>}
+              {tab === 'table' && active && <DataTable points={active.points} channels={active.channels} onDeletePoints={deletePoints} />}
+              {tab === 'points' && active && <PointVisualizerPanel dataset={active} />}
+              {tab === 'compare' && <ComparisonPanel datasets={datasets} activeId={activeId} workspace={workspace.comparison} onWorkspaceChange={(comparison) => { setWorkspace((current) => ({ ...current, comparison })); setProjectDirty(true) }} onSelectReferenceSample={(datasetId, pointIndex) => { const reference = datasets.find((dataset) => dataset.id === datasetId); if (!reference) return; restorePointSelection(reference.points, pointIndex, null); setActiveId(datasetId) }} />}
+              {tab === 'scene3d' && active && <Trajectory3dPanel dataset={active} datasets={datasets} workspace={workspace.scene3d} onWorkspaceChange={(scene3d) => { setWorkspace((current) => ({ ...current, scene3d })); setProjectDirty(true) }} />}
+              {tab === 'transform' && active && <div className="transform-workspace"><TransformPanel dataset={active} onApply={applyTransform} onUndo={undo} onRedo={redo} canUndo={!!history && history.past.length > 0} canRedo={!!history && history.future.length > 0} operationHistory={operationRecords[active.id] ?? []} replaySource={history?.past[0]} namedRecipes={namedRecipes[active.id] ?? []} onSaveRecipe={(recipe) => { setNamedRecipes((current) => ({ ...current, [active.id]: [...(current[active.id] ?? []), recipe] })); setProjectDirty(true) }} onDeleteRecipe={(recipeId) => { setNamedRecipes((current) => ({ ...current, [active.id]: (current[active.id] ?? []).filter((recipe) => recipe.id !== recipeId) })); setProjectDirty(true) }} onReplay={applyReplay} onRestoreOriginal={restoreOriginal} onNotify={flashToast} previewRepairs={previewRepairs} onPreviewRepairsChange={setPreviewRepairs} /><NotionalSmoothingPanel dataset={active} onCreateDataset={addDataset} /></div>}
+              {tab === 'project' && <ProjectPanel datasets={datasets} histories={histories} activeId={activeId} activeTab={workspace.lastWorkspaceTab} workspace={workspace} datasetDisplay={syncedDisplay} bookmarks={bookmarks} operationRecords={operationRecords} namedRecipes={namedRecipes} fusionArtifacts={fusionArtifacts} projectName={projectName} projectNotes={projectNotes} projectDirty={projectDirty} onWorkspaceChange={(next) => { setWorkspace(next); setProjectDirty(true) }} onProjectNameChange={(name) => { setProjectName(name); setProjectDirty(true) }} onProjectNotesChange={(notes) => { setProjectNotes(notes); setProjectDirty(true) }} onProjectSaved={() => setProjectDirty(false)} onRestoreProject={restoreProject} />}
 
-            {tab === 'export' && active && <ExportPanel dataset={active} />}
-            {tab === 'settings' && <SettingsPanel />}
-            {tab === 'sources' && <SourcesPanel datasets={datasets} activeId={activeId} display={syncedDisplay} onDisplayChange={(next) => { setDatasetDisplay(next); setProjectDirty(true) }} onSelectActive={setActiveId} />}
-            {tab === 'fusion' && <FusionPanel datasets={datasets} fusionArtifacts={fusionArtifacts} onCreateDataset={(dataset, artifact) => { addDataset(dataset); setFusionArtifacts((current) => [...current, artifact]); setProjectDirty(true); setTab('fusion') }} />}
+              {tab === 'export' && active && <ExportPanel dataset={active} />}
+              {tab === 'settings' && <SettingsPanel />}
+              {tab === 'sources' && <SourcesPanel datasets={datasets} activeId={activeId} display={syncedDisplay} onDisplayChange={(next) => { setDatasetDisplay(next); setProjectDirty(true) }} onSelectActive={setActiveId} />}
+              {tab === 'fusion' && <FusionPanel datasets={datasets} fusionArtifacts={fusionArtifacts} onCreateDataset={(dataset, artifact) => { addDataset(dataset); setFusionArtifacts((current) => [...current, artifact]); setProjectDirty(true); setTab('fusion') }} />}
+            </Suspense>
           </section>
         </main>
       </div>

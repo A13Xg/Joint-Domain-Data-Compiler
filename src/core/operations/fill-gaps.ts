@@ -15,14 +15,13 @@
 // `interpolated` in its provenance so nothing downstream mistakes it for a
 // measurement.
 
-import { clonePoint, collectChannels, haversineMeters, type TrackPoint } from '../model'
+import { clonePoint, type TrackPoint } from '../model'
 import type { OperationDefinition, OperationExecutionResult } from '../recipes/model'
 import { withPoints } from '../transforms'
-import { initialBearingDegrees, isAngularChannel, shortestAngleDelta, unwrapDegrees, unwrapLongitudes, wrapDegrees, wrapLongitude } from './angular'
-import { evaluateMonotoneCubic, fitMonotoneCubic } from './monotone-interpolation'
-import { MOTION_PROFILES, MOTION_PROFILE_IDS, type MotionProfile, type MotionProfileId } from './motionProfiles'
+import { MOTION_PROFILES, MOTION_PROFILE_IDS, type MotionProfileId } from './motionProfiles'
 import { requireGreaterThan, requireInteger, requireOneOf, requireRecord, rejectUnknownKeys } from './params'
 import { rejectScope } from './scope'
+import { angularChannelsOf, collectRealNeighbors, firstProfileViolation, fitChannelsAtTimes, reconstructionKnots, type TimedPoint } from './trackReconstruction'
 
 const MAX_INSERTED_POINTS = 1_000_000
 
@@ -35,8 +34,6 @@ export interface FillGapsParams {
   contextPoints: number
   profile: MotionProfileId
 }
-
-interface TimedPoint extends TrackPoint { time: number }
 
 export const fillGapsOperation: OperationDefinition<FillGapsParams> = {
   id: 'fill-gaps',
@@ -69,9 +66,7 @@ export const fillGapsOperation: OperationDefinition<FillGapsParams> = {
       throw new Error(`Filling these gaps would insert about ${estimated.toLocaleString()} points, over the ${MAX_INSERTED_POINTS.toLocaleString()} limit. Raise the sample interval or the gap threshold.`)
     }
 
-    const angularChannels = new Set(
-      collectChannels(points).filter((channel) => isAngularChannel(channel, dataset.metadata?.channels)),
-    )
+    const angularChannels = angularChannelsOf(points, dataset.metadata?.channels)
 
     const output: TrackPoint[] = []
     const warnings: string[] = []
@@ -84,7 +79,7 @@ export const fillGapsOperation: OperationDefinition<FillGapsParams> = {
 
       const left = points[index]!
       const right = points[index + 1]!
-      const knots = contextWindow(points, index, params.contextPoints)
+      const knots = reconstructionKnots(contextWindow(points, index, params.contextPoints, left, right), left, right, profile)
       const candidates = interpolateGap(knots, left, right, params.sampleIntervalMs, angularChannels)
       if (candidates.length === 0) continue
 
@@ -111,16 +106,22 @@ export const fillGapsOperation: OperationDefinition<FillGapsParams> = {
 }
 
 /**
- * Real points either side of the gap, used as spline knots.
+ * Real points either side of the gap, used as spline knots: the gap's own
+ * two endpoints (`left`/`right`, always included — a prior fill-gaps run can
+ * leave one of them synthetic, but it is still the real boundary of *this*
+ * gap and stays the anchor `firstProfileViolation` checks the join against)
+ * plus up to `contextPoints - 1` further real points walking outward from
+ * each, skipping anything already synthesized so this fit is never built on
+ * top of another fit's own small error.
  *
  * Using neighbours rather than only the two gap endpoints is what gives the
  * fill a trajectory-matching tangent: with two knots `fitMonotoneCubic`
  * degenerates to the straight secant between them.
  */
-function contextWindow(points: readonly TimedPoint[], gapIndex: number, contextPoints: number): TimedPoint[] {
-  const start = Math.max(0, gapIndex - contextPoints + 1)
-  const end = Math.min(points.length, gapIndex + 1 + contextPoints)
-  return points.slice(start, end)
+function contextWindow(points: readonly TimedPoint[], gapIndex: number, contextPoints: number, left: TimedPoint, right: TimedPoint): TimedPoint[] {
+  const backward = collectRealNeighbors(points, gapIndex - 1, -1, contextPoints - 1)
+  const forward = collectRealNeighbors(points, gapIndex + 2, 1, contextPoints - 1)
+  return [...backward, left, right, ...forward]
 }
 
 function interpolateGap(
@@ -130,98 +131,10 @@ function interpolateGap(
   sampleIntervalMs: number,
   angularChannels: ReadonlySet<string>,
 ): TrackPoint[] {
-  const times = knots.map((point) => point.time)
   const queryTimes: number[] = []
   for (let time = left.time + sampleIntervalMs; time < right.time; time += sampleIntervalMs) queryTimes.push(time)
   if (queryTimes.length === 0) return []
-
-  const latSpline = fitMonotoneCubic(times, knots.map((point) => point.lat))
-  const lonSpline = fitMonotoneCubic(times, unwrapLongitudes(knots.map((point) => point.lon)))
-  // Elevation is only interpolated when every knot carries one. A gap bounded
-  // by a point with no elevation has nothing to interpolate between, and
-  // inventing one would be fabrication.
-  const eleSpline = knots.every((point) => point.ele !== undefined)
-    ? fitMonotoneCubic(times, knots.map((point) => point.ele!))
-    : null
-
-  // Same rule for channels: interpolate only those numeric on every knot.
-  // Non-numeric channels are left off the inserted points rather than carried
-  // from a neighbour, which would assert a reading that was never taken.
-  const numericChannels = collectChannels(knots).filter((channel) => knots.every((point) => typeof point.ext?.[channel] === 'number'))
-  const channelSplines = new Map(numericChannels.map((channel) => {
-    const values = knots.map((point) => point.ext![channel] as number)
-    return [channel, fitMonotoneCubic(times, angularChannels.has(channel) ? unwrapDegrees(values) : values)]
-  }))
-
-  return queryTimes.map((time) => {
-    const ext: Record<string, number | string | boolean> = {}
-    for (const [channel, spline] of channelSplines) {
-      const value = evaluateMonotoneCubic(spline, time)
-      ext[channel] = angularChannels.has(channel) ? wrapDegrees(value) : value
-    }
-    return {
-      lat: evaluateMonotoneCubic(latSpline, time),
-      lon: wrapLongitude(evaluateMonotoneCubic(lonSpline, time)),
-      ele: eleSpline ? evaluateMonotoneCubic(eleSpline, time) : undefined,
-      time,
-      ext: numericChannels.length > 0 ? ext : undefined,
-      provenance: { qualityFlags: ['interpolated'] },
-    }
-  })
-}
-
-/**
- * Describes the first profile limit the sequence breaks, or null if it holds.
- *
- * The two real endpoints are included so the joins into and out of the fill
- * are checked, not just the synthetic interior — a fill can be internally
- * smooth and still require an impossible jump to meet the real track.
- */
-function firstProfileViolation(sequence: readonly TrackPoint[], profile: MotionProfile): string | null {
-  let previousSpeed: number | undefined
-  let previousBearing: number | undefined
-
-  for (let index = 1; index < sequence.length; index++) {
-    const from = sequence[index - 1]!
-    const to = sequence[index]!
-    const dt = (to.time! - from.time!) / 1000
-    if (dt <= 0) continue
-
-    const distance = haversineMeters(from.lat, from.lon, to.lat, to.lon)
-    const speed = distance / dt
-    if (speed > profile.maxGroundSpeedMps) {
-      return `implied ground speed ${speed.toFixed(1)} m/s exceeds the profile limit of ${profile.maxGroundSpeedMps} m/s`
-    }
-
-    if (from.ele !== undefined && to.ele !== undefined) {
-      const verticalSpeed = Math.abs(to.ele - from.ele) / dt
-      if (verticalSpeed > profile.maxVerticalSpeedMps) {
-        return `implied vertical speed ${verticalSpeed.toFixed(1)} m/s exceeds the profile limit of ${profile.maxVerticalSpeedMps} m/s`
-      }
-    }
-
-    if (previousSpeed !== undefined) {
-      const accel = Math.abs(speed - previousSpeed) / dt
-      if (accel > profile.maxHorizontalAccelMps2) {
-        return `implied acceleration ${accel.toFixed(1)} m/s² exceeds the profile limit of ${profile.maxHorizontalAccelMps2} m/s²`
-      }
-    }
-    previousSpeed = speed
-
-    // A bearing between two coincident points is meaningless, so a stationary
-    // segment contributes no turn rate rather than a spurious one.
-    if (distance === 0) { previousBearing = undefined; continue }
-    const heading = initialBearingDegrees(from.lat, from.lon, to.lat, to.lon)
-    if (previousBearing !== undefined) {
-      const turnRate = Math.abs(shortestAngleDelta(previousBearing, heading)) / dt
-      if (turnRate > profile.maxTurnRateDps) {
-        return `implied turn rate ${turnRate.toFixed(1)}°/s exceeds the profile limit of ${profile.maxTurnRateDps}°/s`
-      }
-    }
-    previousBearing = heading
-  }
-
-  return null
+  return fitChannelsAtTimes(knots, queryTimes, angularChannels)
 }
 
 /**

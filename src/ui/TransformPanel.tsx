@@ -5,6 +5,7 @@ import type { ElevationFilterMode } from '../core/operations/filters'
 import type { ReducePointsMode } from '../core/operations/reduce'
 import type { OutlierChannel } from '../core/quality/outliers'
 import { MOTION_PROFILES, MOTION_PROFILE_IDS, type MotionProfileId } from '../core/operations/motionProfiles'
+import { useAppSettings } from '../state/settings'
 
 import { fixedRateResampleOperation, type InterpolationMode, type ResampleParams } from '../core/operations/resample'
 import { computeOperationPreview, describeOperationPreview } from '../core/recipes/preview'
@@ -69,6 +70,10 @@ interface PendingRepair {
 interface RunOptions { scoped?: boolean; preserveSelection?: boolean }
 
 export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canRedo, operationHistory, replaySource, namedRecipes, onSaveRecipe, onDeleteRecipe, onReplay, onRestoreOriginal, onNotify, previewRepairs, onPreviewRepairsChange }: Props) {
+  // Read once at mount for the two motion-profile pickers' initial value —
+  // a later change in Settings should not yank an in-progress selection out
+  // from under the user, only set what a fresh mount starts on.
+  const { defaultMotionProfile } = useAppSettings()
   const [reduceMode, setReduceMode] = useState<ReducePointsMode>('dedupe')
   const [dedupeTol, setDedupeTol] = useState(0)
   const [decimateFactor, setDecimateFactor] = useState(2)
@@ -91,6 +96,9 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
   const [outlierChannels, setOutlierChannels] = useState<OutlierChannel[]>(['position', 'elevation', 'speed'])
   const [outlierWindow, setOutlierWindow] = useState(5)
   const [outlierSigma, setOutlierSigma] = useState(3)
+  const [outlierReconstruct, setOutlierReconstruct] = useState(true)
+  const [outlierProfile, setOutlierProfile] = useState<MotionProfileId>(defaultMotionProfile)
+  const [outlierContextPoints, setOutlierContextPoints] = useState(4)
   const [replayError, setReplayError] = useState<string | null>(null)
   const [recipeName, setRecipeName] = useState('')
   const [loadedRecipeId, setLoadedRecipeId] = useState<string | null>(null)
@@ -105,7 +113,7 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
   const [gapThresholdSeconds, setGapThresholdSeconds] = useState(5)
   const [gapSampleSeconds, setGapSampleSeconds] = useState(1)
   const [gapContextPoints, setGapContextPoints] = useState(4)
-  const [motionProfile, setMotionProfile] = useState<MotionProfileId>('unconstrained')
+  const [motionProfile, setMotionProfile] = useState<MotionProfileId>(defaultMotionProfile)
   const [clipStart, setClipStart] = useState('')
   const [clipEnd, setClipEnd] = useState('')
   const [untimedPolicy, setUntimedPolicy] = useState<UntimedPointPolicy>('keep')
@@ -338,6 +346,11 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
   // block Apply (with a visible reason, not a silent log line) whenever
   // scoping to a selection makes the current policy unusable.
   const dejitterPolicyLocked = scoped && dejitterPolicy !== 'nudge'
+  // Reconstruction fits a spline parameterised by time, so every point needs
+  // one — same requirement Fill gaps already has. Force it off rather than
+  // let a stale checked box from a previously-timed dataset throw on Apply.
+  const canReconstruct = points.every((point) => point.time !== undefined)
+  const outlierWillReconstruct = outlierReconstruct && canReconstruct
   const clipWindowLabel = timeRange
     ? `selected window ${epochMsToIso(timeRange.startMs)} → ${epochMsToIso(timeRange.endMs)}`
     : timeBounds
@@ -383,7 +396,7 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
       </OpGroup>
 
       <OpGroup title="Outliers & smoothing" desc="Reject or attenuate samples that disagree with their neighbours.">
-        <Op title="Drop outliers" desc="Remove points that break their local trend in position, elevation, or ground speed, scored by robust MAD z-score. Uses the same detector as the Track Health scan. Supports selected-range scope (detection always uses the full track, so a boundary cannot change a point's score).">
+        <Op title="Drop outliers" desc="Find points that break their local trend in position, elevation, or ground speed, scored by robust MAD z-score. Uses the same detector as the Track Health scan, widened so a legitimate sustained turn at the profile's rate is not flagged. By default flagged points are reconstructed in place from their surviving neighbours — same engine as Fill gaps, gated on the profile — rather than removed. Supports selected-range scope (detection always uses the full track, so a boundary cannot change a point's score).">
           <div className="op-inline">
             {(['position', 'elevation', 'speed'] as OutlierChannel[]).map((channel) => (
               <label className="chk" key={channel}><input type="checkbox" checked={outlierChannels.includes(channel)} onChange={(event) => toggleOutlierChannel(channel, event.target.checked)} /> {channel}</label>
@@ -391,9 +404,17 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
           </div>
           <NumField label="window" value={outlierWindow} onChange={setOutlierWindow} min={1} step={1} />
           <NumField label="σ threshold" value={outlierSigma} onChange={setOutlierSigma} min={0.1} step={0.5} />
+          <label className="num-field"><span>motion profile</span><select value={outlierProfile} onChange={(event) => setOutlierProfile(event.target.value as MotionProfileId)}>{MOTION_PROFILE_IDS.map((id) => <option key={id} value={id}>{MOTION_PROFILES[id].label}</option>)}</select></label>
+          <p className="muted small">{MOTION_PROFILES[outlierProfile].description}</p>
+          <label className="chk" title={canReconstruct ? 'Refit flagged points from their surviving neighbours instead of deleting them' : 'Needs every point timed to fit a time-parameterised spline — this track has untimed points, so flagged points will be removed instead'}>
+            <input type="checkbox" checked={outlierReconstruct} disabled={!canReconstruct} onChange={(event) => setOutlierReconstruct(event.target.checked)} /> reconstruct instead of removing
+          </label>
+          {!canReconstruct && <p className="muted small">Some points have no timestamp, so reconstruction is unavailable — Apply will remove flagged points instead.</p>}
+          {outlierWillReconstruct && <NumField label="context points" value={outlierContextPoints} onChange={setOutlierContextPoints} min={2} step={1} />}
           <button type="button" disabled={outlierChannels.length === 0} onClick={() => void runReplayable('drop-outliers', {
             channels: outlierChannels, windowSize: outlierWindow, scoreThreshold: outlierSigma,
             minPositionScaleMeters: 1, minElevationScaleMeters: 1, minSpeedScaleMps: 0.5,
+            profile: outlierProfile, reconstruct: outlierWillReconstruct, contextPoints: outlierContextPoints,
           }, { scoped, preserveSelection: false })}>Apply{suffix}</button>
         </Op>
         <Op title="Elevation filter" desc="Filter the elevation channel without changing the point count. Median is phase-neutral and spike-proof; EMA is causal and lags; Hampel only rewrites points it judges anomalous. Supports selected-range scope.">

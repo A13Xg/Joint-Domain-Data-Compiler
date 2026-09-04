@@ -1,9 +1,11 @@
 import type { TrackPoint } from '../src/core/model.ts'
 import {
   BUILT_IN_CHART_PRESETS,
+  channelIdFromXAxis,
   computeXDomain,
   extractChartSeries,
   minMaxDownsample,
+  numericChannelValue,
   resolvePresetChannels,
 } from '../src/visualization/charts/series.ts'
 
@@ -78,6 +80,31 @@ check('Small series is returned intact', minMaxDownsample(original, 10).length =
 const speedPreset = BUILT_IN_CHART_PRESETS.find((preset) => preset.id === 'speed-time')!
 check('Speed preset resolves preferred available channel', resolvePresetChannels(speedPreset, ['speed_mps']).join(',') === 'speed_mps')
 check('Unavailable preset channels resolve empty', resolvePresetChannels(speedPreset, []).length === 0)
+
+// --- channel-vs-channel x-axis: X = another numeric channel's own value ----
+check('channelIdFromXAxis extracts the id from a channel: axis', channelIdFromXAxis('channel:ground_speed_mps') === 'ground_speed_mps')
+check('channelIdFromXAxis returns null for the fixed axis kinds', channelIdFromXAxis('time') === null && channelIdFromXAxis('index') === null && channelIdFromXAxis('distance') === null)
+
+const channelAxis = extractChartSeries(points, 'elevation', 'channel:ground_speed_mps', 1000)
+check('a channel x-axis pairs each point\'s own (x-channel, y-channel) values', channelAxis.samples.every((sample) => {
+  const point = points[sample.sourceIndex]!
+  return sample.x === numericChannelValue(point, 'ground_speed_mps') && sample.y === point.ele
+}))
+check('a channel x-axis produces one sample per point when unwindowed and under budget', channelAxis.samples.length === points.length)
+
+const channelDomain = computeXDomain(points, 'channel:ground_speed_mps')
+check('computeXDomain over a channel axis spans that channel\'s own min/max', channelDomain?.lo === 0 && channelDomain?.hi === 99.9)
+
+// A point missing the x-channel (but present in the y-channel) is skipped
+// entirely, the same way a point missing time/distance already is — not
+// plotted at a fabricated x of 0.
+const withGaps: TrackPoint[] = [
+  { lat: 0, lon: 0, ele: 10, ext: { ground_speed_mps: 1 } },
+  { lat: 0, lon: 0, ele: 20 }, // no ground_speed_mps at all
+  { lat: 0, lon: 0, ele: 30, ext: { ground_speed_mps: 3 } },
+]
+const withGapsSeries = extractChartSeries(withGaps, 'elevation', 'channel:ground_speed_mps', 100)
+check('a point missing the x-channel value is skipped, not plotted at x=0', withGapsSeries.samples.length === 2 && withGapsSeries.samples.every((sample) => sample.sourceIndex !== 1))
 
 let invalidBudgetRejected = false
 try {

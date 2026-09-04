@@ -100,14 +100,28 @@ console.log('empty and degenerate inputs')
 console.log('against real repair operations')
 {
   const withOutlier = base.map((point, index) => (index === 18 ? { ...point, lat: point.lat + 0.5 } : point))
-  const execution = executeOperation(dataset(withOutlier), 'drop-outliers', {
+  const dropped = executeOperation(dataset(withOutlier), 'drop-outliers', {
     channels: ['position'], windowSize: 5, scoreThreshold: 3,
     minPositionScaleMeters: 1, minElevationScaleMeters: 1, minSpeedScaleMps: 0.5,
+    profile: 'aircraft', reconstruct: false, contextPoints: 4,
   })
-  const diff = computeTrackDiff(withOutlier, execution.dataset.points)
-  check('drop-outliers is matched as a subsequence', diff.alignment === 'subsequence')
-  check('it reports the points it removed', diff.counts.removed > 0 && diff.counts.added === 0, `${diff.counts.removed} removed`)
-  check('drop-outliers gets a graphical view', hasVisualizableChange(diff))
+  const droppedDiff = computeTrackDiff(withOutlier, dropped.dataset.points)
+  check('drop-outliers(reconstruct: false) is matched as a subsequence', droppedDiff.alignment === 'subsequence')
+  check('it reports the points it removed', droppedDiff.counts.removed > 0 && droppedDiff.counts.added === 0, `${droppedDiff.counts.removed} removed`)
+  check('drop-outliers(reconstruct: false) gets a graphical view', hasVisualizableChange(droppedDiff))
+
+  // The default: reconstructing in place keeps the point count equal, so the
+  // diff takes the index-aligned path with clean per-point shift magnitudes
+  // rather than falling back to subsequence matching.
+  const repaired = executeOperation(dataset(withOutlier), 'drop-outliers', {
+    channels: ['position'], windowSize: 5, scoreThreshold: 3,
+    minPositionScaleMeters: 1, minElevationScaleMeters: 1, minSpeedScaleMps: 0.5,
+    profile: 'aircraft', reconstruct: true, contextPoints: 4,
+  })
+  const repairedDiff = computeTrackDiff(withOutlier, repaired.dataset.points)
+  check('drop-outliers(reconstruct: true) keeps the point count and aligns by index', repairedDiff.alignment === 'index')
+  check('it reports the repaired point as modified, not removed', repairedDiff.counts.modified > 0 && repairedDiff.counts.removed === 0)
+  check('drop-outliers(reconstruct: true) gets a graphical view', hasVisualizableChange(repairedDiff))
 
   const kinematics = executeOperation(dataset(base), 'standard-kinematics', {})
   const derived = computeTrackDiff(base, kinematics.dataset.points)

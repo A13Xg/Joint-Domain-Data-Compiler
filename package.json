@@ -1,7 +1,7 @@
 {
   "name": "joint-domain-data-compiler",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Local-first trajectory and TSPI workbench for importing, analyzing, transforming, comparing, visualizing, saving, and exporting track data.",
   "desktopName": "JointDomainDataCompiler",
   "author": {

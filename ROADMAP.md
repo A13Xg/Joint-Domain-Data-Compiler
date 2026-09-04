@@ -1,223 +1,285 @@
 # JDDC Roadmap
 
-This document outlines the planned development direction for Joint Domain Data Compiler. Features are organized by phase and priority.
+This document outlines the planned development direction for Joint Domain Data Compiler. Features
+are organized by phase and priority. This is a full rewrite: nothing unfinished from the previous
+version was dropped — every open item below either shipped this session (marked `[x]`, with what
+changed) or was carried forward (marked `[ ]`, with its original reasoning preserved plus any new
+scoping found while surveying the codebase). ~20 items are genuinely new, found by an explicit
+audit of parsers, exporters, accessibility, settings, tests, desktop integration, and data-quality
+checks; the rest are carryover, which is why the total list is longer than that — nothing was
+trimmed to hit a number.
 
-**Current Release:** v0.2.0 (in development)  
-**Latest Stable:** v0.1.1
+**Current Release:** v0.3.0 (in development)
+**Latest Stable:** v0.2.0
+
+---
+
+## Shipped in 0.3.0
+
+- [x] **Y-axis zoom and pan** — the last open item of the "editable graph view" build order (see
+  Phase 1 below), which is now fully shipped. Ctrl/⌘+wheel zooms the Y axis, cursor-anchored the
+  same way X already was; ctrl/⌘+shift+wheel pans it. Because `TimeSeriesChart` auto-scales each
+  series independently (they can be in unrelated units — elevation in metres beside a turn rate in
+  °/s), there is no single Y *value* domain to zoom against. `yZoomDomain` is instead a shared
+  `{0,1}` *fraction* of each series' own span, reusing `zoom.ts`'s existing `zoomDomain`/`panDomain`
+  unchanged (bounds `{0,1}` instead of the data's own bounds — no new pure-math needed, and the
+  existing generic `chart-zoom.ts` tests already cover that math for arbitrary bounds). Axis
+  min/max labels now read off the zoomed slice, not the full extent, matching how the X labels
+  already behave. Y-zoom (unlike X) doesn't filter the underlying series data before rendering, so
+  a zoomed line/point can compute outside the plot rect; added an SVG `clipPath` around the
+  line/point geometry to keep it inside the grid instead of bleeding into the axis margins — visible
+  proof the feature does something, caught by looking at the actual rendered output, not just
+  `tsc`. "Reset zoom" now clears both axes.
+- [x] **Per-chart-type rendering fork (partial)** — closes the *known limitation* below for two of
+  the three chart types: **Area** now closes the line down to the plot baseline and fills it
+  (`fillOpacity: 0.18`); **Scatter** now draws no connecting line at all (points only), matching
+  what "scatter" should mean instead of silently rendering as a line chart with a different label.
+  A genuine channel-vs-channel scatter (X = another selected channel, not time/index/distance)
+  shipped in the same session, right below. Verified two ways: a new jsdom integration check
+  (`test/time-series-chart-integration.tsx`) asserts `.chart-line` is literally absent for scatter
+  and a `fill-opacity` path is present for area — not just that `.chart-svg` exists — and a live
+  Playwright pass confirmed the same visually.
+- [x] **Outlier detection: turn-aware floor** — a legitimate sustained turn was scoring as 100% of
+  points flagged (residual is large but nearly constant across a turn, so MAD reads it as ~0 local
+  scatter). `estimateTurnPositionFloorMeters` (quality/outliers.ts) widens the floor by simulating
+  a synthetic arc at the profile's turn-rate ceiling and the track's own fastest observed speed and
+  cadence, run through the detector's own window-median math — not a closed-form guess. Verified: a
+  30°/s max-rate turn with no injected fault now flags zero points (was 100% before).
+- [x] **Drop outliers: reconstruct in place** — flagged points are now refit from surviving
+  neighbours through the same plausibility-gated engine Fill gaps uses, instead of deleted and
+  left as a hole (the mechanism behind "if you drop them, a new set of incorrect points is
+  detected"). `reconstructionKnots`/`fitChannelsAtTimes`/`firstProfileViolation`/
+  `collectRealNeighbors` now live in a shared `trackReconstruction.ts`, used by both `fill-gaps`
+  and `drop-outliers` — points already marked `interpolated` are skipped as *scoring* candidates
+  (`isSynthesized`, quality/outliers.ts) and walked past as *fit knots* in both operations, so a
+  repeated Apply doesn't compound its own small fit error into a new flag next to the one it just
+  fixed. Domain presets (Aircraft/Ground vehicle/Marine/None (vector-only)) shared between Drop
+  outliers and Fill gaps; Aircraft is now the default for both (was Unconstrained). `reconstruct:
+  false` still gives plain deletion. Falls back to deletion gracefully (not a thrown error) when a
+  track has any untimed point, both in the Transform tab (checkbox disabled with a tooltip) and
+  Track Health's remediation button (caption updates to say so).
+- [x] **Chart drag-select no longer highlights axis text** — needed both `user-select: none` on
+  `.chart-svg` (stops selection *starting* inside the chart) and `event.preventDefault()` on
+  `onMouseDown` (stops a drag that starts there from selecting text it passes over) — CSS alone
+  was not sufficient.
+- [x] **Persist the default motion profile** — `AppSettings.defaultMotionProfile` (new field,
+  `state/settings.ts`), validated against `MOTION_PROFILE_IDS` with a normalize-and-clamp fallback
+  like the existing numeric budgets; `TransformPanel`'s `outlierProfile`/`motionProfile` state now
+  initialize from it instead of a hardcoded `'aircraft'`. New "Transform defaults" group in
+  `SettingsPanel.tsx`. Verified live: changed to Marine in Settings, reloaded the page, and the
+  Transform tab's two motion-profile selects both opened already set to Marine.
+- [x] **Map container `aria-label`** — `.map-canvas-wrap` now carries `role="region"` (not
+  `role="img"` — that would have flattened Leaflet's interactive children, hiding the zoom controls
+  and popups from assistive tech) and an `aria-label` naming the valid point count and any other
+  visible track layers. Verified live: label reads correctly and the Leaflet zoom-in control is
+  still present and reachable inside the labeled region.
+- [x] **`core/stats.ts` test coverage** — New `test/stats.ts`, 39 checks: point/coord/elevation/time
+  counts, elevation gain/loss/min/max, time monotonicity, duplicate-coordinate detection,
+  distance/speed/sample-rate derivation, per-channel stats (numeric-string coercion, mean/stddev,
+  unit inference), plus `formatDuration`/`formatDistance`.
+- [x] **`core/geoInterpolation.ts` test coverage** — New `test/geo-interpolation.ts`, 21 checks:
+  `lerp` (basic, extrapolation, degenerate `a === b`) and `lerpLon` (antimeridian-crossing
+  eastbound/westbound, non-crossing parity with plain `lerp`, always-wraps-to-`[-180,180]`).
+- [x] **Focused tests for `motionProfiles.ts` / `trackReconstruction.ts`** — New
+  `test/track-reconstruction.ts`, 32 checks: profile shape sanity, `reconstructionKnots`
+  (spline vs. linear knot windows), `collectRealNeighbors` (chronological order, boundary
+  clamping, skips already-synthesized points), `angularChannelsOf`, `fitChannelsAtTimes` (linear
+  fit, angular wrap-around, `interpolated` provenance flagging), and `firstProfileViolation`
+  (speed/vertical-speed/turn-rate ceiling violations, isolated from each other with
+  purpose-built geometry so a speed violation can't mask the turn-rate check under test).
+- [x] **NMEA VTG sentence support** — `core/parsers/nmea.ts` now parses VTG (course/speed over
+  ground) and rides its value onto the next GGA/GLL fix that has none of its own — a GGA+VTG
+  receiver with no RMC previously reported positions with no speed/heading channel at all. RMC's
+  own speed/heading is deliberately *not* propagated the same way: RMC already emits its own
+  point, so copying its reading onto a later GGA fix would attribute a measurement, at a different
+  timestamp, that fix never took. Only VTG (which never produces a point of its own) rides along.
+  Also added ZDA (date/time) support feeding the same `lastDate` RMC already contributes to, with
+  a shared range guard (`isPlausibleDate`: year ≥ 1980, month 1–12, day 1–31) so a malformed ZDA
+  can't silently fabricate a date that then times every later fix. New `test/nmea-vtg-zda.ts`, 23
+  checks, including one confirming the RMC-does-not-propagate boundary and two for the malformed-
+  date guard. GSA/GSV shipped in the same session, right below.
+- [x] **GPS fix-quality Track Health check** — New `gpsFixQualityCheck` in `trackHealthChecks.ts`,
+  shipped deliberately at `weight: 0` (informational only — never scores, never blocks). A
+  *weighted* check would have required rebalancing all five existing check weights to preserve the
+  "weighted checks sum to 100" invariant asserted by an existing test; that is a scoring-policy
+  decision with wide blast radius, not a side effect of adding a check, so it stays out of scope
+  here. Flags points with `hdop` above threshold (default 5) or `sat` below minimum (default 4),
+  reports `notApplicable` when a track carries neither field. 9 new checks added to
+  `test/track-health.ts`, including two hardcoded check-count assertions that had to be updated
+  (6→7 checks) — caught by running the full suite immediately after, not in a batch. Verified live:
+  loading an NMEA fixture with `hdop`/`sat` data shows a "GPS Fix Quality" row on the Overview tab.
+- [x] **NMEA GSA/GSV sentence support** — `core/parsers/nmea.ts` now parses GSA (PDOP/HDOP/VDOP +
+  active satellites) and GSV (satellites in view), riding both onto the next GGA/GLL fix the same
+  way VTG does. Two precedence/collision rules, both deliberate: (1) GSA's HDOP only fills in when
+  a fix's own HDOP field (GGA) is blank — the fix's own reading always wins, GSA is a fallback, not
+  an overwrite; PDOP/VDOP have no GGA equivalent so are unconditional additions. (2) GSV's
+  "satellites in view" is stored under a distinct channel key (`sat_in_view`), never `sat` — GGA's
+  `sat` is satellites *used in the fix solution*, a different count, and the existing GPS
+  fix-quality check (shipped earlier this session) reads `ext.sat` directly, so writing GSV's
+  larger in-view count to that same key would have silently defeated the check for any track
+  carrying both sentence types. All DOP fields are rejected unless finite and strictly positive
+  (`positiveNum`), so a malformed GSA can't enter `ext` as a plausible-looking but meaningless
+  reading. New `test/nmea-gsa-gsv.ts`, 18 checks, including one proving GGA's own HDOP beats GSA's
+  and one proving `sat`/`sat_in_view` never collide.
+- [x] **DataTable keyboard navigation + ARIA** — the Table tab's click/shift-click/ctrl-click
+  multi-select-and-delete workflow was mouse-only; it is now fully keyboard-operable. The grid is
+  virtualized (only on-screen rows exist in the DOM), which rules out per-row DOM focus — a
+  genuinely focused row would lose focus the instant it scrolled out and unmounted. Used the
+  `aria-activedescendant` pattern instead: the scroll container is the sole tab stop
+  (`role="grid"`, `tabIndex=0`), a `focusedIndex` state tracks the logically active row
+  independently of click-selection, and `aria-activedescendant` points at that row's `id` — moving
+  focus (Arrow/Home/End/PageUp/PageDown) imperatively scrolls the target row into the rendered
+  slice first, so the id it points at always resolves to a real DOM node. A `.kbd-focused` CSS
+  outline substitutes for the native focus ring a real `:focus` can't provide here. Enter/Space
+  activates the focused row through the exact same `activateRow` function the mouse `onClick`
+  handler calls (with the same Shift/Ctrl/⌘ modifier semantics) — one selection code path for both
+  input methods, not two that could drift apart. `aria-rowcount`/`aria-colcount`/`aria-rowindex`
+  reflect the filtered/sorted row count and each row's position in it, not raw DOM position, so a
+  screen reader announces correct row numbers under virtualization. Header cells gained
+  `role="columnheader"` and `aria-sort`. Verified live end-to-end on a synthetic 500-point track:
+  Arrow/Home/End/PageDown moved the focus ring correctly across virtualization boundaries (`End`
+  correctly scrolled to and focused row 499), and Enter / Ctrl+Enter / Shift+Enter correctly
+  produced a single selection, a multi-select toggle, and a range extension respectively — matching
+  the existing mouse-driven behavior exactly.
+- [x] **Real channel-vs-channel scatter** — `ChartXAxis` (`visualization/charts/series.ts`) gained a
+  fourth kind, `` `channel:${string}` ``, alongside the existing `time | index | distance` — X = any
+  numeric channel's own per-point value, not something derived from position. Deliberately gated to
+  `chartType === 'scatter'` only, both in the x-axis `<select>` (the channel options simply aren't
+  offered otherwise) and via a hard runtime fallback to `'index'` if the underlying `xAxis` state
+  somehow points at a channel while a non-scatter chart type is active — a polyline drawn through
+  non-monotonic channel values is a scribble, not a chart, and `extractChartSeries`'s existing
+  points-only scatter rendering was already the right shape for this, not new rendering work. The
+  fallback is non-mutating (same pattern already used for the hasTime/hasDistance fallbacks): switch
+  away from Scatter and a line/area chart renders safely off a fallback axis; switch back and the
+  previously-picked channel axis is restored, because the underlying `xAxis` state was only ever
+  shadowed, never overwritten. A point missing the chosen x-channel is skipped entirely (already
+  correct — the existing `y === null || x === null` guard needed no change once `xValue` could
+  return null for a channel), not plotted at a fabricated x of 0. `numericChannelValue` exported
+  from `series.ts` so the chart's own `pointX` helper (cursor/selection/range positioning) reuses
+  the exact same numeric-channel coercion as series extraction, rather than a second copy that could
+  drift. Verified three ways: new `test/chart-series.ts` checks (domain computation over a channel
+  axis, x/y pairing, the missing-value skip), a new `test/time-series-chart-integration.tsx`
+  scenario (channel option only appears on Scatter, selecting one updates the axis label, switching
+  away and back preserves/restores it), and a new live Playwright spec
+  (`test/e2e/channel-scatter.spec.ts`) driving the real browser end to end on derived-kinematics
+  data (elevation vs. ground_speed_mps).
+- [x] **e2e coverage for Settings** — One concrete slice of the "e2e coverage gaps" item below:
+  new `test/e2e/settings.spec.ts` covers what no unit test can (`state/settings.ts`'s own tests run
+  in Node, with no `window`/`localStorage`) — that the persisted default motion profile and point
+  budgets actually survive a real page reload, that the Transform tab's motion-profile pickers
+  actually pick up the persisted value on mount, and that "Reset to defaults" restores every field
+  including the motion profile. The rest of "e2e coverage gaps" (Track Health's repair flow, Point
+  Inspector, the 3D view, non-GPX export formats) remains open.
 
 ---
 
 ## Phase 1: Visualization & UI Polish (Current)
 
 ### Visualization Enhancements
-- [x] **Settings page** — Modular, expandable settings scaffolding: browser storage on the web
-  build, a local config file on desktop. Must take new settings without restructuring.
-  `state/settings.ts` is a new, app-scoped store (module-singleton + `useSyncExternalStore`, same
-  shape as `state/pointSelection.ts`) — deliberately *not* part of `WorkspaceState`, which is
-  project-scoped and travels inside a saved `.jddc` file; a setting should mean the same thing
-  regardless of which project is open. Correction to this item's "local config file on desktop"
-  half: Electron's renderer process already has a disk-backed `localStorage` that survives
-  relaunches, so both builds use that one mechanism rather than adding a second, file-based store
-  behind a new IPC channel for no behavioral gain — revisit only if a setting needs to be
-  human-editable or shared outside the app. New settings are added by extending `AppSettings` and
-  `SETTINGS_LIMITS`; `normalizeSettings` degrades a stale/corrupt persisted value field-by-field
-  rather than discarding the whole object, so old settings survive a new field being added. A
-  "Settings" tab hosts `SettingsPanel`.
-- [x] **Configurable downsampling** — Expose the visualization point budget as a setting. Below
-  the budget every point is drawn; at or above it, sample every `length / budget`-th point.
-  Applies to every line-chart and point-rendering surface. Correction to this item's "one budget"
-  premise (and to the *Window-aware downsampling* item below, which said the same): there were
-  always three separate budgets with different orders of magnitude for good reason — a line chart
-  hit-tests individual SVG elements, a map and a 3D scene draw to canvas regardless of point count —
-  so this ships as `chartPointBudget` / `mapPointBudget` / `scenePointBudget`, one settings group,
-  not one shared number that would move the map and 3D renderers as a side effect of tuning the
-  chart. Each has its own clamped range in `SETTINGS_LIMITS`. The chart budget is not purely
-  cosmetic: it is the same value that gates when the Charts tab's ctrl/shift delete-set gestures
-  are available (see *Interactive editable graph view* above) — `SettingsPanel`'s copy says so, so
-  a user lowering it understands they're also raising the zoom level needed to build a delete-set.
-- [x] **Chart image export** — High-quality PNG/SVG export with annotations preserved.
-  `visualization/charts/export.ts`: `serializeChartSvg` clones the live chart SVG and inlines each
-  element's *computed* style (cascade + `var(--…)` already resolved by the browser) since the export
-  has to be self-contained — a naive `XMLSerializer` output would rely on this app's external
-  stylesheet, which isn't there when the file is opened elsewhere. "Annotations preserved" is read
-  plainly: whatever is currently painted — series lines, individually-rendered points, quality-event
-  markers, axis labels, the selected point/range indicator — exports; only the hover crosshair is
-  dropped, since it's meaningless once static. PNG export rasterizes the same serialized SVG onto a
-  2x-scaled canvas. Both follow the app's existing download pattern (`DataTable.downloadRows`,
-  `ExportPanel.saveBlob`): an object-URL anchor click plus `archiveFile('outputs', …)`.
 - [ ] **Multi-pane chart layouts** — Allow side-by-side axis scales and custom channel grouping.
-  Skipped this pass: `TimeSeriesChart` is a single-chart component owning its own toolbar, zoom
-  state, and (as of *Interactive editable graph view*, above) its gesture map — multi-pane means
-  extracting a reusable chart unit and coordinating N independent domains, which is a refactor of
-  code just finished, not an increment on top of it. Its own pass.
-- [ ] **Statistical plot types** — Histograms, probability plots, Lissajous curves for trajectory
-  analysis. Skipped this pass: blocked by a limitation already recorded further down this file
-  ("No per-chart-type rendering fork (scatter/area types render as line chart)") — histograms and
-  Lissajous curves need that fork to exist before they can render as anything but a line chart.
+  Still skipped: `TimeSeriesChart` is a single-chart component owning its own toolbar and zoom
+  state (now X *and* Y); multi-pane means extracting a reusable chart unit and coordinating N
+  independent domains — a refactor of code just extended again this session, not an increment on
+  top of it. Its own pass.
+- [ ] **Statistical plot types (histograms, Lissajous)** — Was blocked by "no per-chart-type
+  rendering fork"; that blocker is now half-cleared (area/scatter shipped above), but a histogram
+  or Lissajous curve isn't a styling variant of the existing line/point renderer the way area/scatter
+  were — it needs its own binning/pairing logic and axis semantics, not just a different `<path>`.
+  Medium-large, own pass.
 - [ ] **3D Performance validation** — Benchmark multi-track rendering and optimize geometry
-  construction. Skipped this pass: this is "benchmark, then whatever the benchmark says," not a
-  boundable feature — the optimization work it's gated on is open-ended by design.
+  construction. Still open-ended by design: "benchmark, then whatever the benchmark says."
 - [ ] **Playback controls refinement** — Timestamp-accurate scrubbing with linked cursor in all
-  views. Skipped this pass: scope is unstated beyond that one sentence, and it touches map/3D/chart
-  playback surfaces together rather than one at a time.
-- [x] **Window-aware downsampling** — *Enabling change; build first.* `TimeSeriesChart` builds its
-  series from `[points, selected, effectiveX]` — the visible domain is not a dependency, so the
-  whole dataset is reduced to `MAX_RENDERED_SAMPLES` (1,500) once and zooming only remaps those
-  same samples onto a narrower range. Zooming never recovers fidelity, so nothing below can work.
-  Filter to the visible domain *before* `minMaxDownsample`. Note that `xDomain` is currently
-  derived *from* the series, which makes the naive version circular: the full-extent domain must
-  be computed once from the raw data, with the windowed series derived from the zoom domain.
-  `MAX_RENDERED_SAMPLES` is now the *Configurable downsampling* setting above's `chartPointBudget`
-  — see that item for the correction to "one budget" (it's three, one per surface).
-- [x] **Interactive editable graph view** — Show the smooth line at any zoom; once the visible
-  window holds fewer rows than the point budget, render the individual points and make them
-  selectable. Drag-select an area that looks wrong to drill down, repeat until the points appear,
-  then correct them there. Today the chart is read-only: it can zoom and it can *report* a
-  selection, but fixing a bad sample means leaving for the Transform tab and naming the point by
-  index. Analysts find bad points by looking at them, so the fix belongs where the eye already is.
-  Extends the existing chart rather than adding a panel, so multi-pane layouts and image export
-  inherit it. Points are selectable **only when the visible window is fully rendered**, which makes
-  a selection exact by construction — there are no undrawn rows hiding between the ones you see.
-  Shipped gesture map (resolves both open questions below): click selects a point (unchanged,
-  `PointInspectorPanel` already reads it — this is the "correct them there" step); drag zooms to
-  the dragged span at every level, replacing the old drag-to-range-select; ctrl/⌘+click toggles a
-  sample into the same `indexSet` the Table builds, shift+click extends it from its anchor, and
-  ctrl/⌘+drag adds a whole run — all three gated to "the reference series (`series[0]`) is not
-  downsampled," i.e. exact-by-construction, with a screen-pixel proximity cutoff so an off-target
-  click can't silently grab a distant sample; shift+wheel (or a trackpad's horizontal swipe) pans
-  without changing zoom. `TimeSeriesChart` now takes an `onDeletePoints` prop (the same callback
-  `DataTable` uses) and shows its own "set of N" chip and delete button. Surfaced and fixed two
-  real, pre-existing bugs along the way: `eventX`'s screen-to-domain mapping used the SVG's
-  bounding-rect aspect ratio rather than its screen CTM, silently mis-locating clicks by the
-  letterbox margin whenever `.chart-svg`'s `max-height` cap made its rendered aspect ratio diverge
-  from the 900:320 viewBox (only became visible once a gesture — the new pixel-cutoff hit test —
-  actually depended on click accuracy); and the JSX `onWheel` prop is passive by default, silently
-  dropping `preventDefault()` and letting the page scroll under the chart during zoom/pan — replaced
-  with a real `{ passive: false }` listener via `useEffect`.
-- [x] **Point inspector** — Single-point value editing, and the increment that can ship first: it
-  works against the existing single-point selection and needs none of the work above. Fields are
-  locked by default; an explicit pencil unlocks them, a warning box confirms intent (first edit per
-  dataset, not every edit — the pencil-to-checkmark gesture carries intent thereafter), and a
-  checkmark in the pencil's place applies the change. All fields are editable, derived channels
-  included.
-- [x] **Set-based selection model** — Group select yields an arbitrary, possibly non-contiguous set
-  of indices, used for **deletion only**. Both `PointSelectionSnapshot` and `WorkspaceSelection`
-  currently carry one `pointIndex` plus one *contiguous* `indexRange`, so this is a shape change to
-  persisted workspace state (`restorePointSelection` takes exactly those two), and the selection
-  store is a module-level singleton every panel reads — map, 3D, table and charts move together.
-  Correction to this item's original premise, twice over. First: the shape change did not touch
-  persisted state — `indexSet` lives only in the in-memory `PointSelectionSnapshot`, deliberately
-  kept out of `WorkspaceSelection` (a working set for the delete gesture, not durable view state),
-  so `restorePointSelection` always starts it fresh, same as `segmentIds`. Second, and narrowing
-  "every panel": **Table and Charts** move together — both build the set (Table via ctrl/shift+click
-  on rows, Charts via ctrl/shift+click and ctrl+drag on rendered points, both gated to exact
-  conditions — Table to natural/unsorted/unfiltered order, Charts to the reference series not being
-  downsampled) and both read it through the same `toggleInSet`/`extendSetRange`/`unionSetRange`/
-  `clearSet`/`getSelectedIndexSet` primitives. Map and 3D do not build one — nothing in either
-  surface names an individual point by rendered position today, so there was no natural gesture to
-  wire, and no roadmap item currently calls for one. "Every panel moves together" is narrowed here
-  to name the two that actually do, rather than left as a claim the code doesn't back.
-- [x] **Selection-scoped delete operation** — `OperationScope` supports `indexRange` and rejects
-  `timeRange`; there is no set-of-indices scope, and `runPointPreserving` is by definition
-  count-preserving, so delete needs the point-removing path. `operations/drop-outliers.ts` is the
-  template: it already narrows removal by scope while detecting over the whole track. Scoped to
-  removing a few strays — points that drifted off course or plotted far out. Bulk removal stays in
-  the Transform tab and is unchanged. `operations/delete-points.ts` rejects `indexRange`/`timeRange`
-  scope and an empty/missing `indexSet`, dedupes and range-checks the indices, and is registered and
-  replayable like any other operation. Wired end-to-end from the Table tab. Correction to this item's
-  "same gesture as editing" premise: delete uses the existing `useConfirm` destructive-action dialog
-  (the same one `TransformPanel` uses elsewhere), not the Point Inspector's pencil-then-checkmark.
-- [x] **Manual-edit provenance** — `edit-point` flags every edited point `manual_edit` in
-  `PointProvenance.qualityFlags` (no schema change), unioned with whatever flags a point already
-  carries. `TrackMetricsPanel` and `PointVisualizerPanel` already read `qualityFlags` generically, so
-  the flag surfaces there for free. The HTML report's disclosure section (`includeNotionalDisclosure`,
-  now labeled *Data quality disclosure*) was extended to count and disclose manually edited points
-  alongside notional ones — it previously special-cased only `notional` and would have stayed silent
-  on hand edits otherwise. Correction to this item's original premise: GPB does **not** carry
-  provenance (or `name`/`desc`, or non-numeric `ext` values) — it is a numeric-only container by
-  design (`core/parsers/gpb.ts`), so it silently drops the flag exactly like GPX and EAG TSPI. Project
-  save does carry it, via plain JSON round-tripping of the dataset.
-- [x] **Stale derived-channel badge** — A manual edit is truth data and is never silently
-  recomputed away, so editing lat/lon leaves `speed_mps`, `distance_m` and friends holding their
-  prior values until the user re-runs the derivation. `PointProvenance.staleChannels` names the
-  channels a lat/lon/ele/time edit invalidates (on the edited point and the next one, for
-  pairwise kinematics); `runDerivation` clears the ids it owns on its next run. `PointInspectorPanel`
-  and `PointVisualizerPanel` render an amber "stale" badge next to the affected field. Verifying
-  this in the browser surfaced a real, pre-existing bug: the Charts tab's flex layout let the
-  chart collapse below its readable minimum whenever the Point Inspector was tall enough to fill
-  the viewport, painting the chart's own legend/selection chips over the inspector and blocking
-  its "Edit" button entirely. Fixed alongside this item — `.charts-workspace` now sizes to content
-  and the tab scrolls, like every other tab.
-- [ ] **Y-axis zoom and pan** — `visualization/charts/zoom.ts` now also has `panDomain` (pure,
-  clamped, tested in `test/chart-zoom.ts`), and shift+wheel/trackpad-swipe pans that X-domain —
-  but still only X. Independent of the editing work now that a move is a typed value rather than a
-  drag; the value is in reading a channel whose variation is small against its full extent. Lower
-  priority than the items above.
+  views. Scope still unstated beyond that one sentence; touches map/3D/chart playback surfaces
+  together.
 
-#### Settled decisions — editable graph view
-- **A "move" is a typed value, not a drag.** Select a point, unlock, edit named fields. This
-  removes the timestamp-vs-value-vs-position ambiguity entirely.
-- **Group select deletes; it never edits.** Value manipulation requires a single-point selection.
-- **A manual edit is truth data.** Derived channels are *not* auto-recomputed; a hand-edited point
-  stays as entered until some later action modifies it. Users own the order of operations, and the
-  stale badge exists to support that rather than replace it.
-- **Time edits are accepted with a warning; nothing is re-sorted.** There is no practical case for
-  an automatic resort, so the capability is skipped entirely: an edited timestamp stays where the
-  user put it, and the existing time-order check reports the break like any other. Consistent with
-  a manual edit being truth data — the user owns the order of operations. This also means an *edit*
-  never reshuffles indices; only deletion does.
-- **Drag zooms; the wheel zooms too.** Releasing a drag auto-zooms to the dragged span, and the
-  cursor-anchored wheel zoom keeps working at every level, so zoom is never trapped by whatever
-  drag currently means. The wheel behaviour already exists (`onWheelZoom`); the change is that drag
-  auto-zooms on release instead of only parking a range chip.
-- **Rendering already preserves extrema.** `minMaxDownsample` keeps the min and max of every
-  bucket, so a one-sample spike survives to full zoom-out. Seeing that a point is off, then zooming
-  to it, works with the existing renderer — the gap was window-awareness, not the envelope.
-- **Deterministic replay is deferred; recording is not.** Each edit and delete is recorded as an
-  explicit operation, because an edit invisible to the history panel and the analysis report is the
-  wrong default. Making the operation history recipe-safe stays deferred.
-- **Resolved — marquee and pan.** Drag means *zoom* while the reference series is above the point
-  budget and *marquee-add-to-delete-set* once it renders individually — the two never apply at the
-  same zoom level, matches the drill-down-then-edit workflow, and the wheel still zooms throughout.
-  Contiguous range-select (`indexRange`) is *not* revived on a modifier-drag — the settled decision
-  above already retired it from the chart in favor of zoom, and Charts stays a consumer of ranges
-  (`zoomToSelection('range')`, the range chip) rather than a producer; `handleSelectionKeyboard`'s
-  shift+arrow and the Table's row clicks are still how one gets made. Ctrl/⌘ and shift instead mirror
-  the Table's own delete-set vocabulary (toggle / extend), so the two surfaces teach one gesture
-  language instead of two. Pan is shift+wheel, or a trackpad's native horizontal swipe (`deltaX`) —
-  middle-drag and space-drag were the other candidates; wheel-based pan needed no new drag mode and
-  so cost nothing against the gestures above.
-
-#### Open questions — editable graph view
-- **Index identity, now narrowed to deletion.** `TrackPoint` has no stable id; points are
-  identified by array position. Dropping the auto-resort removes the worst case — an edit no longer
-  moves any index — so only deletion shifts the rows after it, in the one direction, by a known
-  count. A recorded "set field at index N" can still go stale if a delete lands before it. Adding a
-  real `id` is the thorough fix and is expensive (every parser, every exporter, the GPB binary
-  format); the cheap mitigation is to record each edit alongside a fingerprint of the point's prior
-  values, so a stale index is detected and refused rather than silently written to the wrong row.
-
-#### Build order
-1. Window-aware downsampling — nothing else functions without it. ✅
-2. Point rendering and hit-testing below the budget. ✅
-3. Point inspector — independent of 1 and 2; ship early. ✅
-4. Set-based selection model. ✅
-5. Selection-scoped delete operation. ✅
-6. Manual-edit provenance and the stale-channel badge. ✅
-7. Y-axis zoom and pan. — last item remaining; X-axis pan (not the Y-axis zoom/pan item's scope) shipped alongside 2.
+#### Build order — editable graph view
+All seven items shipped; this build order is now complete (Y-axis zoom/pan closed it out this
+session). Kept here only as the historical record other roadmap sections cross-reference.
+1. Window-aware downsampling ✅
+2. Point rendering and hit-testing below the budget ✅
+3. Point inspector ✅
+4. Set-based selection model ✅
+5. Selection-scoped delete operation ✅
+6. Manual-edit provenance and the stale-channel badge ✅
+7. Y-axis zoom and pan ✅
 
 ### Comparison Module
-- [x] **Drift estimation** — Clock-skew detection shipped in 0.1.1 (`estimateClockDrift`, surfaced in
-  the Comparison panel and exported with the comparison CSV). Automatic *correction* workflows
-  remain open.
-- [ ] **Multi-track comparison visualization** — Side-by-side trajectory divergence heatmaps
-- [ ] **Richer comparison reports** — Statistical tables, divergence histograms in HTML export
+- [ ] **Wire comparison results into the HTML report, then enrich it** — Found while scoping
+  "richer comparison reports": `htmlReport.ts` already has a `buildComparisonSection` and a
+  `ReportComparisonSummary` type, but grepping every caller of `buildHtmlAnalysisReport` shows
+  `ProjectPanel.tsx`'s report export never passes a `comparison` field — the section exists in the
+  generator and is permanently dead code from the UI's side. So this is two items in sequence, not
+  one: (1) wire `ComparisonPanel`'s result into the report-export flow at all (small-medium — the
+  UI has to hold onto or re-derive the last comparison when the user opens the report dialog), then
+  (2) the originally-scoped enrichment — a stats helper (median/p95/stddev over
+  `horizontalRangeM`/`slantRangeM`/`relativeUpM`/`closureRateMps`, same shape as
+  `rangeStatistics.ts`) plus a binned-histogram render in `buildComparisonSection` (small once (1)
+  exists). Don't build (2) without (1); it would have nothing to render against outside the test
+  file that constructs `ReportComparisonSummary` directly.
+- [ ] **Multi-track comparison visualization** — Side-by-side trajectory divergence heatmaps.
 
 ### Transform Workflows
-- [x] **Recipe UI** — Shipped in 0.1.1: transform sequences can be named, saved, listed, replayed,
-  and deleted from the Transform tab. Parameter templating remains open.
-- [ ] **Advanced filters** — Kalman smoothing, spline interpolation, cross-track error analysis
-- [ ] **Memory-efficient undo** — Compress operation snapshots instead of storing full datasets
+- [ ] **Advanced filters** — Kalman smoothing, spline interpolation, cross-track error analysis.
+  Spline interpolation already exists as the fill-gaps/resample engine's core (Fritsch–Carlson
+  monotone cubic); a standalone "smooth via spline" transform card may just be a thin wrapper over
+  what already ships. Kalman smoothing and cross-track error are genuinely new numerical work.
+- [ ] **Memory-efficient undo** — Compress operation snapshots instead of storing full datasets.
+  **Scoped, not started — deliberately deferred rather than rushed.** Confirmed: `state/history.ts`
+  stores full `Dataset` objects per undo step (real point arrays), capped at
+  `MAX_HISTORY_SNAPSHOTS=50`; a 100k-point track (the documented DOM-parser cap) with 50
+  undo-tracked operations retains up to ~5,000,000 `TrackPoint` objects for that one dataset alone.
+  `repair/diff.ts`'s `PointDiffEntry` is a *classification* structure with no point payload, so it
+  cannot reconstruct a prior state on its own — a real delta encoder is new work, not a reuse.
+  The real risk: `history.past[0]` is currently load-bearing for `replaySource` (recipe replay's
+  hash check), "Restore original," and the archive checkpoint — all three assume a full `Dataset`
+  today. A rushed compression scheme here risks silent data loss in undo, which is the one place
+  this app cannot afford a bug. Large; needs its own careful pass with those three consumers
+  explicitly accounted for before any encoding scheme is chosen.
+
+---
+
+## New: Settings & Preferences
+
+- [ ] **Unit-system preference (metric / knots+feet)** — **Gated on a grep before sizing further;
+  the grep came back medium, not small.** Confirmed no single shared formatter to extend: `core/
+  stats.ts`'s `formatDistance`/`formatDuration` are used by `StatsPanel.tsx` and
+  `TrackMetricsPanel.tsx` for *some* readouts, but both files also have inline `toFixed(1)}
+  m/s`-style speed/altitude formatting that bypasses those helpers entirely (e.g.
+  `TrackMetricsPanel.tsx` max/min speed and altitude rows). `PointVisualizerPanel.tsx` has its own
+  *second, independent* local `formatDistance` function — a pre-existing near-duplicate of
+  `core/stats.ts`'s, not the same one — plus an inline `m/s` speed cell. `ComparisonPanel.tsx`
+  formats closure rate inline too. A real implementation touches at least four UI files with three
+  different formatting conventions between them, which is exactly the "half-converted readout"
+  risk this item was flagged for — not a same-session pass. Medium; do it as its own item with a
+  single shared formatter used everywhere (start by collapsing `PointVisualizerPanel.tsx`'s
+  duplicate `formatDistance` into `core/stats.ts`'s before adding a unit parameter to either).
+  `core/` must not import `state/settings.ts` — pass the unit choice in as an argument so the
+  formatter stays a pure function `core/stats.ts`'s own test file can exercise without a `window`.
+
+## New: Desktop (Electron)
+
+- [ ] **Recent projects list** — **Has a platform-fork the original description missed.** No MRU
+  anywhere in `ProjectPanel.tsx`; every session starts from a blank file picker even for a project
+  just closed. In Electron, a stored file path can be reopened directly — small-medium, in-app
+  list (not necessarily the native menu, which is deliberately absent —
+  `Menu.setApplicationMenu(null)`). In the browser build there is no such path: the File System
+  Access API's `FileSystemFileHandle` would need to be persisted (IndexedDB, not `localStorage`,
+  since handles aren't JSON-serializable) and re-permissioned on reopen, and browsers without that
+  API (no path at all — falls back to the blank picker, same as today). This is a design decision
+  with a web/Electron parity implication, not an afternoon's work; needs that decision made before
+  sizing further, not just "small-medium."
+
+## New: Export
+
+- [ ] **PDF report export** — The HTML analysis report has no direct PDF path; browser
+  print-to-PDF is the only route today. Small if scoped as "a documented print stylesheet," larger
+  if scoped as "a bundled PDF renderer" — needs a decision before sizing further.
+
+## New: Testing
+
+- [ ] **e2e coverage gaps** — Settings shipped this session (see above, `test/e2e/settings.spec.ts`).
+  Still no e2e for Track Health's repair flow, Point Inspector, the 3D view, or non-GPX export
+  formats. Medium, pick one flow at a time rather than one large spec.
 
 ---
 
@@ -229,7 +291,9 @@ This document outlines the planned development direction for Joint Domain Data C
 - [ ] **Offline-first sync** — Local data persistence with optional cloud backup
 
 ### Accessibility
-- [ ] **WCAG 2.1 AA compliance** — Full keyboard navigation, screen reader support
+- [ ] **WCAG 2.1 AA compliance** — Full keyboard navigation, screen reader support. *DataTable
+  keyboard navigation + ARIA* and *Map container aria-label* above shipped two concrete slices of
+  this found in-session; the rest of this item remains a broader audit.
 - [ ] **Color-blind modes** — Alternative palettes for protanopia, deuteranopia, tritanopia
 - [ ] **High-contrast themes** — Explicit dark/light modes with adjustable text size
 
@@ -267,10 +331,6 @@ This document outlines the planned development direction for Joint Domain Data C
 ## Known Limitations & Future Improvements
 
 ### Visualization
-- **Constraint:** No per-chart-type rendering fork (scatter/area types render as line chart)
-  - **Timeline:** Phase 1 follow-up
-  - **Impact:** Chart validator provides clear feedback; users see expected vs. actual
-  
 - **Constraint:** ExportPanel GPX preview runs synchronously
   - **Timeline:** Phase 1 (after multi-pane layout)
   - **Impact:** Large datasets may briefly block UI; async worker refactor needed
@@ -285,16 +345,15 @@ This document outlines the planned development direction for Joint Domain Data C
   - **Impact:** CSV mapping UI respects limit; clear error messaging
 
 - **Constraint:** Map visual budget ~4,000 points by default (display only)
-  - **Timeline:** Stable; full data preserved for export. User-adjustable (500–20,000) since
-    *Configurable downsampling* shipped — Settings tab, `mapPointBudget`.
+  - **Timeline:** Stable; full data preserved for export. User-adjustable (500–20,000) via Settings.
   - **Impact:** Deterministic downsampling preserves statistical correctness
 
 - **Constraint:** GPB export is numeric-only — it drops `name`, `desc`, `provenance`
   (including `qualityFlags`), and coerces any non-numeric `ext` channel to `0`
   - **Timeline:** Phase 4 (archive schema v2, see *Format Support* below)
-  - **Impact:** A round-trip through GPB silently loses manual-edit flags, notional flags, and any
-    string/boolean passthrough channel. GPX and EAG TSPI are already documented as lossy here for
-    the same reason; GPB was not, until this was found while wiring manual-edit provenance.
+  - **Impact:** A round-trip through GPB silently loses manual-edit flags, notional/interpolated
+    flags, and any string/boolean passthrough channel. GPX and EAG TSPI are already documented as
+    lossy here for the same reason.
 
 ### Architecture
 - **Constraint:** No mobile/tablet responsive design in current scope
@@ -304,6 +363,12 @@ This document outlines the planned development direction for Joint Domain Data C
 - **Constraint:** Operation history not yet recipe-safe for deterministic replay
   - **Timeline:** Phase 1 follow-up
   - **Impact:** Undo/redo works via snapshots; export history visible in reports
+
+- **Constraint:** Undo/redo retains full dataset snapshots, not compressed deltas
+  - **Timeline:** Phase 1 follow-up, deliberately deferred (see *Memory-efficient undo* above for
+    why — three consumers assume a full `Dataset` at `history.past[0]`)
+  - **Impact:** Memory scales with (snapshot count) × (point count); bounded today only by the
+    50-snapshot cap, not by data size
 
 ---
 
@@ -338,7 +403,8 @@ Issues are tracked in GitHub with these labels:
 - **Timeline:** Quarterly minor-version bumps; major versions with full test suite
 
 ### Format Support
-- **CSV/TSV/NMEA 0183** — Core formats, mature parsing (Phase 1 focus: DMS handling edge cases)
+- **CSV/TSV/NMEA 0183** — Core formats, mature parsing; VTG/ZDA and GSA/GSV sentence support both
+  shipped this session (Phase 1 focus: DMS handling edge cases)
 - **GPX/GeoJSON** — Full support; Phase 1 focus: schema edge cases and performance
 - **KML** — Google `gx:Track` support; Phase 2: network-link handling
 - **EAG TSPI** — NATO range instrumentation support (stable; Phase 3: precision improvements)
@@ -354,7 +420,7 @@ Issues are tracked in GitHub with these labels:
 - **Major releases (X+)** — Architecture changes, breaking API changes (annual or less frequently)
 
 Each release includes:
-- Full test harness pass (62+ deterministic checks)
+- Full test harness pass (85+ deterministic checks)
 - Native platform smoke tests (Linux/Windows/macOS)
 - CycloneDX SBOMs and SHA-256 checksums
 - GitHub/Sigstore provenance attestations
@@ -377,12 +443,13 @@ Results are recorded and compared at release time; material regressions must be 
 
 ### Low Priority (Stable, No Immediate Risk)
 - **3D renderer is canvas-based, not WebGL** — Works well for current perf targets; WebGL upgrade deferred pending performance assessment
-- **No per-chart-type rendering fork** — Chart validator works around this; minor usability limitation
 - **Operation history not yet recipe-safe** — Undo/redo works via snapshots; deterministic replay roadmapped for Phase 1 follow-up
 
 ### Medium Priority (Plan Refactor)
 - **ExportPanel GPX preview runs synchronously** — Brief UI block on large datasets; async refactor planned for Phase 1
-- **Memory-efficient undo** — Compress snapshots instead of storing full datasets; Phase 1 follow-up
+- **Memory-efficient undo** — Compress snapshots instead of storing full datasets; deliberately
+  deferred this session pending careful handling of `history.past[0]`'s three dependent consumers
+  (see *Memory-efficient undo* above)
 
 ### High Priority (Track Carefully)
 - **No mobile/tablet responsive design** — Planned Phase 2; test coverage gap until then
@@ -408,5 +475,7 @@ See `ONBOARDING.md` for developer workflow, branch strategy, and CI/CD practices
 |---------|--------------|-----------|
 | 0.1.0   | 2026-08-14   | Initial local-first baseline: import, linked visualization, transforms, project save/export |
 | 0.1.1   | 2026-08-26   | HTML analysis reports, Electron packaging with SBOMs and provenance, Track Health Scan, repair/undo workflows, bundled map overlays |
-| 0.2.0   | TBD          | Configurable settings, richer comparison reporting, chart image export |
+| 0.1.12  | 2026-08-27   | Fixed the non-starting packaged Windows/macOS builds (asar integrity), automatic Actions-run housekeeping |
+| 0.2.0   | 2026-09-02   | IRIG/range-time parsing, stale derived-channel badge, point deletion from Table/Charts, a Settings tab, chart image export, CSV-no-timestamp warning |
+| 0.3.0   | 2026-09-04   | Configurable settings (incl. persisted default motion profile), Y-axis zoom/pan (closes the editable-graph-view build order), area/scatter and real channel-vs-channel scatter chart rendering, turn-aware outlier detection with in-place reconstruction, unified fill-gaps/drop-outliers repair engine, NMEA VTG/ZDA/GSA/GSV support, GPS fix-quality Track Health check, map accessibility label, DataTable keyboard navigation + ARIA, expanded test coverage (`stats.ts`, `geoInterpolation.ts`, motion-profile reconstruction, NMEA sentence parsing, Settings e2e) |
 | 1.0.0   | TBD          | Production-ready: mobile support, multi-user collaboration, advanced analysis |

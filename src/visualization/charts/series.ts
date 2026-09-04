@@ -1,6 +1,17 @@
 import type { TrackPoint } from '../../core/model'
 
-export type ChartXAxis = 'time' | 'index' | 'distance'
+/**
+ * `channel:${channelId}` is a fourth axis kind: X = an arbitrary numeric channel's own value
+ * per point, not a derived-from-position value. Unlike time/index/distance it is not
+ * monotonic — see `extractChartSeries`'s domain-windowing comment for the one place that
+ * matters, and the UI layer (`TimeSeriesChart.tsx`) for why it is only ever offered while
+ * `chartType === 'scatter'` (a line drawn through non-monotonic X is a scribble, not a chart).
+ */
+export type ChartXAxis = 'time' | 'index' | 'distance' | `channel:${string}`
+
+export function channelIdFromXAxis(axis: ChartXAxis): string | null {
+  return axis.startsWith('channel:') ? axis.slice('channel:'.length) : null
+}
 
 export interface ChartSample {
   sourceIndex: number
@@ -65,7 +76,12 @@ export function extractChartSeries(
   let min = Infinity
   let max = -Infinity
   // One retained sample just outside each edge of `domain`, so the polyline still reaches the
-  // plot's edges instead of visibly stopping short at the last in-window sample.
+  // plot's edges instead of visibly stopping short at the last in-window sample. This assumes
+  // traversal order (by sourceIndex) matches x order — true for time/index/distance, but not
+  // for a `channel:` x-axis. That's tolerated rather than special-cased: a channel axis is
+  // only ever rendered points-only (scatter), so there is no polyline for a slightly-wrong
+  // edge sample to visibly misroute, and the sample itself is still outside [lo, hi] by
+  // construction, so it renders clipped (invisible) rather than in a wrong position.
   let pendingBefore: ChartSample | null = null
   let afterAdded = false
 
@@ -145,7 +161,7 @@ export function resolvePresetChannels(preset: ChartPreset, availableChannels: re
   return resolved
 }
 
-function numericChannelValue(point: TrackPoint, channelId: string): number | null {
+export function numericChannelValue(point: TrackPoint, channelId: string): number | null {
   const value = channelId === 'elevation' ? point.ele : point.ext?.[channelId]
   if (typeof value === 'number' && Number.isFinite(value)) return value
   if (typeof value === 'string' && value.trim()) {
@@ -158,6 +174,8 @@ function numericChannelValue(point: TrackPoint, channelId: string): number | nul
 function xValue(point: TrackPoint, sourceIndex: number, xAxis: ChartXAxis): number | null {
   if (xAxis === 'index') return sourceIndex
   if (xAxis === 'time') return point.time ?? null
+  const channelId = channelIdFromXAxis(xAxis)
+  if (channelId !== null) return numericChannelValue(point, channelId)
   const distance = point.ext?.distance_m
   return typeof distance === 'number' && Number.isFinite(distance) ? distance : null
 }

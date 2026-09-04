@@ -29,6 +29,10 @@
 .grid-row.in-set { background: rgba(168, 85, 247, 0.14); box-shadow: inset 3px 0 #a855f7; }
 .grid-row.hovered { background: rgba(56, 189, 248, 0.14); box-shadow: inset 3px 0 #38bdf8; }
 .grid-row.selected { background: rgba(234, 79, 47, 0.2); box-shadow: inset 3px 0 #ea4f2f; }
+/* Keyboard focus lives on the grid container (aria-activedescendant), not the row itself,
+   since virtualization unmounts off-screen rows — a real DOM :focus ring would vanish the
+   moment a row scrolls out. This is the substitute visual indicator for "the active row". */
+.grid-row.kbd-focused { outline: 2px solid var(--accent); outline-offset: -2px; }
 .data-table-hint { color: var(--text-faint); font-size: 11px; }
 .selection-controls { display: flex; flex-direction: column; gap: 12px; margin-bottom: 14px; }
 .selection-time-controls { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }

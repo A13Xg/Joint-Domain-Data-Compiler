@@ -2,7 +2,7 @@ import type { Dataset, SourceFormat, TrackPoint } from '../model'
 import type { MovementWindow } from './movementWindow'
 import type { TrackHealthConfig } from './trackHealthConfig'
 
-export type TrackHealthCheckId = 'altitude-profile' | 'speed-envelope' | 'time-order-span' | 'schema-parse' | 'outlier' | 'stagnant'
+export type TrackHealthCheckId = 'altitude-profile' | 'speed-envelope' | 'time-order-span' | 'schema-parse' | 'outlier' | 'stagnant' | 'gps-fix-quality'
 
 export type TrackHealthCheckStatus = 'pass' | 'fail' | 'na'
 

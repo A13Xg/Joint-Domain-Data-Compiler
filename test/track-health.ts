@@ -170,10 +170,36 @@ check('Every flag indexes a real source point', everyFlag.every((flag) => {
 const steps: number[] = []
 computeTrackHealth(dataset(flight()), DEFAULT_TRACK_HEALTH_CONFIG, (completed, total) => {
   steps.push(completed)
-  if (total !== 6) failures++
+  if (total !== 7) failures++
 })
-check('Progress is reported once per check plus a final step', steps.length === 7)
-check('Progress ends at the total', steps[steps.length - 1] === 6)
+check('Progress is reported once per check plus a final step', steps.length === 8)
+check('Progress ends at the total', steps[steps.length - 1] === 7)
+
+// --- GPS fix quality (informational, weight 0 — never scored, never blocks) ---
+check('GPS fix quality is N/A on a track with no hdop/sat data', statusOf(healthy, 'gps-fix-quality') === 'na')
+check('GPS fix quality carries no weight', healthy.checks.find((entry) => entry.id === 'gps-fix-quality')?.weight === 0)
+
+const goodFix = flight().map((point) => ({ ...point, ext: { ...point.ext, hdop: 1.2, sat: 9 } }))
+const goodFixReport = computeTrackHealth(dataset(goodFix))
+check('Uniformly good HDOP/satellite count passes', statusOf(goodFixReport, 'gps-fix-quality') === 'pass')
+check('A passing (or failing) gps-fix-quality never changes the overall score', goodFixReport.score === healthy.score)
+
+const poorFix = flight().map((point, index) => ({
+  ...point,
+  ext: { ...point.ext, hdop: index < 60 ? 12 : 1.2, sat: index < 60 ? 3 : 9 },
+}))
+const poorFixReport = computeTrackHealth(dataset(poorFix))
+check('A sustained stretch of poor HDOP and low satellite count fails', statusOf(poorFixReport, 'gps-fix-quality') === 'fail')
+check('Failing gps-fix-quality still does not move the overall score', poorFixReport.score === healthy.score)
+const fixFlags = poorFixReport.checks.find((entry) => entry.id === 'gps-fix-quality')?.flags ?? []
+check('The failing stretch is reported as per-point flags', fixFlags.length > 0)
+check('A flagged point index falls inside the poor stretch', fixFlags[0]?.pointIndex !== undefined && fixFlags[0]!.pointIndex! < 60)
+
+const occasionalDip = flight().map((point, index) => ({
+  ...point,
+  ext: { ...point.ext, hdop: index === 10 ? 12 : 1.2, sat: 9 },
+}))
+check('A single degraded sample does not fail the check (stays under the poor-fraction budget)', statusOf(computeTrackHealth(dataset(occasionalDip)), 'gps-fix-quality') === 'pass')
 
 console.log(`\n${failures === 0 ? 'ALL TRACK HEALTH CHECKS PASSED' : `${failures} TRACK HEALTH CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)

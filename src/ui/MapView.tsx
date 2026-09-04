@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { LatLngTuple } from 'leaflet'
+// Kept here rather than in main.tsx: MapView is now lazy-loaded (see App.tsx),
+// so this splits into the same chunk instead of shipping in the entry bundle
+// for every session that never opens the Map tab.
+import 'leaflet/dist/leaflet.css'
 import { CircleMarker, MapContainer, Polygon, Polyline, TileLayer, Tooltip, useMap } from 'react-leaflet'
 import type { TrackPoint } from '../core/model'
 import { isValidLat, isValidLon } from '../core/model'
@@ -274,7 +278,11 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
         {basemap !== 'none' && basemapStatus === 'unknown' && <span className="map-basemap-status muted small">Basemap requires network access; local track data does not.</span>}
         {otherTrackLayers.length > 0 && <span className="map-legend map-other-tracks">other visible:{otherTrackLayers.map((track) => <span key={track.id} className="map-other-track-chip"><span className="chip-dot" style={{ background: track.color }} />{track.name}</span>)}</span>}
       </div>
-      <div className="map-canvas-wrap">
+      <div
+        className="map-canvas-wrap"
+        role="region"
+        aria-label={`Map showing ${valid.length.toLocaleString()} valid point${valid.length === 1 ? '' : 's'}${otherTrackLayers.length > 0 ? ` plus ${otherTrackLayers.length} other visible track${otherTrackLayers.length === 1 ? '' : 's'}` : ''}`}
+      >
         <MapContainer center={mapPositions[0]} zoom={10} className="map-canvas" scrollWheelZoom>
           {basemap !== 'none' && <TileLayer attribution={BASEMAPS[basemap].attribution} url={BASEMAPS[basemap].url} eventHandlers={{ tileerror: () => setBasemapStatus('error'), tileload: () => setBasemapStatus('loaded') }} />}
           {otherTrackLayers.flatMap((track) => track.shapes.map((shape, shapeIndex) => shape.kind === 'polygon'

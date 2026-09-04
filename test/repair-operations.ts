@@ -55,6 +55,10 @@ for (const id of EXPECTED_IDS) check(`Operation ${id} is registered`, getOperati
 
 // ---------------------------------------------------------------- drop-outliers
 
+// reconstruct: false throughout this section — it exercises channel masking,
+// scoping, and rejection paths against plain removal, which is what makes
+// "removes the spike"-shaped assertions below meaningful. Reconstruct-in-place
+// (the new default) is covered separately below and in repair-diff.ts.
 const outlierParams = {
   channels: ['position', 'elevation'],
   windowSize: 5,
@@ -62,6 +66,9 @@ const outlierParams = {
   minPositionScaleMeters: 1,
   minElevationScaleMeters: 1,
   minSpeedScaleMps: 0.5,
+  profile: 'aircraft' as const,
+  reconstruct: false,
+  contextPoints: 4,
 }
 const dropped = executeOperation(source, 'drop-outliers', outlierParams)
 check('Drop outliers removes the planted spikes', dropped.dataset.points.length < base.length, `${base.length} → ${dropped.dataset.points.length}`)
@@ -89,6 +96,31 @@ throws('Drop outliers rejects an empty channel list', () => executeOperation(sou
 throws('Drop outliers rejects an unknown channel', () => executeOperation(source, 'drop-outliers', { ...outlierParams, channels: ['altitude'] }))
 throws('Drop outliers rejects repeated channels', () => executeOperation(source, 'drop-outliers', { ...outlierParams, channels: ['position', 'position'] }))
 throws('Drop outliers rejects time-range scope', () => executeOperation(source, 'drop-outliers', outlierParams, { timeRange: { startMs: 0, endMs: 1 } }))
+
+// ---------------------------------------------------------- drop-outliers (reconstruct)
+
+const repairParams = { ...outlierParams, reconstruct: true }
+const repaired = executeOperation(source, 'drop-outliers', repairParams)
+check('Reconstruct keeps the point count unchanged', repaired.dataset.points.length === base.length)
+check('Reconstruct moves the position spike off its planted value', repaired.dataset.points[SPIKE_INDEX]!.lat !== 40.5)
+check('Reconstruct moves the elevation spike off its planted value', repaired.dataset.points[ELEVATION_SPIKE_INDEX]!.ele !== 9000)
+check('Reconstruct flags the repaired points interpolated', repaired.dataset.points[SPIKE_INDEX]!.provenance?.qualityFlags?.includes('interpolated') === true)
+check('Reconstruct leaves untouched points untouched', repaired.dataset.points[0]!.lat === base[0]!.lat && repaired.dataset.points[0]!.provenance === undefined)
+check('Reconstruct does not mutate the input', source.points[SPIKE_INDEX]!.lat === 40.5)
+
+// `base` itself moves at ~150 m/s — already faster than the marine profile's
+// 40 m/s ceiling — so any fit rejoining real neighbours at the marine profile
+// is guaranteed to violate it on the join alone. The flagged point must be
+// left exactly as it was and reported, never silently dropped or fabricated.
+const unrepairable = executeOperation(source, 'drop-outliers', { ...repairParams, profile: 'marine' })
+check('A fit that cannot satisfy the profile is left unchanged, not deleted', unrepairable.dataset.points.length === base.length)
+check('An unrepairable run is reported with a warning', unrepairable.record.warnings.some((warning) => warning.includes('left unchanged')))
+check('An unrepairable point keeps its original (unrepaired) value', unrepairable.dataset.points[SPIKE_INDEX]!.lat === 40.5)
+
+throws(
+  'Reconstruct requires every point to carry a timestamp',
+  () => executeOperation(dataset(base.map((point) => ({ ...point, time: undefined }))), 'drop-outliers', repairParams),
+)
 
 // ---------------------------------------------------------------- reduce-points
 
