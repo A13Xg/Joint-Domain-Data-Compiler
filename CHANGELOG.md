@@ -3,6 +3,20 @@
 Notable user-facing and operational changes are recorded here. This project follows Semantic
 Versioning; release tags use the `vX.Y.Z` form.
 
+## Unreleased
+
+### Changed
+
+- A `v*` version tag now builds and publishes Linux and Windows only. macOS runners bill at 10x on
+  GitHub Free, which made an unattended mac build the most expensive thing a tag could start by
+  accident, so it is now published deliberately — by running **Release** by hand with "Also build
+  macOS" ticked, or by the existing **Release (macOS)** workflow. Either publishes into the same
+  `v<version>` release, adding its artifacts alongside the ones already attached.
+- `is_full_release` now means "covers everything the automatic release publishes" rather than
+  "covers all three platforms", so the tagged Linux+Windows build owns the release's canonical
+  `SHA256SUMS.txt` and a later macOS run still takes a scoped partial manifest instead of
+  overwriting it.
+
 ## 0.5.0 - 2026-09-04
 
 ### Added

@@ -1,7 +1,14 @@
-name: Release (all platforms)
+name: Release
 
-# Builds and publishes Linux, Windows, and macOS together.
-# Triggered by a `v*` version tag, or manually on demand.
+# Builds and publishes Linux and Windows on a `v*` version tag.
+#
+# macOS is deliberately NOT on that automatic path: macOS runners bill at 10x
+# on GitHub Free, which makes an unattended mac build by far the most expensive
+# thing this repository can do by accident. It is published on purpose instead
+# — either by running this workflow by hand with "Also build macOS" ticked, or
+# by the dedicated Release (macOS) workflow. Both publish into the same
+# `v<version>` release as the tag build, adding their artifacts alongside the
+# ones already attached rather than replacing them.
 
 on:
   push:
@@ -13,6 +20,11 @@ on:
         required: false
         type: string
         default: ''
+      include_macos:
+        description: 'Also build macOS (10x runner cost)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -25,7 +37,10 @@ jobs:
   release:
     uses: ./.github/workflows/_release.yml
     with:
-      platforms: '["linux","windows","macos"]'
+      # On a tag push the `inputs` context is empty, so this falls to the
+      # two-platform set — a tagged release cannot reach for a mac runner on
+      # its own no matter how the tag was pushed.
+      platforms: ${{ inputs.include_macos && '["linux","windows","macos"]' || '["linux","windows"]' }}
       version: ${{ inputs.version || '' }}
     permissions:
       contents: write

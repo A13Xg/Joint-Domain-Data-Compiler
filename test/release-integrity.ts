@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseChecksumManifest, validateReleaseFileSet, verifyReleaseBundle } from '../scripts/verify-release-bundle.mjs'
-import { ALL_PLATFORMS, buildMatrix, parsePlatforms, resolveVersion } from '../scripts/resolve-release-matrix.mjs'
+import { ALL_PLATFORMS, DEFAULT_PLATFORMS, buildMatrix, isFullRelease, parsePlatforms, resolveVersion } from '../scripts/resolve-release-matrix.mjs'
 
 let failures = 0
 function check(name: string, condition: boolean): void {
@@ -72,6 +72,16 @@ let emptyPlatformsRejected = false
 try { parsePlatforms('[]') } catch { emptyPlatformsRejected = true }
 check('Empty platform list is rejected', emptyPlatformsRejected)
 
+// `is_full_release` decides whether a run writes the release's canonical
+// SHA256SUMS.txt or a scoped partial manifest beside it. It tracks the
+// platforms a tag actually builds, so the tagged Linux+Windows release owns
+// the canonical manifest and a later macOS run cannot overwrite it.
+check('macOS is not built by a plain version tag', !DEFAULT_PLATFORMS.includes('macos'))
+check('The default platform set counts as a full release', isFullRelease(DEFAULT_PLATFORMS))
+check('An every-platform run also counts as full', isFullRelease(ALL_PLATFORMS))
+check('A macOS-only run is partial, so it keeps its manifest scoped', !isFullRelease(['macos']))
+check('A Linux-only run is partial', !isFullRelease(['linux']))
+
 // Workflow wiring
 const reusableWorkflow = await readFile('.github/workflows/_release.yml', 'utf8')
 check('Release publication requires tests, audit, and smoke test',
@@ -85,7 +95,6 @@ check('Build artifacts are retained for one day', reusableWorkflow.includes('ret
 check('Every platform publishes into the shared v<version> release', reusableWorkflow.includes('tag_name: v${{ needs.setup.outputs.version }}'))
 
 const callers = [
-  ['.github/workflows/release.yml', '["linux","windows","macos"]', 'v*'],
   ['.github/workflows/release-linux.yml', '["linux"]', 'linux-v*'],
   ['.github/workflows/release-windows.yml', '["windows"]', 'win-v*'],
   ['.github/workflows/release-macos.yml', '["macos"]', 'mac-v*'],
@@ -98,15 +107,28 @@ for (const [path, platforms, tag] of callers) {
   check(`${path} triggers on the ${tag} tag and on demand`, workflow.includes(`tags: ['${tag}']`) && workflow.includes('workflow_dispatch:'))
 }
 
+// release.yml is the only caller whose platform set is conditional, so it is
+// checked on its own rather than through the loop above. The point of the
+// condition is cost: a mac runner bills at 10x, and a `v*` tag must never
+// start one unattended. Everything below asserts that a tag cannot.
+const taggedRelease = await readFile('.github/workflows/release.yml', 'utf8')
+const releaseCallerFiles = ['.github/workflows/release.yml', ...callers.map(([file]) => file)]
+check('release.yml delegates to the reusable release workflow', taggedRelease.includes('uses: ./.github/workflows/_release.yml'))
+check('release.yml triggers on the v* tag and on demand', taggedRelease.includes("tags: ['v*']") && taggedRelease.includes('workflow_dispatch:'))
+check('release.yml builds Linux and Windows by default', taggedRelease.includes('\'["linux","windows"]\''))
+check('release.yml adds macOS only behind the manual include_macos input', /inputs\.include_macos\s*&&\s*'\["linux","windows","macos"\]'/.test(taggedRelease))
+check('A v* tag cannot request macOS unconditionally', !/platforms:\s*'\[[^\]]*macos[^\]]*\]'/.test(taggedRelease))
+check('The macOS dispatch input defaults to off', /include_macos:[\s\S]*?default: false/.test(taggedRelease))
+
 // No workflow may upload debug artifacts; the storage quota is 500 MB.
-for (const path of ['.github/workflows/ci.yml', ...callers.map(([file]) => file)]) {
+for (const path of ['.github/workflows/ci.yml', ...releaseCallerFiles]) {
   const workflow = await readFile(path, 'utf8')
   check(`${path} uploads no debug artifacts`, !workflow.includes('playwright-report') && !workflow.includes('test-results'))
 }
 
 // Actions must be pinned to immutable commit SHAs, never moving tags.
 const allWorkflows = await Promise.all(
-  ['.github/workflows/ci.yml', '.github/workflows/_release.yml', ...callers.map(([file]) => file)].map((path) => readFile(path, 'utf8')),
+  ['.github/workflows/ci.yml', '.github/workflows/_release.yml', ...releaseCallerFiles].map((path) => readFile(path, 'utf8')),
 )
 const floatingTagRefs = allWorkflows.flatMap((workflow) => [...workflow.matchAll(/uses:\s+([\w-]+\/[\w-]+)@(v[\d.]+)\s*$/gm)].map((match) => `${match[1]}@${match[2]}`))
 check(`All actions are pinned to a commit SHA${floatingTagRefs.length > 0 ? ` — found ${floatingTagRefs.join(', ')}` : ''}`, floatingTagRefs.length === 0)

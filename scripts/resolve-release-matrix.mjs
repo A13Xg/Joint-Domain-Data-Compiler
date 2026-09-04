@@ -39,6 +39,22 @@ const PLATFORM_CONFIG = {
 
 export const ALL_PLATFORMS = Object.keys(PLATFORM_CONFIG)
 
+// What a `v*` tag builds without being asked twice. macOS is deliberately not
+// here: those runners bill at 10x on GitHub Free, so macOS is published
+// deliberately -- by dispatching Release with `include_macos`, or by the
+// Release (macOS) workflow -- into the same `v<version>` release either way.
+export const DEFAULT_PLATFORMS = ['linux', 'windows']
+
+// Whether this run covers everything the automatic release publishes -- not
+// whether it covers every platform that exists. It decides which name the
+// checksum manifest takes: the release's canonical `SHA256SUMS.txt`, or a
+// scoped `SHA256SUMS-partial-*.txt` set aside beside it. A later macOS-only
+// run has to take the partial name so it cannot overwrite the manifest the
+// tagged build already published.
+export function isFullRelease(platforms) {
+  return DEFAULT_PLATFORMS.every((platform) => platforms.includes(platform))
+}
+
 export function parsePlatforms(raw) {
   let parsed
   try {
@@ -80,7 +96,7 @@ if (process.argv[1] && basename(process.argv[1]) === 'resolve-release-matrix.mjs
     `version=${version}`,
     `matrix=${JSON.stringify(buildMatrix(platforms))}`,
     `platform_csv=${platforms.join(',')}`,
-    `is_full_release=${platforms.length === ALL_PLATFORMS.length}`,
+    `is_full_release=${isFullRelease(platforms)}`,
   ]
   console.log(lines.join('\n'))
 }
