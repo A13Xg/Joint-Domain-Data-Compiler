@@ -21,6 +21,12 @@ Versioning; release tags use the `vX.Y.Z` form.
 
 - The application icon and the browser-tab favicon are now the JDDC mark. The favicon previously
   carried an unrelated stock logo left over from the project scaffold.
+- Quality Gates no longer runs for a push or pull request that touches only documentation, source
+  artwork, or agent and editor scaffolding — none of which is an input to the lint pass, the test
+  harnesses, the web build, or the health check. One code file in the same change brings the whole
+  suite back, and `workflow_dispatch` still forces a run over anything. The release workflows are
+  deliberately unfiltered: they fire on a version tag, and a tagged release has to produce its
+  artifacts whatever the last commit happened to touch.
 - The desktop window now stays hidden until the renderer reports the workbench mounted, rather
   than appearing at the loading skeleton's first paint. With a splash on screen the old behavior
   would raise a half-built window behind it and then swap to that same window a second later.

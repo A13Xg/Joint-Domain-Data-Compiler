@@ -1,10 +1,49 @@
 name: Quality Gates
 
+# Paths listed below are inputs to no gate this workflow runs -- not to the
+# lint pass, not to a test harness, not to `vite build`, and not to the health
+# check -- so a change confined to them has nothing here to fail. A push or PR
+# is skipped only when EVERY changed file matches, so the moment one touches
+# code the full suite runs as before. `workflow_dispatch` ignores path filters
+# entirely, which stays the way to force a run over any change at all.
+#
+# Deliberately absent, because each one IS a build or lint input:
+#   KML-KMZ/**   vite.config.ts serves it to the browser build at
+#                `kml-library/`, and electron-builder packages it as
+#                extraResources on all three platforms.
+#   public/**    copied wholesale into dist/, including the user guide.
+#   benchmarks/  TypeScript, and covered by its own eslint config block.
+#   .github/**   a workflow edit is exactly the change worth verifying.
+#
+# The two lists below are duplicated rather than shared: GitHub Actions does
+# not support YAML anchors, so an alias cannot stand in for the second copy.
+# Keep them identical.
 on:
   pull_request:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      # Source artwork only. The packaged assets derived from it --
+      # build/icon.png and electron/splash.png -- live elsewhere and are not
+      # ignored.
+      - 'images/**'
+      - '.agents/**'
+      - '.claude/**'
+      - '.vscode/**'
+      - '.gitattributes'
+      - '.gitignore'
   push:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'images/**'
+      - '.agents/**'
+      - '.claude/**'
+      - '.vscode/**'
+      - '.gitattributes'
+      - '.gitignore'
   workflow_dispatch:
 
 permissions:
