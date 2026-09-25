@@ -33,10 +33,23 @@ interface P5Group {
   datasets: Dataset[]
 }
 
-/** The georeference the loaded tracks were actually built with. */
-function readStoredGeoReference(dataset: Dataset | undefined): P5GeoReference {
-  return (dataset ? readDatasetGeoReference(dataset) : null) ?? P5_DEFAULT_GEOREFERENCE
+/**
+ * The georeference the loaded tracks were actually built with, or `null` if the
+ * dataset's metadata is missing or fails validation. The distinction matters: a
+ * null means export must stay disabled, because there is nothing to invert the
+ * points through.
+ */
+function readStoredGeoReference(dataset: Dataset | undefined): P5GeoReference | null {
+  return dataset ? readDatasetGeoReference(dataset) : null
 }
+
+/**
+ * The three byte values seen in the one specimen this format was decoded from.
+ * Deliberately unlabelled: nothing in the file maps a code to an airframe, so
+ * naming them here would turn an inference into a claim. Any other byte is
+ * still accepted and preserved.
+ */
+const OBSERVED_TYPE_CODES = [0x58, 0x5f, 0x62]
 
 /** Only the fields the operator can change; the anchor is derived, not typed. */
 const GEO_FIELDS = ['anchorLatDeg', 'anchorLonDeg', 'anchorHeightM', 'horizontalUnitMeters', 'verticalUnitMeters', 'axisOrder'] as const
@@ -127,7 +140,7 @@ function P5RecordingCard({
 }: { group: P5Group } & Omit<P5PanelProps, 'datasets'>) {
   const { document: doc } = group
   const [roster, setRoster] = useState<P5Participant[]>(() => doc.roster.map((p) => ({ ...p })))
-  const [geo, setGeo] = useState<P5GeoReference>(() => readStoredGeoReference(group.datasets[0]))
+  const [geo, setGeo] = useState<P5GeoReference>(() => readStoredGeoReference(group.datasets[0]) ?? P5_DEFAULT_GEOREFERENCE)
   const [showAllSlots, setShowAllSlots] = useState(false)
   const [validation, setValidation] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -136,7 +149,7 @@ function P5RecordingCard({
   // Export inverts each track through the georeference it was BUILT with. If the
   // form has moved on from that, exporting now would rewrite every sample under
   // a transform the points were never in, so the tracks must be rebuilt first.
-  const geoDirty = !sameGeoReference(geo, storedGeo)
+  const geoDirty = storedGeo === null || !sameGeoReference(geo, storedGeo)
   // A cleared number input reads back as 0, and dividing by it on the way back
   // into frame units would write ±Infinity into the recording. Refuse to rebuild
   // on a scale that cannot be inverted rather than let it reach the file.
@@ -237,11 +250,23 @@ function P5RecordingCard({
       onNotify(`Applied ${count} roster change${count === 1 ? '' : 's'} to ${group.filename}.`)
     })
 
+  // Rebuild re-reads the roster from the recording, so an edit typed but not yet
+  // applied would vanish without trace. Carry it through instead of dropping it.
   const rebuildTracks = () =>
     run('Rebuild failed', () => {
-      flushAndRebuild(geo)
-      onNotify(`Rebuilt the tracks of ${group.filename} with the current georeference.`)
+      const carried = rosterEdits.length
+      flushAndRebuild(geo, rosterEdits)
+      onNotify(
+        carried === 0
+          ? `Rebuilt the tracks of ${group.filename} with the current georeference.`
+          : `Rebuilt the tracks of ${group.filename}, applying ${carried} pending roster change${carried === 1 ? '' : 's'}.`,
+      )
     })
+
+  const revertRosterEdits = () => {
+    setRoster(doc.roster.map((entry) => ({ ...entry })))
+    onNotify('Discarded the unapplied roster changes.')
+  }
 
   const runValidation = () =>
     run('Validation failed', () => {
@@ -257,12 +282,13 @@ function P5RecordingCard({
 
   const exportRecording = () =>
     run('P5 export failed', () => {
-      const hadRosterEdits = rosterEdits.length > 0
       const result = buildP5Export(doc, { roster: rosterEdits, datasets: group.datasets })
       setRoster(doc.roster.map((p) => ({ ...p })))
-      // Roster edits change the identity the track labels are built from, so the
-      // datasets have to be re-derived or the sidebar keeps the old callsigns.
-      if (hadRosterEdits) onRebuild(group.key, geo)
+      // Rebuild after anything was written. Roster edits change the identity the
+      // track labels are built from, and position writes leave the p5_x/p5_y/p5_z
+      // channels showing the pre-export values — which the next export would then
+      // read as a raw-channel edit.
+      if (result.rosterWritten > 0 || result.positionsWritten > 0) onRebuild(group.key, geo)
       const stem = group.filename.replace(/\.msnp5$/i, '')
       saveBinary(result.msn, group.filename)
       saveBinary(result.rpt, `${stem}.rpt`)
@@ -302,12 +328,21 @@ function P5RecordingCard({
           A P5 recording stores positions in a range-local frame whose origin and unit scale are <strong>not in the
           file</strong>. These values are assumptions; the raw frame components stay available as the
           <code> p5_x</code>/<code>p5_y</code>/<code>p5_z</code> channels, so correcting them here and rebuilding
-          re-places the tracks without re-importing. See <code>docs/P5-MSN.md</code> §6.
+          re-places the tracks without re-importing. See <code>docs/P5-MSN.md</code> §6. Derived altitude carries
+          whatever datum your anchor height is in, which is why these tracks report their altitude and time
+          references as <em>unknown</em> rather than guessing.
         </p>
+        {storedGeo === null && (
+          <p className="warn small">
+            These tracks carry no readable georeference — the metadata is missing or failed validation, which a
+            hand-edited or older project file can cause. Set the values you want and rebuild; until then the points
+            cannot be written back to the recording.
+          </p>
+        )}
         <div className="p5-geo-grid">
           <label>Anchor latitude<input type="number" step="0.00001" value={geo.anchorLatDeg} onChange={(e) => setGeo({ ...geo, anchorLatDeg: Number(e.target.value) })} /></label>
           <label>Anchor longitude<input type="number" step="0.00001" value={geo.anchorLonDeg} onChange={(e) => setGeo({ ...geo, anchorLonDeg: Number(e.target.value) })} /></label>
-          <label>Anchor height (m)<input type="number" step="1" value={geo.anchorHeightM} onChange={(e) => setGeo({ ...geo, anchorHeightM: Number(e.target.value) })} /></label>
+          <label>Anchor height (m, your datum)<input type="number" step="1" value={geo.anchorHeightM} onChange={(e) => setGeo({ ...geo, anchorHeightM: Number(e.target.value) })} /></label>
           <label>Horizontal m/unit<input type="number" step="0.01" min="0.0001" value={geo.horizontalUnitMeters} onChange={(e) => setGeo({ ...geo, horizontalUnitMeters: Number(e.target.value) })} /></label>
           <label>Vertical m/unit<input type="number" step="0.01" min="0.0001" value={geo.verticalUnitMeters} onChange={(e) => setGeo({ ...geo, verticalUnitMeters: Number(e.target.value) })} /></label>
           <label>Axis order
@@ -366,6 +401,7 @@ function P5RecordingCard({
                       type="number"
                       min={0}
                       max={255}
+                      list="p5-type-codes"
                       value={entry.typeCode}
                       onChange={(e) => updateSlot(entry.slot, { typeCode: Number(e.target.value) })}
                     />
@@ -381,9 +417,19 @@ function P5RecordingCard({
           airframes is inferred, not specified — see <code>docs/P5-MSN.md</code> §5.6. Unrecognized values are
           preserved as written.
         </p>
-        <button type="button" disabled={busy || rosterEdits.length === 0} onClick={applyEdits}>
-          Apply {rosterEdits.length} roster change{rosterEdits.length === 1 ? '' : 's'}
-        </button>
+        <datalist id="p5-type-codes">
+          {OBSERVED_TYPE_CODES.map((code) => (
+            <option key={code} value={code}>{`0x${code.toString(16).toUpperCase()} (observed)`}</option>
+          ))}
+        </datalist>
+        <div className="p5-actions">
+          <button type="button" disabled={busy || rosterEdits.length === 0} onClick={applyEdits}>
+            Apply {rosterEdits.length} roster change{rosterEdits.length === 1 ? '' : 's'}
+          </button>
+          <button type="button" disabled={busy || rosterEdits.length === 0} onClick={revertRosterEdits}>
+            Discard changes
+          </button>
+        </div>
       </div>
 
       <div className="p5-section">

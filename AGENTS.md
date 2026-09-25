@@ -3,7 +3,7 @@
 Entrypoint for AI coding agents working in this repository.
 
 **JDDC** is a single-screen engineering workbench for TSPI (trajectory / flight-data)
-logs. It imports 7 formats, normalizes them into one internal `Dataset`, and lets an
+logs. It imports 8 formats, normalizes them into one internal `Dataset`, and lets an
 engineer inspect, transform, compare, and re-export them. Built for precision and
 auditability — not dashboards.
 
@@ -20,12 +20,13 @@ auditability — not dashboards.
 ```bash
 npm ci                # install (never `npm install` in CI)
 npm run dev           # browser dev server, http://localhost:5173
-npm run check:all     # lint + 92 test harnesses + build + app health
+npm run check:all     # lint + 93 test harnesses + build + app health
 npm run check:e2e     # 10 Playwright workflow tests (needs chromium)
 npm run check:full    # check:all + check:e2e (desktop smoke still needs build:desktop:*)
 npx tsc -b            # types only — fastest feedback loop
 
 npm run fixtures:demo-flight  # regenerate the synthetic demo flight fixtures
+npm run verify:p5 -- <file.msnP5>  # opt-in round-trip proof against a real P5 recording
 npm run guide:screenshots     # recapture every screenshot in public/user-guide.html
 ```
 

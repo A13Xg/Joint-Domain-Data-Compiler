@@ -13,7 +13,7 @@ test('file input accepts all supported formats', async ({ page }) => {
   await page.goto('/')
 
   const fileInput = page.locator('input[type="file"]')
-  await expect(fileInput).toHaveAttribute('accept', /csv|gpx|kml|kmz|geojson|json|nmea|gps|log|gpb|bin/)
+  await expect(fileInput).toHaveAttribute('accept', /csv|gpx|kml|kmz|geojson|json|nmea|gps|log|gpb|bin|msnP5/)
 })
 
 test('can display dataset list and format badges', async ({ page }) => {
@@ -21,7 +21,7 @@ test('can display dataset list and format badges', async ({ page }) => {
 
   // Check format badges are displayed
   const badges = page.locator('.format-badges .badge')
-  await expect(badges).toHaveCount(7) // CSV, GPX, GeoJSON, KML/KMZ, NMEA, GPB, EAG
+  await expect(badges).toHaveCount(8) // CSV, GPX, GeoJSON, KML/KMZ, NMEA, GPB, EAG, P5 CTS mission
 
   // Check dataset list exists (empty by default)
   await expect(page.locator('.dataset-list')).toBeVisible()

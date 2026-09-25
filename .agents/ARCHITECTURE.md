@@ -87,6 +87,7 @@ discovery order), `warnings` (non-fatal parse issues, also logged), and optional
 | `src/core/analytics/`, `derivations/` | Derived channels (kinematics etc.). |
 | `src/core/quality/` | Quality-event detection over a dataset. |
 | `src/core/fusion/` | Multi-source registration and combination. |
+| `src/core/p5/` | P5 CTS recording codec: block/subframe framing, roster, in-place byte patching, live-document registry. |
 | `src/core/exporters/` | `Dataset` → file bytes/text. |
 | `src/core/reports/` | HTML debrief generation. |
 | `src/core/plugins/` | Registry unifying parsers/exporters/operations/presets. |

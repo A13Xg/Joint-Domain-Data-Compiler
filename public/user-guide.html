@@ -611,6 +611,9 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
   rows are highlighted until you press <em>Apply</em>. Tick <em>show all 50 slots</em> to reach the
   slots that carry no data — their identity fields are still part of the file.</p>
 
+  <p>Edited a row by mistake? <em>Discard changes</em> re-reads the roster from the recording. Edits you have
+  not applied yet are carried through a rebuild rather than lost.</p>
+
   <h3>Exporting</h3>
   <p><em>Export .msnP5 + .rpt</em> writes the recording back out by patching the bytes that were
   read, not by rebuilding the file. An export with no edits is byte-identical to the file you
@@ -618,6 +621,14 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
   so you get back the same set you brought in. Two things deliberately do not round-trip:
   <strong>track colour</strong>, because the format has no colour field, and samples the recording
   marks as no-data, which are never promoted to live.</p>
+
+  <div class="caution">
+    <strong>Changes the format cannot hold are reported, never dropped quietly.</strong>
+    A P5 recording has nowhere to record a deleted sample, and its clock is shared by all 50 slots, so a
+    per-track time shift cannot be written. If you delete points, change timestamps, or edit the raw
+    <code>p5_x</code>/<code>p5_y</code>/<code>p5_z</code> channels directly, the export tells you exactly what was
+    not written and why, in the log and in the toast. It never claims to have saved something it did not.
+  </div>
 
   <p><em>Validate structure</em> re-walks every block, subframe and slot record and reports what it
   found. The format reference behind all of this — including which bytes are still undecoded — is

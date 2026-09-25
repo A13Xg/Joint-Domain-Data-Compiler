@@ -27,9 +27,9 @@ import {
   writeP5Document,
   P5FormatError,
 } from '../src/core/p5/document.ts'
-import { buildResultFromDocument, parseP5, P5_DEFAULT_GEOREFERENCE } from '../src/core/parsers/p5.ts'
+import { buildResultFromDocument, parseP5, parseP5GeoReference, P5_DEFAULT_GEOREFERENCE } from '../src/core/parsers/p5.ts'
 import { buildP5Export, readDatasetGeoReference } from '../src/core/exporters/p5.ts'
-import { p5DatasetLabel } from '../src/core/p5/import.ts'
+import { importP5File, p5DatasetLabel } from '../src/core/p5/import.ts'
 import { getP5Document, p5DocumentCount, registerP5Document, releaseP5Document, retainP5Documents } from '../src/core/p5/registry.ts'
 import { geodeticToEnu } from '../src/core/geodesy.ts'
 import { makeDataset } from '../src/core/parsers/index.ts'
@@ -269,6 +269,81 @@ console.log('\n--- editing sample positions ---')
   check('writing into a no-data record is refused', threw)
 }
 
+console.log('\n--- every modification the format cannot represent is reported ---')
+{
+  // The failure mode this guards against is a modification that neither reaches
+  // the file nor produces a warning: the user believes it was saved, and it was
+  // not. Each case below must warn.
+  const warnFor = (mutate: (dataset: ReturnType<typeof makeDataset>) => void) => {
+    const doc = readP5Document(msn.slice(), { rpt })
+    const dataset = makeDataset('fixture', 'p5', buildResultFromDocument(doc, { slots: [1] }), msn.byteLength)
+    mutate(dataset)
+    return buildP5Export(doc, { datasets: [dataset] })
+  }
+
+  const deleted = warnFor((d) => { d.points.splice(3, 4) })
+  check('deleted points are reported, not silently kept',
+    deleted.warnings.some((w) => w.includes('no longer in this dataset')), deleted.warnings.join(' | '))
+  check('deleting points writes nothing', deleted.positionsWritten === 0)
+
+  const retimed = warnFor((d) => { d.points[2]!.time = (d.points[2]!.time ?? 0) + 5_000 })
+  check('an edited timestamp is reported as unwritable',
+    retimed.warnings.some((w) => w.includes('timestamp that differs')), retimed.warnings.join(' | '))
+
+  const rawEdited = warnFor((d) => { d.points[4]!.ext!.p5_x = 12345 })
+  check('a directly edited raw frame channel is reported',
+    rawEdited.warnings.some((w) => w.includes('p5_x/p5_y/p5_z')), rawEdited.warnings.join(' | '))
+
+  const duplicated = warnFor((d) => { d.points.push({ ...d.points[1]! }) })
+  check('two points claiming one record are reported',
+    duplicated.warnings.some((w) => w.includes('another point already claimed')), duplicated.warnings.join(' | '))
+
+  // The false-positive trap: a decimated import legitimately covers fewer
+  // records, and that must not read as a deletion.
+  const doc = readP5Document(msn.slice(), { rpt })
+  const decimated = makeDataset('decimated', 'p5', buildResultFromDocument(doc, { slots: [1], decimation: 5 }), msn.byteLength)
+  const decimatedExport = buildP5Export(doc, { datasets: [decimated] })
+  check('a decimated import is not mistaken for deleted points',
+    !decimatedExport.warnings.some((w) => w.includes('no longer in this dataset')), decimatedExport.warnings.join(' | '))
+
+  // An untouched dataset must produce no warnings at all, or the signal is noise.
+  const clean = makeDataset('clean', 'p5', buildResultFromDocument(doc, { slots: [1] }), msn.byteLength)
+  check('an untouched dataset warns about nothing',
+    buildP5Export(doc, { datasets: [clean] }).warnings.length === 0)
+}
+
+console.log('\n--- a georeference from outside this process is validated ---')
+{
+  // ARCHITECTURE.md §10.6: boundary input arrives as unknown and is rejected
+  // loudly. A restored project manifest is exactly that.
+  const valid = { anchorLatDeg: 39.4, anchorLonDeg: -118.7, anchorHeightM: 1199, horizontalUnitMeters: 30.48, verticalUnitMeters: 1, axisOrder: 'x-east' }
+  check('a well-formed georeference is accepted', parseP5GeoReference(valid) !== null)
+  check('it is accepted as a JSON string too', parseP5GeoReference(JSON.stringify(valid)) !== null)
+  for (const [name, bad] of [
+    ['a zero horizontal scale', { ...valid, horizontalUnitMeters: 0 }],
+    ['a negative vertical scale', { ...valid, verticalUnitMeters: -1 }],
+    ['a NaN scale', { ...valid, horizontalUnitMeters: Number.NaN }],
+    ['an out-of-range latitude', { ...valid, anchorLatDeg: 91 }],
+    ['an out-of-range longitude', { ...valid, anchorLonDeg: -181 }],
+    ['a string where a number belongs', { ...valid, anchorHeightM: '1199' }],
+    ['an unknown axis order', { ...valid, axisOrder: 'z-east' }],
+    ['a partial anchor triple', { ...valid, anchorX: 1, anchorY: 2 }],
+  ] as [string, unknown][]) {
+    check(`${name} is rejected`, parseP5GeoReference(bad) === null)
+  }
+  check('malformed JSON is rejected', parseP5GeoReference('{not json') === null)
+  check('null is rejected', parseP5GeoReference(null) === null)
+  check('a complete anchor triple survives', parseP5GeoReference({ ...valid, anchorX: 1, anchorY: 2, anchorZ: 3 })?.anchorZ === 3)
+}
+
+console.log('\n--- reference metadata is not fabricated ---')
+{
+  const result = parseP5(msn.slice(), { rpt })
+  check('time reference is UNKNOWN, not assumed UTC', result.timeReference === 'UNKNOWN')
+  check('altitude reference is UNKNOWN, not assumed HAE', result.altitudeReference === 'UNKNOWN')
+  check('and the reason is stated', result.warnings.some((w) => w.includes('Time base is UNKNOWN')))
+}
+
 console.log('\n--- points that cannot be addressed ---')
 {
   const doc = readP5Document(msn.slice(), { rpt })
@@ -415,6 +490,48 @@ console.log('\n--- a dataset with no recorded georeference is skipped, not guess
   check('and the recording is untouched', equalBytes(exported.msn, pristine))
   check('and the reason is reported',
     exported.warnings.some((w) => w.includes('no usable P5 georeference')), exported.warnings.join(' | '))
+}
+
+console.log('\n--- importP5File: the path the app actually takes ---')
+{
+  // Everything above exercises the codec directly. This is the entry point the
+  // UI calls, and it owns the fan-out, the document registration and the point
+  // budget — logic nothing else covers.
+  const asFile = (bytes: Uint8Array, name = 'recording.msnP5') => new File([bytes as unknown as BlobPart], name)
+
+  const imported = await importP5File(asFile(msn.slice()), { rpt, teq: undefined })
+  check('one dataset per live slot', imported.datasets.length === 2, String(imported.datasets.length))
+  check('every dataset is tagged as P5', imported.datasets.every((d) => d.sourceFormat === 'p5'))
+  check('each dataset names its own slot',
+    imported.datasets.map((d) => d.metadata?.meta?.p5Slots).join('|') === '1|2',
+    imported.datasets.map((d) => d.metadata?.meta?.p5Slots).join('|'))
+  check('datasets share one document key',
+    new Set(imported.datasets.map((d) => d.metadata?.meta?.p5DocumentKey)).size === 1)
+  check('the document is registered under that key',
+    getP5Document(imported.documentKey) === imported.document)
+  check('dataset ids are distinct', imported.datasets[0]!.id !== imported.datasets[1]!.id)
+  check('the source filename is recorded for later relabelling',
+    imported.datasets.every((d) => d.metadata?.meta?.p5SourceFilename === 'recording.msnP5'))
+
+  const merged = await importP5File(asFile(msn.slice()), { rpt, splitSlots: false })
+  check('splitSlots:false yields a single combined track', merged.datasets.length === 1)
+  check('the combined track holds both slots', merged.datasets[0]!.points.length === 29 * 2)
+
+  // The budget is a ceiling on the recording, not on each track, and it
+  // truncates rather than throwing — a 450 MB file is this format's normal case.
+  const capped = await importP5File(asFile(msn.slice()), { rpt, maxPoints: 40 })
+  check('the point budget spans the whole recording, not each track',
+    capped.datasets.reduce((total, d) => total + d.points.length, 0) === 40,
+    String(capped.datasets.reduce((total, d) => total + d.points.length, 0)))
+  check('a truncated track says so', capped.datasets.some((d) => d.warnings.some((w) => w.includes('Import stopped'))))
+
+  // A recording with nothing instrumented must produce no tracks at all, so the
+  // caller can say "configuration only" instead of showing an empty track.
+  const empty = buildP5Fixture({ extraBlocks: 1, slots: DEFAULT_FIXTURE_SLOTS.map((slot) => ({ ...slot, live: false })) })
+  const none = await importP5File(asFile(empty.msn, 'empty.msnP5'), { rpt: empty.rpt })
+  check('a recording with no live slots yields no datasets', none.datasets.length === 0, String(none.datasets.length))
+
+  retainP5Documents([])
 }
 
 console.log('\n--- the document registry ---')

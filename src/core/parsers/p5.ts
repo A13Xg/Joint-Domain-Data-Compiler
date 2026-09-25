@@ -56,6 +56,70 @@ export const P5_DEFAULT_GEOREFERENCE: P5GeoReference = {
   axisOrder: 'x-east',
 }
 
+/**
+ * Validate a georeference that arrived from outside this process — a restored
+ * project manifest, a hand-edited metadata blob — and return `null` if any of it
+ * is unusable. ARCHITECTURE.md §10.6 requires boundary input to be rejected
+ * loudly rather than half-trusted, and this one has teeth: a zero scale divides
+ * to Infinity when points are inverted back into frame units, and a silently
+ * substituted default would place a track hundreds of kilometres from where its
+ * points were built.
+ */
+export function parseP5GeoReference(raw: unknown): P5GeoReference | null {
+  if (typeof raw === 'string') {
+    try {
+      return parseP5GeoReference(JSON.parse(raw))
+    } catch {
+      return null
+    }
+  }
+  if (!raw || typeof raw !== 'object') return null
+  const candidate = raw as Record<string, unknown>
+
+  const finite = (value: unknown): number | null =>
+    typeof value === 'number' && Number.isFinite(value) ? value : null
+  const positive = (value: unknown): number | null => {
+    const n = finite(value)
+    return n !== null && n > 0 ? n : null
+  }
+
+  const anchorLatDeg = finite(candidate.anchorLatDeg)
+  const anchorLonDeg = finite(candidate.anchorLonDeg)
+  const anchorHeightM = finite(candidate.anchorHeightM)
+  const horizontalUnitMeters = positive(candidate.horizontalUnitMeters)
+  const verticalUnitMeters = positive(candidate.verticalUnitMeters)
+  const axisOrder = candidate.axisOrder === 'x-east' || candidate.axisOrder === 'y-east' ? candidate.axisOrder : null
+
+  if (
+    anchorLatDeg === null || Math.abs(anchorLatDeg) > 90 ||
+    anchorLonDeg === null || Math.abs(anchorLonDeg) > 180 ||
+    anchorHeightM === null ||
+    horizontalUnitMeters === null ||
+    verticalUnitMeters === null ||
+    axisOrder === null
+  ) {
+    return null
+  }
+
+  // The anchor triple is optional in the type but, once present, must be whole:
+  // a partial anchor would silently fall back to a different frame origin.
+  const anchorX = finite(candidate.anchorX)
+  const anchorY = finite(candidate.anchorY)
+  const anchorZ = finite(candidate.anchorZ)
+  const anchorPresent = [anchorX, anchorY, anchorZ].filter((v) => v !== null).length
+  if (anchorPresent !== 0 && anchorPresent !== 3) return null
+
+  return {
+    anchorLatDeg,
+    anchorLonDeg,
+    anchorHeightM,
+    horizontalUnitMeters,
+    verticalUnitMeters,
+    axisOrder,
+    ...(anchorPresent === 3 ? { anchorX: anchorX!, anchorY: anchorY!, anchorZ: anchorZ! } : {}),
+  }
+}
+
 export interface ParseP5Options {
   /** Companion .rpt index, when the caller has it. */
   rpt?: Uint8Array
@@ -193,8 +257,18 @@ export function buildResultFromDocument(doc: P5Document, options: ParseP5Options
       `${geo.axisOrder === 'x-east' ? 'X=East/Y=North' : 'Y=East/X=North'}, anchored at ` +
       `${geo.anchorLatDeg.toFixed(5)}, ${geo.anchorLonDeg.toFixed(5)}. Raw frame values are kept in the p5_x/p5_y/p5_z channels.`,
   )
+  warnings.push(
+    'Time base is UNKNOWN, not assumed UTC: the recording carries two clocks about four hours apart and nothing that ' +
+      'identifies either as UTC, GPS or local. Altitude reference is UNKNOWN for the same reason — height is derived ' +
+      'from the anchor height you supplied, so it is whatever datum that figure is in. Do not compare either against ' +
+      'another source without establishing the reference first.',
+  )
 
   const meta: Record<string, string> = {
+    // Recorded so export can tell "the user deleted points" apart from "these
+    // records were never imported" on a decimated or budget-truncated import.
+    p5BuiltPointCount: String(points.length),
+    p5Decimation: String(decimation),
     p5MissionDate: doc.header.dateLong.trim() || doc.header.dateShort,
     p5Blocks: String(doc.blocks.length),
     p5Subframes: String(doc.subframeCount),
@@ -210,8 +284,13 @@ export function buildResultFromDocument(doc: P5Document, options: ParseP5Options
     channels: CHANNEL_DEFINITIONS.map((c) => c.id),
     channelDefinitions: CHANNEL_DEFINITIONS,
     coordinateSystem: 'EPSG:4326 (derived from an assumed P5 range frame)',
-    altitudeReference: 'HAE',
-    timeReference: 'UTC',
+    // Both UNKNOWN on purpose. Height is only as good as the operator-supplied
+    // anchor height, whose datum this code cannot know, and nothing in the file
+    // identifies the time base. Claiming HAE/UTC here would be exactly the
+    // fabrication ARCHITECTURE.md §10.1 forbids, and it would let a cross-source
+    // comparison proceed silently that ought to warn.
+    altitudeReference: 'UNKNOWN',
+    timeReference: 'UNKNOWN',
     meta,
   }
 }

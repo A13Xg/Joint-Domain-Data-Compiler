@@ -935,6 +935,9 @@ Appears once a `.msnP5` is loaded. Format reference: `docs/P5-MSN.md`.
 - Editable: **callsign** (20 chars), **aircraft id** (8), **unit** (8), **type code** (one byte, 0–255)
 - **Colour** — per-slot swatch bound to the workspace display settings; does *not* round-trip into the file
 - Edited rows highlighted until **Apply**; applying patches the source document and rebuilds tracks
+- **Discard changes** — drops unapplied roster edits and re-reads the roster from the recording
+- Type code input offers the observed byte values (`0x58`, `0x5F`, `0x62`) as suggestions; any other byte is accepted and preserved
+- A pending roster edit is carried through **Rebuild tracks** rather than silently reset
 
 ### Integrity & export
 - **Validate structure** — re-walks every block, subframe and slot record; reports counts, clock anomalies, and any invariant violations
@@ -943,3 +946,5 @@ Appears once a `.msnP5` is loaded. Format reference: `docs/P5-MSN.md`.
 - Roster edits are validated as a batch and applied all-or-nothing; only the fields that actually changed are written
 - P5 exports are not mirrored into the desktop file archive — a 450 MB shadow copy per export is not a safety net worth its cost
 - Point moves are inverted through the current georeference; no-data records are never promoted to live
+- **Every modification the format cannot represent is reported, never dropped in silence** — deleted points, edited timestamps, directly-edited `p5_x`/`p5_y`/`p5_z` channels, two points claiming one record, and points added after import each produce an export warning
+- Export rebuilds the tracks afterwards whenever anything was written, so the raw frame channels stay in step with the file

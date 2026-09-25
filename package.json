@@ -23,6 +23,7 @@
     "test": "node scripts/run-tests.mjs",
     "test:e2e": "playwright test",
     "test:e2e:ci": "playwright test test/e2e/ci-smoke.spec.ts",
+    "verify:p5": "esbuild scripts/verify-p5.ts --bundle --platform=node --format=esm --outfile=.test-build/verify-p5.mjs --log-level=error && node --max-old-space-size=4096 .test-build/verify-p5.mjs",
     "test:legacy": "esbuild test/validate.ts --bundle --platform=node --format=esm --outfile=.test-build/validate.mjs && node .test-build/validate.mjs",
     "bench": "node --expose-gc scripts/run-benchmarks.mjs",
     "fixtures:demo-flight": "node scripts/generate-demo-flight.mjs",

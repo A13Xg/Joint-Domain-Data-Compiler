@@ -40,6 +40,19 @@ Versioning; release tags use the `vX.Y.Z` form.
   - A new **P5 Mission** tab carries the roster editor, the range georeference, a structural
     validator, and the export. Recordings run 400–500 MB and are held for the session, so the
     desktop app is the recommended home for them.
+  - **Modifications the format cannot represent are reported, never dropped in silence.** A P5
+    recording has nowhere to mark a sample deleted, and its clock lives in the subframe header
+    shared by all 50 slots, so a per-track time shift cannot be written. Deleted points, edited
+    timestamps, directly-edited raw frame channels, and two points claiming one record each
+    produce an export warning naming the count and the reason.
+  - **Altitude and time references are reported as `UNKNOWN`, not assumed.** Nothing in the file
+    identifies its time base — it carries two clocks about four hours apart with no explanation —
+    and derived height is only as good as the anchor height the operator supplies. Claiming
+    HAE/UTC would let a cross-source comparison proceed silently that ought to warn.
+  - `npm run verify:p5 -- <file.msnP5>` proves the round-trip against a real recording: byte
+    identity across all three files, idempotence over two cycles, 500+ bulk edits read back by
+    value, a full 50-slot roster round-trip, undo restoring the original bytes, and rejection of
+    truncated, mis-signed and deep-damaged files.
 - **Range georeference is an explicit, operator-owned setting.** A P5 recording stores positions
   in a range-local frame whose origin and unit scale are *not in the file*. JDDC does not guess
   silently: it applies a stated default, warns on every import that the coordinates are an

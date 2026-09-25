@@ -8,8 +8,11 @@
 import type { Dataset, TrackPoint } from '../model'
 import { enuToGeodetic, geodeticToEnu } from '../geodesy'
 import {
+  P5_RECORD_BYTES,
   P5_STATE_LIVE,
+  P5_SUBFRAME_HEADER_BYTES,
   buildP5Rpt,
+  decodeP5Clock,
   p5RecordOffset,
   setP5Participant,
   setP5SamplePosition,
@@ -17,7 +20,7 @@ import {
   type P5Document,
   type ParticipantPatch,
 } from '../p5/document'
-import { P5_DEFAULT_GEOREFERENCE, type P5GeoReference } from '../parsers/p5'
+import { parseP5GeoReference, type P5GeoReference } from '../parsers/p5'
 
 export interface P5RosterEdit extends ParticipantPatch {
   slot: number
@@ -80,18 +83,12 @@ function movedInGeodeticSpace(
 
 /**
  * The georeference a dataset was built with. Returns `null` when its metadata is
- * missing or unreadable, because falling back to the defaults would invert the
- * points through a transform they were never in — the caller skips the dataset
- * and says so instead.
+ * missing or fails validation, because falling back to the defaults would invert
+ * the points through a transform they were never in — the caller skips the
+ * dataset and says so instead.
  */
 export function readDatasetGeoReference(dataset: Dataset): P5GeoReference | null {
-  const stored = dataset.metadata?.meta?.p5GeoReference
-  if (!stored) return null
-  try {
-    return { ...P5_DEFAULT_GEOREFERENCE, ...(JSON.parse(stored) as Partial<P5GeoReference>) }
-  } catch {
-    return null
-  }
+  return parseP5GeoReference(dataset.metadata?.meta?.p5GeoReference)
 }
 
 export function buildP5Export(document: P5Document, options: P5ExportOptions = {}): P5ExportResult {
@@ -121,6 +118,11 @@ export function buildP5Export(document: P5Document, options: P5ExportOptions = {
     }
     const origin = { latDeg: geo.anchorLatDeg, lonDeg: geo.anchorLonDeg, heightM: geo.anchorHeightM }
     let unaddressable = 0
+    let matched = 0
+    let timeEdited = 0
+    let rawChannelEdited = 0
+    const seenRecords = new Set<number>()
+    let duplicated = 0
 
     for (const point of dataset.points) {
       const offset = resolveRecordOffset(document, point)
@@ -132,6 +134,21 @@ export function buildP5Export(document: P5Document, options: P5ExportOptions = {
         unaddressable++
         continue
       }
+      matched++
+      if (seenRecords.has(offset)) duplicated++
+      else seenRecords.add(offset)
+
+      // The format has no place to put an edited timestamp: the clock lives in
+      // the subframe header and is shared by all 50 slots, so moving one track in
+      // time would move every other track with it. Detect and report rather than
+      // write something wrong — or say nothing.
+      if (point.time !== undefined) {
+        const slotIndex = (typeof point.ext?.p5_slot === 'number' ? point.ext.p5_slot : 1) - 1
+        const subframeOffset = offset - P5_SUBFRAME_HEADER_BYTES - slotIndex * P5_RECORD_BYTES
+        const recordTimeOfDay = decodeP5Clock(document.bytes, subframeOffset + 8)
+        if (Math.abs((((point.time % 86_400_000) + 86_400_000) % 86_400_000) - recordTimeOfDay) > 1) timeEdited++
+      }
+
       // Forward-convert what is in the file right now and compare like for like.
       const currentX = document.view.getFloat32(offset + 8, false)
       const currentY = document.view.getFloat32(offset + 12, false)
@@ -148,6 +165,16 @@ export function buildP5Export(document: P5Document, options: P5ExportOptions = {
               northM: (currentX - geo.anchorX) * geo.horizontalUnitMeters,
               upM: (currentZ - geo.anchorZ) * geo.verticalUnitMeters,
             }
+      // A raw frame channel edited directly in the table is not a coordinate
+      // move, so the geodetic comparison below cannot see it.
+      if (
+        (typeof point.ext?.p5_x === 'number' && point.ext.p5_x !== currentX) ||
+        (typeof point.ext?.p5_y === 'number' && point.ext.p5_y !== currentY) ||
+        (typeof point.ext?.p5_z === 'number' && point.ext.p5_z !== currentZ)
+      ) {
+        rawChannelEdited++
+      }
+
       if (!movedInGeodeticSpace(point, enuToGeodetic(currentEnu, origin))) continue
 
       const enu = geodeticToEnu({ latDeg: point.lat, lonDeg: point.lon, heightM: point.ele ?? 0 }, origin)
@@ -161,10 +188,42 @@ export function buildP5Export(document: P5Document, options: P5ExportOptions = {
       positionsWritten++
     }
 
+    // Every modification JDDC can make either reaches the file or is reported
+    // here. Nothing this exporter cannot represent is allowed to disappear in
+    // silence — that is the difference between a lossless round-trip and one
+    // that merely looks like it.
     if (unaddressable > 0) {
       warnings.push(
-        `${dataset.name}: ${unaddressable.toLocaleString()} points could not be matched to a live slot record ` +
-          '(points added after import, or records the recording marks as no-data) and were not written.',
+        `${dataset.name}: ${unaddressable.toLocaleString()} point(s) could not be matched to a live slot record ` +
+          '(added after import, or records the recording marks as no-data) and were not written.',
+      )
+    }
+    const builtCount = Number(dataset.metadata?.meta?.p5BuiltPointCount)
+    if (Number.isFinite(builtCount) && builtCount - matched > 0) {
+      warnings.push(
+        `${dataset.name}: ${(builtCount - matched).toLocaleString()} point(s) present at import are no longer in this ` +
+          'dataset. The P5 format has no way to mark a sample as deleted, so those records were left exactly as ' +
+          'recorded — the exported file still contains them.',
+      )
+    }
+    if (duplicated > 0) {
+      warnings.push(
+        `${dataset.name}: ${duplicated.toLocaleString()} point(s) resolve to a slot record another point already ` +
+          'claimed; only the last write to each record survives.',
+      )
+    }
+    if (timeEdited > 0) {
+      warnings.push(
+        `${dataset.name}: ${timeEdited.toLocaleString()} point(s) carry a timestamp that differs from the record they ` +
+          'came from. Timestamps were not written: a P5 clock lives in the subframe header and is shared by all 50 ' +
+          'slots, so changing one track\u2019s time would move every other track in the recording with it.',
+      )
+    }
+    if (rawChannelEdited > 0) {
+      warnings.push(
+        `${dataset.name}: ${rawChannelEdited.toLocaleString()} point(s) have a p5_x/p5_y/p5_z channel that no longer ` +
+          'matches the recording. Those channels are a read-only view of the stored frame values; edit the point ' +
+          'coordinates instead, or rebuild the tracks to resynchronise them.',
       )
     }
   }
