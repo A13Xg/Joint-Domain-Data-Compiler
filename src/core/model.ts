@@ -101,6 +101,7 @@ export type SourceFormat =
   | 'nmea'
   | 'gpb'
   | 'eag'
+  | 'p5'
   | 'unknown'
 
 /** A normalized, in-memory track. */

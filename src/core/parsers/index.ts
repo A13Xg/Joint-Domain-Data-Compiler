@@ -17,7 +17,9 @@ import { parseKml } from './kml'
 import { parseNmea } from './nmea'
 import { parseGpb, looksLikeGpb } from './gpb'
 import { parseEag } from './eag'
+import { parseP5 } from './p5'
 import { assertByteBudget, assertPointBudget, DEFAULT_FORMAT_BUDGETS } from './limits'
+import { looksLikeP5 } from '../p5/document'
 import { describeSignatureMismatch, sniffBinarySignature, sniffTextSignature } from './contentSignature'
 
 export interface FormatDescriptor {
@@ -37,6 +39,7 @@ export const INPUT_FORMATS: FormatDescriptor[] = [
   { id: 'nmea', label: 'NMEA 0183', extensions: ['nmea', 'gps', 'log'], binary: false, needsMapping: false, description: 'Raw receiver sentences (GGA/RMC/GLL).' },
   { id: 'gpb', label: 'GPB (binary)', extensions: ['gpb', 'bin'], binary: true, needsMapping: false, description: 'JDDC Geo Point Binary container.' },
   { id: 'eag', label: 'EAG TSPI', extensions: ['eag', 'txt'], binary: false, needsMapping: false, description: 'European Air Group TSPI (tab-delimited ECEF coordinates from NATO range instrumentation).' },
+  { id: 'p5', label: 'P5 CTS mission', extensions: ['msnp5'], binary: true, needsMapping: false, description: 'P5 Combat Training System mission recording. Coordinates use an assumed range georeference — see docs/P5-MSN.md.' },
 ]
 
 export function detectFormat(fileName: string): FormatDescriptor | null {
@@ -129,9 +132,16 @@ export async function parseFileToDataset(file: File, format: FormatDescriptor): 
     if (format.binary) {
       if (format.id === 'gpb' || looksLikeGpb(bytes)) {
         result = parseGpb(buffer, DEFAULT_FORMAT_BUDGETS.gpb.maxPoints)
+        resolvedFormat = 'gpb'
+      } else if (format.id === 'p5' || looksLikeP5(bytes)) {
+        result = parseP5(bytes, { maxPoints: DEFAULT_FORMAT_BUDGETS.p5.maxPoints })
+        resolvedFormat = 'p5'
       } else {
         throw new Error(`No binary parser available for ${file.name}.`)
       }
+      // Compare the DECLARED format against the sniff. Using the resolved one
+      // would compare content against itself and could never disagree, which is
+      // exactly the mislabelled-file case this warning exists for.
       mismatch = describeSignatureMismatch(format.id, sniffBinarySignature(bytes))
     } else {
       const text = new TextDecoder('utf-8').decode(bytes)

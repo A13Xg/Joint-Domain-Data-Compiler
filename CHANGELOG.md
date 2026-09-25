@@ -21,6 +21,31 @@ Versioning; release tags use the `vX.Y.Z` form.
 
 ### Added
 
+- **P5 CTS mission recordings (`.msnP5`) can be imported, inspected, edited and exported.** The
+  format had no public specification; it was reverse-engineered from a single recording and the
+  result is written up in [`docs/P5-MSN.md`](docs/P5-MSN.md), which separates what is confirmed
+  from the bytes, what is inferred, and what is still unknown. The container is fully decoded —
+  the `.rpt` block index, the 1 Hz block / 10 Hz subframe hierarchy, the plain-binary HH:MM:SS:CC
+  clocks, the 50-slot participant roster and the 88-byte slot record framing — and every
+  structural invariant is checked on load.
+  - Each instrumented roster slot becomes its own track, so callsign, aircraft id, unit, aircraft
+    type code, colour, label and visibility are all editable per aircraft.
+  - **Export is a byte patch of the source file, not a re-serialization.** Most of a slot record
+    is still undecoded, so regenerating one would mean inventing bytes; instead the imported
+    bytes are edited in place. An export with no changes is byte-identical across all three files,
+    verified against the full 446 MB specimen and asserted in the test suite.
+  - The `.msnP5`, `.rpt` and `.teq` are handled as one set: dropped together they are paired by
+    basename, the index is cross-checked against the layout derived from the recording, and the
+    `.teq` is carried through export unchanged so what comes out is the set that went in.
+  - A new **P5 Mission** tab carries the roster editor, the range georeference, a structural
+    validator, and the export. Recordings run 400–500 MB and are held for the session, so the
+    desktop app is the recommended home for them.
+- **Range georeference is an explicit, operator-owned setting.** A P5 recording stores positions
+  in a range-local frame whose origin and unit scale are *not in the file*. JDDC does not guess
+  silently: it applies a stated default, warns on every import that the coordinates are an
+  assumption, flags every point with `p5_assumed_georeference`, and keeps the raw frame values as
+  the `p5_x`/`p5_y`/`p5_z` channels so a corrected georeference can be applied without
+  re-importing.
 - `portable.splashImage`: the Windows portable executable now shows a native bitmap while it
   extracts. That extraction happens before Electron starts, so it is the only thing that can put
   anything on screen during it — no in-app splash can. **The installed build remains much faster

@@ -39,7 +39,8 @@ Always present; tabs enabled/disabled by state:
 12. **Export** — enabled if dataset active
 13. **Sources** — enabled if ≥1 dataset
 14. **Fusion** — enabled if ≥2 datasets
-15. **Settings** — always enabled
+15. **P5 Mission** — enabled if any loaded dataset has `sourceFormat === 'p5'`
+16. **Settings** — always enabled
 
 **Active dataset name** shown at right of tab bar.
 
@@ -74,13 +75,16 @@ Always present; tabs enabled/disabled by state:
 
 ### ImportView Tab
 - **Dropzone** — "Drop TSPI data here" / "or click to browse"; drag-over toggles `.drag` class
-- **Format pills** — one per INPUT_FORMATS (CSV/TSV, GPX, GeoJSON, KML/KMZ, NMEA 0183, GPB, EAG); informational
+- **Format pills** — one per INPUT_FORMATS (CSV/TSV, GPX, GeoJSON, KML/KMZ, NMEA 0183, GPB, EAG, P5 CTS mission); informational
 - **Conversion matrix note** — explains unified point model, export targets, auto-detection (DMS/comma decimals, epoch/Excel/ISO times)
 
 ### File Ingestion Logic
 - **`.kml/.kmz` on desktop** → saved to persistent KML/KMZ library; `.kmz` requires Electron
 - **`.txt` ambiguity** → sniffs content to disambiguate EAG vs CSV
 - **CSV/needs-mapping** → routed to `analyzeCsv` (Web Worker), opens Mapping tab on completion
+- **`.msnP5`** → read via `importP5File`; `.rpt` and `.teq` of the same basename dropped in the same batch are paired with it. The index is cross-checked against the layout derived from the recording; the `.teq` is carried verbatim for export and flagged if its start clock disagrees. Produces one dataset per instrumented roster slot (labelled `<file> — slot N <callsign> <id>`, unique even when two slots share an identity) and switches to the P5 Mission tab
+- **`.rpt` / `.teq` on their own** → skipped with a log note; they are P5 companion files, not importable sources
+- **P5 point budget** → truncates with a per-track warning rather than throwing: a 450 MB recording is this format's normal case, not a runaway file
 - **All other formats** → parsed directly, added via `addDataset`
 - **Every imported file** (except KML/KMZ) mirrored into local file archive (desktop best-effort)
 
@@ -907,3 +911,35 @@ Call-site labels:
 Keep this in step with the app: a new control, or a change to what one does, belongs here as well
 as in `CHANGELOG.md`. `public/user-guide.html` is written from this document, so a gap here
 becomes a gap in the user guide.
+
+---
+
+## Part 26: P5 Mission Panel (P5Panel)
+
+Appears once a `.msnP5` is loaded. Format reference: `docs/P5-MSN.md`.
+
+### Recording summary
+- Mission date, block count, subframe count, duration at 10 Hz, instrumented-vs-total slot count
+- Any load warnings (e.g. a `.rpt` index that disagrees with the recording) shown inline
+
+### Range georeference
+- **Anchor latitude / longitude / height** — where the recording's anchor frame point is placed
+- **Horizontal m/unit, Vertical m/unit** — separate scales; the two axes demonstrably differ
+- **Axis order** — `X = East, Y = North` or `Y = East, X = North`
+- **Rebuild tracks** — re-derives every track of that recording with the current settings; no re-import. Flushes any un-exported point edits into the recording first, so a rebuild cannot discard them
+- All tracks of one recording share a single frame anchor, so the geometry between them is preserved
+- Defaults are assumptions, surfaced as an import warning and as a `p5_assumed_georeference` flag on every point
+
+### Participant roster
+- One row per slot; **show all 50 slots** toggle reveals the slots that carry no data
+- Editable: **callsign** (20 chars), **aircraft id** (8), **unit** (8), **type code** (one byte, 0–255)
+- **Colour** — per-slot swatch bound to the workspace display settings; does *not* round-trip into the file
+- Edited rows highlighted until **Apply**; applying patches the source document and rebuilds tracks
+
+### Integrity & export
+- **Validate structure** — re-walks every block, subframe and slot record; reports counts, clock anomalies, and any invariant violations
+- **Export .msnP5 + .rpt (+ .teq)** — patches the imported bytes and emits the whole set; an unedited export is byte-identical to the source
+- **Disabled while the georeference form differs from the one the tracks were built with**, with an inline explanation: exporting then would rewrite every sample through a transform it was never in. Rebuild first
+- Roster edits are validated as a batch and applied all-or-nothing; only the fields that actually changed are written
+- P5 exports are not mirrored into the desktop file archive — a 450 MB shadow copy per export is not a safety net worth its cost
+- Point moves are inverted through the current georeference; no-data records are never promoted to live

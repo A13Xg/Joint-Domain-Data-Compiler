@@ -57,7 +57,7 @@ export function normalizeWorkspaceState(value: unknown, datasetIds: ReadonlySet<
   return { ...base, reportPreferences: normalizeReportOptions(record.reportPreferences).options }
 }
 
-function isWorkspaceTab(value: unknown): value is WorkspaceTab { return (WORKSPACE_TABS as readonly string[]).includes(String(value)) }
+export function isWorkspaceTab(value: unknown): value is WorkspaceTab { return (WORKSPACE_TABS as readonly string[]).includes(String(value)) }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value) }
 function knownId(value: unknown, ids: ReadonlySet<string>): string | null { return typeof value === 'string' && ids.has(value) ? value : null }
 function bounded(value: unknown, min: number, max: number, fallback: number): number { return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max ? value : fallback }

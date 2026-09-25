@@ -38,6 +38,7 @@ JDDC is a functional engineering workbench with a strong deterministic core. It 
 | NMEA 0183 | `.nmea .gps .log` | ✓ | ✓ | GGA, RMC and GLL with checksum handling. |
 | GPB | `.gpb .bin` | ✓ | ✓ | Compact JDDC numeric binary transport. GPB is not a complete lossless workspace format. |
 | EAG TSPI | `.eag .txt` | ✓ | ✓ | European Air Group TSPI: tab-delimited ECEF coordinates from NATO/European range instrumentation. Filename-based date extraction and per-row HH:MM:SS time reconstruction. |
+| P5 CTS mission | `.msnP5` (+ `.rpt`, `.teq`) | △ | ✓ | P5 Combat Training System recording. Reverse-engineered container: 10 Hz, 50-slot roster, one track per instrumented slot. Positions use an **operator-supplied range georeference** — the file does not record one. Exports the whole set back out byte-identically. Desktop recommended: a recording is typically 400–500 MB and is held in memory for the session, which a browser tab may refuse. See [`docs/P5-MSN.md`](docs/P5-MSN.md). |
 
 All supported inputs normalize into a shared dataset model with source metadata, channel definitions, provenance fields, warnings and quality flags.
 

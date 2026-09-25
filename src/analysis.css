@@ -42,3 +42,26 @@
 .segment-chip.active { border-color: #eab308; background: rgba(234, 179, 8, 0.14); }
 .segment-chip span { color: var(--text-dim); font-family: var(--mono); }
 @media (max-width: 900px) { .trajectory-playback { grid-template-columns: auto auto 1fr; } }
+
+/* --- P5 CTS mission panel ------------------------------------------------ */
+.p5-panel { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.p5-card { display: flex; flex-direction: column; gap: 16px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-1); }
+.p5-card-header h2 { margin: 0 0 4px; }
+.p5-card-header .warn { color: #fbbf24; margin: 4px 0 0; }
+.p5-section { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 1px solid var(--border); }
+.p5-section:first-of-type { border-top: none; padding-top: 0; }
+.p5-section h3 { margin: 0; }
+.p5-section > button { align-self: flex-start; }
+.p5-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.p5-geo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.p5-geo-grid label { display: flex; flex-direction: column; gap: 4px; color: var(--text-dim); font-size: 11px; }
+.p5-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.p5-roster { width: 100%; border-collapse: collapse; font-size: 12px; }
+.p5-roster th, .p5-roster td { padding: 5px 7px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+.p5-roster th { position: sticky; top: 0; background: var(--bg-2); z-index: 1; }
+.p5-roster input[type='text'], .p5-roster input:not([type]) { width: 15ch; }
+.p5-roster input[type='number'] { width: 8ch; }
+.p5-roster input[type='color'] { width: 34px; height: 24px; padding: 0; border: 1px solid var(--border); background: none; }
+/* An edited-but-unapplied slot has to be visibly distinct from a saved one, or
+   "Apply" reads as a no-op and the edit is lost on rebuild. */
+.p5-roster tr.dirty { background: rgba(234, 179, 8, 0.12); box-shadow: inset 3px 0 #eab308; }

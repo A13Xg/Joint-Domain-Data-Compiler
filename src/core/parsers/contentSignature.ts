@@ -4,6 +4,7 @@
 // mismatch is visible instead of silently normalized or silently rejected.
 import type { SourceFormat } from '../model'
 import { looksLikeGpb } from './gpb'
+import { looksLikeP5 } from '../p5/document'
 
 export type ContentSignature = SourceFormat | 'unknown'
 
@@ -46,7 +47,9 @@ export function sniffTextSignature(text: string): ContentSignature {
 }
 
 export function sniffBinarySignature(bytes: Uint8Array): ContentSignature {
-  return looksLikeGpb(bytes) ? 'gpb' : 'unknown'
+  if (looksLikeGpb(bytes)) return 'gpb'
+  if (looksLikeP5(bytes)) return 'p5'
+  return 'unknown'
 }
 
 /** Formats whose sniffed shape legitimately overlaps and should not warn. */

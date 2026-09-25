@@ -144,6 +144,7 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
     <li><a href="#repair">Repairing a track</a></li>
     <li><a href="#fusion">Fusion</a></li>
     <li><a href="#sources">Sources</a></li>
+    <li><a href="#p5">P5 Mission</a></li>
     <li><a href="#export">Export</a></li>
     <li><a href="#project">Project &amp; reports</a></li>
     <li><a href="#settings">Settings</a></li>
@@ -214,6 +215,7 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
       <tr><td>NMEA 0183</td><td><code>.nmea .gps .log</code></td><td>GGA, GLL, RMC, VTG, ZDA, GSA, and GSV sentences.</td></tr>
       <tr><td>GPB</td><td><code>.gpb .bin</code></td><td>The app's own compact binary format.</td></tr>
       <tr><td>EAG TSPI</td><td><code>.txt</code></td><td>NATO range instrumentation, including IRIG and range-time encodings.</td></tr>
+      <tr><td>P5 CTS mission</td><td><code>.msnP5</code></td><td>P5 Combat Training System recording. Drop its <code>.rpt</code> and <code>.teq</code> companions in the same batch and all three are read together. See <a href="#p5">P5 Mission</a>.</td></tr>
     </tbody>
   </table></div>
 
@@ -575,6 +577,51 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
     Sources must declare the same coordinate system and have valid spatial coverage, or the run is
     blocked with the reason. Reproject explicitly first.
   </div>
+</section>
+
+<section id="p5">
+  <h2>P5 Mission</h2>
+  <p class="lede">The roster, the range georeference, and the byte-exact export for a P5 Combat
+  Training System recording. The tab appears once a <code>.msnP5</code> is loaded.</p>
+
+  <p>A P5 recording holds a 50-slot participant roster and 10 Hz samples for the slots that were
+  actually instrumented. JDDC loads <strong>one track per instrumented slot</strong>, so each
+  aircraft gets its own colour, label and visibility like any other dataset.</p>
+
+  <p>Recordings are large — a two-hour sortie is around 450 MB, and the file is held for the
+  session so it can be exported byte-for-byte. Use the desktop app for these if you can.</p>
+
+  <div class="caution">
+    <strong>The coordinates are an assumption, and the app says so every time.</strong>
+    A P5 recording stores positions in a range-local frame whose origin and unit scale are not
+    written anywhere in the file. JDDC applies a stated default, warns on import, and tags every
+    point with <code>p5_assumed_georeference</code>. If you know your range's reference point and
+    units, enter them under <em>Range georeference</em> and press <em>Rebuild tracks</em> — the raw
+    frame values are kept as the <code>p5_x</code>, <code>p5_y</code> and <code>p5_z</code>
+    channels, so re-placing the tracks never needs a re-import.
+  </div>
+
+  <p>All the tracks from one recording share a single frame anchor, so the spacing between them is
+  real. Change the georeference and press <em>Rebuild tracks</em>; until you do, the export button
+  stays disabled, because writing the file back out through a georeference the tracks were not
+  built with would rewrite every sample in them.</p>
+
+  <h3>Editing the roster</h3>
+  <p>Callsign, aircraft id, unit and the one-byte aircraft type code are editable per slot. Edited
+  rows are highlighted until you press <em>Apply</em>. Tick <em>show all 50 slots</em> to reach the
+  slots that carry no data — their identity fields are still part of the file.</p>
+
+  <h3>Exporting</h3>
+  <p><em>Export .msnP5 + .rpt</em> writes the recording back out by patching the bytes that were
+  read, not by rebuilding the file. An export with no edits is byte-identical to the file you
+  imported. If you dropped the <code>.teq</code> in with it, that is written alongside unchanged,
+  so you get back the same set you brought in. Two things deliberately do not round-trip:
+  <strong>track colour</strong>, because the format has no colour field, and samples the recording
+  marks as no-data, which are never promoted to live.</p>
+
+  <p><em>Validate structure</em> re-walks every block, subframe and slot record and reports what it
+  found. The format reference behind all of this — including which bytes are still undecoded — is
+  <code>docs/P5-MSN.md</code> in the repository.</p>
 </section>
 
 <section id="sources">

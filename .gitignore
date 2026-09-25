@@ -60,3 +60,11 @@ build/*
 *.njsproj
 *.sln
 *.sw?
+
+# Range instrumentation data (P5 CTS mission recordings) — never commit.
+# Bracketed so the rules hold whatever case the range system wrote the
+# extension in; git's ignore patterns are case-sensitive on Linux.
+*.zip
+*.[mM][sS][nN][pP]5
+*.[rR][pP][tT]
+*.[tT][eE][qQ]

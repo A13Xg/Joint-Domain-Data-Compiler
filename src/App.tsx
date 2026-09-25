@@ -3,6 +3,9 @@ import type { CsvAnalysisResult, DetectedColumn } from './types/converter'
 import type { Dataset, TrackPoint } from './core/model'
 import { withPoints } from './core/transforms'
 import { detectFormat, makeDataset, parseFileToDataset, INPUT_FORMATS, resolveTextFormat } from './core/parsers'
+import { importP5File, p5DatasetLabel } from './core/p5/import'
+import { buildResultFromDocument, type P5GeoReference } from './core/parsers/p5'
+import { getP5Document, retainP5Documents } from './core/p5/registry'
 import type { CsvMapping } from './core/parsers/csv'
 import { assertByteBudget, assertPointBudget, DEFAULT_FORMAT_BUDGETS } from './core/parsers/limits'
 import { describeSignatureMismatch, sniffTextSignature } from './core/parsers/contentSignature'
@@ -28,7 +31,7 @@ import { isDesktopKmlLibraryAvailable, listKmlLibrary, readKmlLibraryText, saveK
 import { listBundledWebOverlays, readBundledWebOverlayText } from './core/bundledOverlays'
 import { archiveFile } from './desktop/fileArchive'
 import { insertDataset } from './core/ids'
-import { DEFAULT_WORKSPACE_STATE, normalizeWorkspaceState, type WorkspaceState } from './state/workspace'
+import { DEFAULT_WORKSPACE_STATE, isWorkspaceTab, normalizeWorkspaceState, type WorkspaceState } from './state/workspace'
 import { BUNDLED_KML_SEED_NAMES, type MapOverlayState } from './state/mapOverlays'
 import type { KmlLibraryEntry } from './types/desktop'
 import { ensureBuiltinDerivationsRegistered } from './core/analytics/bootstrap'
@@ -52,6 +55,7 @@ import { DEFAULT_TRACK_HEALTH_CONFIG } from './core/quality/trackHealthConfig'
 // `.then(m => ({ default: m.X }))` on each.
 const MapView = lazy(() => import('./ui/MapView').then((m) => ({ default: m.MapView })))
 const SourcesPanel = lazy(() => import('./ui/SourcesPanel').then((m) => ({ default: m.SourcesPanel })))
+const P5Panel = lazy(() => import('./ui/P5Panel').then((m) => ({ default: m.P5Panel })))
 const TimeSeriesChart = lazy(() => import('./ui/TimeSeriesChart').then((m) => ({ default: m.TimeSeriesChart })))
 const PointInspectorPanel = lazy(() => import('./ui/PointInspectorPanel').then((m) => ({ default: m.PointInspectorPanel })))
 const DataTable = lazy(() => import('./ui/DataTable').then((m) => ({ default: m.DataTable })))
@@ -75,7 +79,7 @@ ensureBuiltinOperationsRegistered()
 // Single source for the tab ids. `isTab` reads this list instead of repeating
 // it: the duplicate it replaced had already drifted (it was missing 'sources'
 // and 'fusion'), which silently restored those projects to the overview.
-const TAB_IDS = ['import', 'mapping', 'overview', 'map', 'charts', 'table', 'points', 'compare', 'scene3d', 'transform', 'project', 'export', 'sources', 'fusion', 'settings'] as const
+const TAB_IDS = ['import', 'mapping', 'overview', 'map', 'charts', 'table', 'points', 'compare', 'scene3d', 'transform', 'project', 'export', 'sources', 'fusion', 'p5', 'settings'] as const
 
 export type Tab = typeof TAB_IDS[number]
 
@@ -533,7 +537,7 @@ export default function App() {
     return () => { cancelled = true }
   }, [onBrowserOverlayFile])
 
-  const ingestFile = useCallback(async (file: File) => {
+  const ingestFile = useCallback(async (file: File, companions: { rpt?: File; teq?: File } = {}) => {
     const ext = file.name.toLowerCase().split('.').pop() ?? ''
     if ((ext === 'kml' || ext === 'kmz') && isDesktopKmlLibraryAvailable()) {
       try {
@@ -542,9 +546,12 @@ export default function App() {
       } catch (error) {
         logger.warn('import', `Could not save ${file.name} to KML/KMZ library: ${errorMessage(error)}`)
       }
-    } else {
+    } else if (ext !== 'msnp5') {
       // KML/KMZ already gets a durable copy via the persistent library above;
-      // every other imported format is archived here instead.
+      // every other imported format is archived here instead — except a P5
+      // recording, which is hundreds of megabytes. Shadow-copying one means a
+      // second full buffer in the renderer and the same again over IPC, for a
+      // file the user already has on disk.
       void archiveFile('inputs', file.name, file)
     }
     if (ext === 'kmz') {
@@ -561,6 +568,37 @@ export default function App() {
       }
       return
     }
+    // A P5 recording is a set: the .msnP5 carries the data, the .rpt is its
+    // block index and the .teq its (in every specimen so far, empty) equipment
+    // table. Only the .msnP5 becomes datasets; the companions are paired with it
+    // by the caller and are not importable on their own.
+    if (ext === 'rpt' || ext === 'teq') {
+      logger.info('import', `${file.name} is a P5 companion file; drop it alongside its .msnP5 to have both read together.`)
+      return
+    }
+    if (ext === 'msnp5') {
+      setBusy(`Reading ${file.name}`); setProgress(null)
+      try {
+        const rpt = companions.rpt ? new Uint8Array(await companions.rpt.arrayBuffer()) : undefined
+        const teq = companions.teq ? new Uint8Array(await companions.teq.arrayBuffer()) : undefined
+        const paired = [companions.rpt?.name, companions.teq?.name].filter(Boolean)
+        if (paired.length > 0) logger.info('import', `Pairing ${file.name} with ${paired.join(' and ')}.`)
+        const imported = await importP5File(file, { rpt, teq })
+        if (imported.datasets.length === 0) {
+          flashToast(`${file.name} contains no instrumented roster slots.`)
+          return
+        }
+        for (const dataset of imported.datasets) addDataset(dataset)
+        setTab('p5')
+      } catch (error) {
+        logger.error('import', `Failed to read ${file.name}: ${errorMessage(error)}`)
+        flashToast(`Failed to read ${file.name}: ${errorMessage(error)}`)
+      } finally {
+        setBusy(null)
+      }
+      return
+    }
+
     let format = detectFormat(file.name)
     if (!format) { logger.error('import', `Unsupported file type: ${file.name}`); flashToast(`Unsupported file type: ${file.name}`); return }
 
@@ -584,10 +622,25 @@ export default function App() {
 
   const onFiles = useCallback((files: FileList | null) => {
     if (!files) return
-    for (const file of Array.from(files)) {
+    const batch = Array.from(files)
+    // Pair the .rpt and .teq with the .msnP5 of the same basename when they
+    // arrive in one drop: the index is then cross-checked rather than ignored,
+    // and the .teq is carried so an export emits the same set that was imported.
+    const companionsByBase = new Map<string, { rpt?: File; teq?: File }>()
+    for (const file of batch) {
+      const lower = file.name.toLowerCase()
+      const kind = lower.endsWith('.rpt') ? 'rpt' : lower.endsWith('.teq') ? 'teq' : null
+      if (!kind) continue
+      const base = lower.slice(0, -4)
+      companionsByBase.set(base, { ...companionsByBase.get(base), [kind]: file })
+    }
+    for (const file of batch) {
       // ingestFile handles its own parse errors; this catch exists so an
       // unexpected throw cannot leave `busy` set with nothing on screen.
-      ingestFile(file).catch((error: unknown) => {
+      const companions = file.name.toLowerCase().endsWith('.msnp5')
+        ? companionsByBase.get(file.name.slice(0, -6).toLowerCase())
+        : undefined
+      ingestFile(file, companions).catch((error: unknown) => {
         logger.error('import', `Import of ${file.name} failed: ${errorMessage(error)}`)
         flashToast(`Import of ${file.name} failed: ${errorMessage(error)}`)
         setBusy(null); setProgress(null)
@@ -816,9 +869,40 @@ export default function App() {
     // validation used on project restore rather than leaving a phantom ID
     // (which would silently break the comparison with no explanation).
     setWorkspace((current) => normalizeWorkspaceState(current, new Set(remaining.map((dataset) => dataset.id))))
+    // A P5 source document is hundreds of megabytes; drop it as soon as the last
+    // dataset that referenced it is gone.
+    retainP5Documents(remaining.flatMap((dataset) => {
+      const key = dataset.metadata?.meta?.p5DocumentKey
+      return key ? [key] : []
+    }))
     setProjectDirty(true)
     if (activeId === id) setActiveId(remaining[0]?.id ?? null)
   }, [activeId, datasets])
+
+  /** Re-derive the tracks of one P5 recording after a roster or georeference edit. */
+  const rebuildP5Tracks = useCallback((documentKey: string, georeference: P5GeoReference) => {
+    const document = getP5Document(documentKey)
+    if (!document) { flashToast('That P5 recording is no longer loaded.'); return }
+    setDatasets((current) => current.map((dataset) => {
+      if (dataset.metadata?.meta?.p5DocumentKey !== documentKey) return dataset
+      // '' splits to [''] which Numbers to 0 — a slot that cannot exist. Filter
+      // on the real range, because an empty selection must stay empty rather
+      // than falling through to "every live slot".
+      const slots = (dataset.metadata.meta.p5Slots ?? '').split(',').map(Number).filter((slot) => Number.isInteger(slot) && slot >= 1)
+      const result = buildResultFromDocument(document, { slots, georeference })
+      const participant = slots.length === 1 ? document.roster.find((entry) => entry.slot === slots[0]) : undefined
+      const filename = dataset.metadata.meta.p5SourceFilename ?? dataset.name
+      return {
+        ...dataset,
+        name: participant ? p5DatasetLabel(filename, participant) : dataset.name,
+        points: result.points,
+        warnings: result.warnings,
+        channels: result.channels,
+        metadata: { ...dataset.metadata, meta: { ...dataset.metadata.meta, ...result.meta } },
+      }
+    }))
+    setProjectDirty(true)
+  }, [flashToast])
 
   const restoreProject = useCallback((archive: ProjectArchive) => {
     const restoredDatasets = archive.datasets
@@ -826,6 +910,12 @@ export default function App() {
     const requestedTab = archive.manifest.view.activeTab
     const restoredTab: Tab = isTab(requestedTab) ? requestedTab : restoredActiveId ? 'overview' : 'import'
     setDatasets(restoredDatasets)
+    // A restored project brings its own datasets; any P5 source buffer still held
+    // for the workspace being replaced is now unreachable and must not be kept.
+    retainP5Documents(restoredDatasets.flatMap((dataset) => {
+      const key = dataset.metadata?.meta?.p5DocumentKey
+      return key ? [key] : []
+    }))
     setHistories(archive.histories)
     setWorkspace(normalizeWorkspaceState(archive.manifest.view.workspace, new Set(restoredDatasets.map((dataset) => dataset.id))))
     setDatasetDisplay(restoreWorkspaceDisplay(archive.manifest.view.datasetDisplay, restoredDatasets))
@@ -858,6 +948,7 @@ export default function App() {
     { id: 'export', label: 'Export', enabled: !!active },
     { id: 'sources', label: 'Sources', enabled: datasets.length > 0 },
     { id: 'fusion', label: 'Fusion', enabled: datasets.length >= 2 },
+    { id: 'p5', label: 'P5 Mission', enabled: datasets.some((dataset) => dataset.sourceFormat === 'p5') },
     { id: 'settings', label: 'Settings', enabled: true },
   ]
 
@@ -876,7 +967,7 @@ export default function App() {
       <div className="app-body">
         <aside className="sidebar">
           <button type="button" className="primary-action" onClick={() => fileInputRef.current?.click()}>+ Load data</button>
-          <input ref={fileInputRef} type="file" multiple className="hidden-input" accept=".csv,.tsv,.txt,.gpx,.geojson,.json,.kml,.kmz,.nmea,.gps,.log,.gpb,.bin" onChange={(event) => { onFiles(event.target.files); event.target.value = '' }} />
+          <input ref={fileInputRef} type="file" multiple className="hidden-input" accept=".csv,.tsv,.txt,.gpx,.geojson,.json,.kml,.kmz,.nmea,.gps,.log,.gpb,.bin,.msnP5,.rpt,.teq" onChange={(event) => { onFiles(event.target.files); event.target.value = '' }} />
           <div className="dataset-list">{datasets.length === 0 && <p className="muted small pad">No datasets yet.</p>}{datasets.map((dataset) => <div key={dataset.id} className={`dataset-item${dataset.id === activeId ? ' active' : ''}`} onClick={() => { setActiveId(dataset.id); if (tab === 'import' || tab === 'mapping') setTab('overview') }}><div className="dataset-item-main"><span className="dataset-name">{dataset.name}</span><span className="dataset-sub mono">{dataset.sourceFormat} · {dataset.points.length.toLocaleString()} pts</span></div><button type="button" className="dataset-remove" onClick={(event) => { event.stopPropagation(); removeDataset(dataset.id) }} aria-label="Remove dataset">×</button></div>)}</div>
           <div className="sidebar-foot"><span className="muted small">Supported in:</span><div className="format-badges">{INPUT_FORMATS.map((format) => <span key={format.id} className="badge" title={format.description}>{format.label}</span>)}</div></div>
         </aside>
@@ -902,6 +993,7 @@ export default function App() {
               {tab === 'export' && active && <ExportPanel dataset={active} />}
               {tab === 'settings' && <SettingsPanel />}
               {tab === 'sources' && <SourcesPanel datasets={datasets} activeId={activeId} display={syncedDisplay} onDisplayChange={(next) => { setDatasetDisplay(next); setProjectDirty(true) }} onSelectActive={setActiveId} />}
+              {tab === 'p5' && <P5Panel datasets={datasets} display={syncedDisplay} onDisplayChange={(next) => { setDatasetDisplay(next); setProjectDirty(true) }} onRebuild={rebuildP5Tracks} onNotify={flashToast} />}
               {tab === 'fusion' && <FusionPanel datasets={datasets} fusionArtifacts={fusionArtifacts} onCreateDataset={(dataset, artifact) => { addDataset(dataset); setFusionArtifacts((current) => [...current, artifact]); setProjectDirty(true); setTab('fusion') }} />}
             </Suspense>
           </section>
@@ -916,10 +1008,6 @@ export default function App() {
 
 function isTab(value: unknown): value is Tab {
   return typeof value === 'string' && (TAB_IDS as readonly string[]).includes(value)
-}
-
-function isWorkspaceTab(tab: Tab): tab is Exclude<Tab, 'import' | 'mapping' | 'project' | 'export' | 'sources' | 'fusion' | 'settings'> {
-  return ['overview', 'map', 'charts', 'table', 'points', 'compare', 'scene3d', 'transform'].includes(tab)
 }
 
 /** Monotonic so a repeated message still gets its own toast and its own timer. */

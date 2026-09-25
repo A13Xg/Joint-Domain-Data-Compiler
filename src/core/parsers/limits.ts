@@ -18,6 +18,11 @@ export const DEFAULT_FORMAT_BUDGETS: Record<SourceFormat, FormatBudget> = {
   nmea: { maxBytes: 150 * MB, maxPoints: 2_000_000 },
   gpb: { maxBytes: 300 * MB, maxPoints: 3_000_000 },
   eag: { maxBytes: 150 * MB, maxPoints: 2_000_000 },
+  // A P5 recording is a fixed 44,932 B per mission second, so a two-hour sortie
+  // is ~450 MB before it holds a single extra sample. The byte budget is sized
+  // for that rather than for the point count: only live roster slots produce
+  // points, and a 50-slot file at full 10 Hz is the 5 M ceiling below.
+  p5: { maxBytes: 2048 * MB, maxPoints: 5_000_000 },
   unknown: { maxBytes: 50 * MB, maxPoints: 500_000 },
 }
 
