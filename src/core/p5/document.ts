@@ -567,6 +567,15 @@ export function setP5SamplePosition(
         'P5 records cannot be promoted to live because most of the record is undocumented.',
     )
   }
+  // A NaN or Infinity here would be written straight into the recording and
+  // corrupt it silently — and the easiest way to produce one is a georeference
+  // whose metres-per-unit scale is zero. Refuse at the point of writing, so no
+  // caller can get it wrong.
+  for (const [axis, value] of Object.entries(position)) {
+    if (value !== undefined && !Number.isFinite(value)) {
+      throw new P5FormatError(`Refusing to write a non-finite ${axis} (${value}) into a P5 slot record.`)
+    }
+  }
   if (position.x !== undefined) doc.view.setFloat32(recordOffset + 8, position.x, false)
   if (position.y !== undefined) doc.view.setFloat32(recordOffset + 12, position.y, false)
   if (position.z !== undefined) doc.view.setFloat32(recordOffset + 16, position.z, false)

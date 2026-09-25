@@ -16,7 +16,6 @@ import { buildP5Export, readDatasetGeoReference, type P5RosterEdit } from '../co
 import { P5_DEFAULT_GEOREFERENCE, type P5GeoReference } from '../core/parsers/p5'
 import { logger } from '../core/logger'
 import { errorMessage } from '../core/errors'
-import { archiveFile } from '../desktop/fileArchive'
 
 export interface P5PanelProps {
   datasets: Dataset[]
@@ -138,6 +137,15 @@ function P5RecordingCard({
   // form has moved on from that, exporting now would rewrite every sample under
   // a transform the points were never in, so the tracks must be rebuilt first.
   const geoDirty = !sameGeoReference(geo, storedGeo)
+  // A cleared number input reads back as 0, and dividing by it on the way back
+  // into frame units would write ±Infinity into the recording. Refuse to rebuild
+  // on a scale that cannot be inverted rather than let it reach the file.
+  const geoUsable =
+    Number.isFinite(geo.horizontalUnitMeters) && geo.horizontalUnitMeters > 0 &&
+    Number.isFinite(geo.verticalUnitMeters) && geo.verticalUnitMeters > 0 &&
+    Number.isFinite(geo.anchorLatDeg) && Math.abs(geo.anchorLatDeg) <= 90 &&
+    Number.isFinite(geo.anchorLonDeg) && Math.abs(geo.anchorLonDeg) <= 180 &&
+    Number.isFinite(geo.anchorHeightM)
 
   // Keyed by slot rather than by array position: the two arrays happen to be
   // parallel today, and a positional match would quietly compare the wrong rows
@@ -309,9 +317,15 @@ function P5RecordingCard({
             </select>
           </label>
         </div>
-        <button type="button" disabled={busy} onClick={rebuildTracks}>
+        <button type="button" disabled={busy || !geoUsable} onClick={rebuildTracks}>
           Rebuild tracks{geoDirty ? ' (pending changes)' : ''}
         </button>
+        {!geoUsable && (
+          <p className="warn small">
+            Both metres-per-unit scales must be greater than zero, and the anchor must be a real coordinate.
+            A zero scale cannot be inverted, so points could not be written back.
+          </p>
+        )}
       </div>
 
       <div className="p5-section">
@@ -404,6 +418,8 @@ function saveBinary(bytes: Uint8Array, fileName: string): void {
   anchor.download = fileName
   anchor.click()
   URL.revokeObjectURL(url)
-  // Mirror into the desktop file archive like every other export target.
-  void archiveFile('outputs', fileName, blob)
+  // Deliberately NOT mirrored into the desktop file archive. That safety net
+  // exists for files small enough to duplicate cheaply; a P5 recording would
+  // cost a second full buffer in the renderer plus the same again over IPC,
+  // every export, for a file the user is saving to disk anyway.
 }

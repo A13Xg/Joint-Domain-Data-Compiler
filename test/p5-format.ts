@@ -252,6 +252,17 @@ console.log('\n--- editing sample positions ---')
   check('neighbouring samples are untouched',
     rereadResult.points[4]!.lat === result.points[4]!.lat && rereadResult.points[6]!.lon === result.points[6]!.lon)
 
+  // A zero metres-per-unit scale divides to Infinity on the way back into frame
+  // units; that must never reach the file.
+  const liveOffset = p5RecordOffset(reread, 0, 1)
+  for (const bad of [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NaN]) {
+    let rejected = false
+    try { setP5SamplePosition(reread, liveOffset, { x: bad }) } catch (error) { rejected = error instanceof P5FormatError }
+    check(`writing ${bad} into a slot record is refused`, rejected)
+  }
+  check('the record survived the refused writes',
+    Number.isFinite(new DataView(reread.bytes.buffer, reread.bytes.byteOffset, reread.bytes.byteLength).getFloat32(liveOffset + 8, false)))
+
   // Promoting a no-data record to live would mean inventing 72 undecoded bytes.
   let threw = false
   try { setP5SamplePosition(reread, p5RecordOffset(reread, 0, 3), { x: 1 }) } catch (error) { threw = error instanceof P5FormatError }
