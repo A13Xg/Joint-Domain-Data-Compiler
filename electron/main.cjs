@@ -4,7 +4,7 @@ const fs = require('fs')
 const path = require('path')
 const { pathToFileURL } = require('url')
 const zlib = require('zlib')
-const { seedKmlLibrary, fetchKmlFromRemote } = require('./kml-seed.cjs')
+const { seedKmlLibrary, seedKmlLibraryAsync, fetchKmlFromRemote } = require('./kml-seed.cjs')
 const {
   ARCHIVE_DIRECTIONS,
   DEV_ORIGIN,
@@ -19,6 +19,32 @@ const {
   resolveLibraryPath,
   safeArchiveName,
 } = require('./security.cjs')
+
+// Startup phase trace, off unless JDDC_STARTUP_TRACE is set.
+//
+// This exists because a slow launch could not be diagnosed. The splash was
+// rewritten four times against a suite that reads main.cjs as a string, while
+// users still reported seeing nothing for ten seconds — and nobody could say
+// which phase those ten seconds were in. Now they can:
+//
+//   JDDC_STARTUP_TRACE=1 JointDomainDataCompiler
+//
+// `JDDC_SPAWN_MS`, if set to a wall-clock epoch-ms captured by whatever launched
+// the process, also reports the gap from spawn to this module loading — the one
+// phase no in-app window can ever cover, because Electron has not booted yet.
+const STARTUP_TRACE = Boolean(process.env.JDDC_STARTUP_TRACE)
+const startupBegan = Date.now()
+function tracePhase(name) {
+  if (!STARTUP_TRACE) return
+  console.log(`[startup] ${String(Date.now() - startupBegan).padStart(6)}ms  ${name}`)
+}
+if (STARTUP_TRACE) {
+  const spawnedAt = Number(process.env.JDDC_SPAWN_MS)
+  if (Number.isFinite(spawnedAt) && spawnedAt > 0) {
+    console.log(`[startup] ${String(startupBegan - spawnedAt).padStart(6)}ms  process spawn to main.cjs (cannot be covered by any in-app window)`)
+  }
+  tracePhase('main.cjs loaded')
+}
 
 const isDev = !app.isPackaged
 const packagedRendererUrl = pathToFileURL(path.join(__dirname, '../dist/index.html')).href
@@ -72,11 +98,18 @@ const SPLASH_STAGES = Object.freeze({
     ],
   },
   renderer: {
-    progress: 0.52,
+    progress: 0.32,
     items: ['Loading the workbench', 'React runtime', 'Stylesheets', 'Application log'],
   },
+  // Reached at the workbench document's 'did-finish-load', which is BEFORE
+  // src/main.tsx dynamically imports App.tsx -- by far the largest remaining
+  // chunk. This used to sit at 0.86, so the bar arrived within a few hundred
+  // milliseconds at a near-full reading and then stalled there for the whole of
+  // the actual work: a progress bar that was finished before the slow part
+  // started. Held lower on purpose, so the 5-second ease in splash.html still
+  // has somewhere to travel while that chunk loads and executes.
   workbench: {
-    progress: 0.86,
+    progress: 0.55,
     items: [
       'Preparing the workbench',
       'Format parsers',
@@ -106,6 +139,10 @@ const SPLASH_OUTRO_MS = 260
 // long since exceeded it, so it costs nothing on exactly the launches the
 // splash exists for.
 const SPLASH_MIN_VISIBLE_MS = 900
+// How long to wait for the splash renderer's first paint before showing the
+// window anyway. See markShown() in openSplash() for why a blind show is the
+// right fallback rather than a hazard.
+const SPLASH_FALLBACK_SHOW_MS = 700
 
 let splashWindow = null
 // When the splash actually became visible -- not when it was constructed. The
@@ -157,41 +194,63 @@ function openSplash() {
     },
   })
 
-  // Shown on first paint rather than at construction. `show: true` does map
-  // the window immediately -- verified against a deliberately blocked main
-  // thread -- but Chromium paints it WHITE until the document commits, and a
-  // white rectangle on a dark app reads as a fault, not as a launch. Waiting
-  // for the real pixels costs about 200 ms and is the difference between a
-  // splash and a flash of the wrong colour.
-  const markShown = () => {
+  // Shown on the FIRST PAINT OF THE DOCUMENT, and never gated on the artwork.
+  //
+  // This is the correction to four previous attempts. Every one of them made
+  // visibility depend on splash.png being decoded -- the last by waiting for an
+  // IPC message the preload sends after Image.decode() -- on the theory that a
+  // window shown earlier is "a black box". It is not. splash.html paints its own
+  // dark ground (`--ink`), the product name seeded into the status line, the
+  // version, and the progress bar entirely from inline CSS, with no image
+  // involved: showing at first paint yields a complete splash that the 222 KB
+  // plate then fades into. Gating on the plate bought nothing and added a single
+  // point of failure with no fallback, so when anything went wrong -- a slow
+  // decode, a renderer teardown, a dropped message -- the splash was never shown
+  // at all. That is the reported symptom: a launch showing nothing, from a splash
+  // that had been "fixed" four times.
+  const markShown = (why) => {
     if (window.isDestroyed() || splashShownAt !== null) return
     splashShownAt = Date.now()
     window.show()
+    tracePhase(`splash visible (${why})`)
   }
-  // Shown when splash-preload.cjs reports the artwork composited -- NOT on
-  // 'ready-to-show' or 'did-finish-load'. Both of those fire before a CSS
-  // background-image has decoded, so showing on either put the window up
-  // painted in nothing but `backgroundColor`: a black box that sat there until
-  // the art caught up, and on a fast launch closed again before it ever did.
-  ipcMain.once(SPLASH_PAINTED_CHANNEL, markShown)
-
-  // There is deliberately no timeout that shows the window anyway. Every
-  // version of that idea shipped the bug it was meant to guard against: at
-  // 400 ms and at 1200 ms it beat the artwork on a cold start and put a blank
-  // rectangle on screen, and at 2500 ms it sat past the point where a fast
-  // launch had already retired the splash, so it never fired at all. A splash
-  // is decoration; if its art cannot be painted, the right outcome is the
-  // launch it replaced -- no splash -- not a coloured box pretending to be one.
-  // reveal() treats a never-shown splash as absent and hands off immediately.
+  // Whichever of these happens first wins; they are three independent routes to
+  // the same one-shot, because the failure being fixed is "none of them fired".
+  window.once('ready-to-show', () => markShown('first paint'))
+  // Sender-checked: this channel is only meaningful from the splash's own
+  // renderer, and the workbench renderer must not be able to trip it.
+  ipcMain.on(SPLASH_PAINTED_CHANNEL, (event) => {
+    if (event.sender === window.webContents) markShown('artwork decoded')
+  })
+  // Last resort. Deliberately shorter than any plausible artwork decode: if the
+  // renderer is so starved that it has not managed a first paint by now, showing
+  // the window with its background colour is still the right answer, because the
+  // alternative that shipped was showing nothing for ten seconds.
+  const blindShow = setTimeout(() => markShown('fallback timer'), SPLASH_FALLBACK_SHOW_MS)
+  window.once('closed', () => clearTimeout(blindShow))
 
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', (event) => { event.preventDefault() })
+
+  // A splash whose renderer or preload dies stays non-null and hidden forever
+  // otherwise, and a lingering hidden splash is worse than none: it is what the
+  // workbench reveal used to wait behind. Drop it and let the workbench take
+  // over on its own first paint.
+  window.webContents.on('render-process-gone', (_event, details) => {
+    console.warn(`[splash] Splash renderer exited (${details.reason}); continuing without it.`)
+    dismissSplash()
+  })
+  window.webContents.on('preload-error', (_event, preloadPath, error) => {
+    console.warn(`[splash] Splash preload failed (${preloadPath}): ${error instanceof Error ? error.message : String(error)}`)
+    dismissSplash()
+  })
 
   window.webContents.on('did-finish-load', () => {
     splashCanReceive = true
     sendSplashStage()
   })
 
+  tracePhase('splash window created')
   splashWindow = window
   // A splash that cannot load is a cosmetic loss, not a startup failure: drop
   // it and let the workbench window reveal on first paint as it did before.
@@ -206,7 +265,14 @@ function dismissSplash() {
   splashWindow = null
   splashCanReceive = false
   splashShownAt = null
-  if (window && !window.isDestroyed()) window.destroy()
+  // The paint listener outlives the window it was registered for otherwise, and
+  // a macOS 'activate' reopen would build a second splash while the first one's
+  // one-shot was still pending against a destroyed window.
+  ipcMain.removeAllListeners(SPLASH_PAINTED_CHANNEL)
+  if (window && !window.isDestroyed()) {
+    tracePhase('splash dismissed')
+    window.destroy()
+  }
 }
 
 // How long to keep the splash up before starting its outro, so that a launch
@@ -263,6 +329,7 @@ function createWindow() {
     // No splash, or one whose artwork never painted and so was never shown:
     // there is nothing on screen to hand off from, and holding the workbench
     // back for an invisible window would be pure added latency.
+    tracePhase('workbench revealed')
     if (!splashWindow || splashShownAt === null) {
       dismissSplash()
       window.show()
@@ -273,6 +340,7 @@ function createWindow() {
     // Let it finish being seen, still cycling its current stage, before the
     // bar runs to 100% and the windows swap.
     setTimeout(() => {
+      tracePhase('workbench mounted')
       splashStage('ready')
       setTimeout(() => {
         if (!window.isDestroyed()) {
@@ -283,6 +351,12 @@ function createWindow() {
         // order leaves a beat with no window of ours on screen at all.
         dismissSplash()
         warmKmlLibrary()
+        // Lets test/electron-launch.ts assert on a completed startup without
+        // having to kill a GUI process and race its output.
+        if (process.env.JDDC_EXIT_AFTER_STARTUP) {
+          tracePhase('exiting after startup (JDDC_EXIT_AFTER_STARTUP)')
+          app.quit()
+        }
       }, SPLASH_OUTRO_MS)
     }, splashHoldMs())
   }
@@ -294,10 +368,20 @@ function createWindow() {
   // stay permanently invisible with no way for the user to know why. The
   // skeleton is on screen by then and carries the failure text itself.
   revealTimer = setTimeout(reveal, splashWindow ? SPLASH_TIMEOUT_MS : 1000)
-  window.once('ready-to-show', () => { if (!splashWindow) reveal() })
+  // `splashShownAt === null`, NOT `!splashWindow`. The difference is the whole
+  // bug this once caused: the old guard asked whether a splash OBJECT existed,
+  // so a splash that was constructed but never became visible suppressed the
+  // workbench's own first-paint reveal as well -- and then the only thing left
+  // on screen's behalf was the 8-second timer above. That turned a failed splash
+  // into a launch showing nothing at all for eight seconds, where before the
+  // splash existed index.html's skeleton appeared at first paint in a few
+  // hundred milliseconds. Asking whether a splash is actually VISIBLE restores
+  // that floor: if it is, it covers the gap and the workbench waits its turn; if
+  // it is not, the skeleton goes up immediately, exactly as it used to.
+  window.once('ready-to-show', () => { if (splashShownAt === null) reveal() })
 
-  window.webContents.once('dom-ready', () => splashStage('renderer'))
-  window.webContents.once('did-finish-load', () => splashStage('workbench'))
+  window.webContents.once('dom-ready', () => { tracePhase('renderer dom-ready'); splashStage('renderer') })
+  window.webContents.once('did-finish-load', () => { tracePhase('renderer loaded'); splashStage('workbench') })
 
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://')) void shell.openExternal(url)
@@ -378,7 +462,7 @@ async function ensureKmlLibraryDir() {
   fs.mkdirSync(dir, { recursive: true })
 
   // Seed from local directory if dev mode or if bundled seed is available
-  seedKmlLibrary(kmlSeedDirectory(), dir)
+  await seedKmlLibraryAsync(kmlSeedDirectory(), dir)
 
   // Fetch missing overlays from remote (non-blocking, continues on error)
   if (!isDev) {
@@ -704,6 +788,7 @@ function reportFatal(context, error) {
 }
 
 app.whenReady().then(async () => {
+  tracePhase('app ready')
   // The workbench owns its visible navigation and commands. Remove Electron's
   // default File/Edit/View/Window menu in both development and packaged builds.
   Menu.setApplicationMenu(null)
@@ -726,7 +811,9 @@ app.whenReady().then(async () => {
   registerWindowStateIpc()
   registerUserGuideIpc()
 
+  tracePhase('startup services registered')
   createWindow()
+  tracePhase('workbench window created')
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

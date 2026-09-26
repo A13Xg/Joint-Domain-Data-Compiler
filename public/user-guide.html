@@ -839,6 +839,20 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
 <section id="faq">
   <h2>Troubleshooting</h2>
 
+  <h3>The app takes a long time to start</h3>
+  <p>A launch splash with a progress bar appears within about half a second and stays until the
+  workbench is ready, so you should never be looking at nothing. If a launch still feels slow, you
+  can find out exactly where the time goes — run the app from a terminal with the startup trace
+  turned on:</p>
+  <pre><code>JDDC_STARTUP_TRACE=1 JointDomainDataCompiler</code></pre>
+  <p>It prints one line per phase. The first line is the gap between the process starting and the
+  application's own code running: <strong>nothing the app draws can cover that phase</strong>,
+  because the runtime has not booted yet. On Windows it is usually antivirus scanning, or — for
+  the <em>portable</em> build — the executable unpacking itself into a temporary folder on every
+  single launch. If that line dominates, install the app with the regular installer instead of
+  running the portable build; an installed copy runs from disk and skips the unpacking entirely.</p>
+
+
   <h3>A tab is greyed out</h3>
   <p>It needs data it does not have. Most tabs need an active dataset; Compare and Fusion need two;
   Project needs at least one. CSV Mapping only appears while a CSV is waiting to be built.</p>

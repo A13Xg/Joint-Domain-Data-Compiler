@@ -3,10 +3,36 @@
 Notable user-facing and operational changes are recorded here. This project follows Semantic
 Versioning; release tags use the `vX.Y.Z` form.
 
-## Unreleased
+## 0.6.0 - 2026-09-26
 
 ### Fixed
 
+- **The launch splash could be built and then never shown, and a splash that was never shown
+  held the workbench window back for eight seconds.** This is why four previous fixes passed
+  their tests and changed nothing a user could see.
+  - The reveal guard asked whether a splash *object existed* (`!splashWindow`), not whether one
+    was *visible*. So a splash that failed to paint suppressed the workbench's own first-paint
+    reveal as well, and the only thing left was the 8-second timeout — where before the splash
+    existed, `index.html`'s skeleton appeared at first paint in a few hundred milliseconds.
+    Verified by suppressing every show path: the workbench now reveals at ~1.2 s instead of 8 s.
+  - Visibility no longer depends on the artwork. It was gated solely on an IPC message the
+    preload sends after decoding a 222 KB plate, with the comments explicitly rejecting any
+    fallback — so one dropped message meant no splash at all. `splash.html` paints its ground,
+    the product name, the version and the progress bar entirely from inline CSS, so the first
+    paint is already a complete splash; the plate is now an enhancement that fades in. Three
+    independent routes (first paint, artwork decoded, a last-resort timer) each show it.
+  - A splash whose renderer or preload dies is dismissed instead of lingering hidden forever.
+  - The artwork report is accepted only from the splash's own renderer.
+- **The progress bar no longer reports 86% before the largest chunk has loaded.** The stage that
+  fires on the workbench document's `did-finish-load` sat at 0.86, but that event lands *before*
+  `src/main.tsx` dynamically imports `App.tsx` — so the bar reached a near-full reading in a few
+  hundred milliseconds and then stalled there for the whole of the real work. Rebalanced so the
+  ease still has somewhere to travel while that chunk loads.
+- **Startup no longer copies the ~23 MB bundled overlay on the main thread.** `seedKmlLibrary`'s
+  `copyFileSync` ran during the splash-to-workbench handoff on a first launch; on Windows that is
+  also the thread pumping the message loop, so the window froze exactly as the user first saw it.
+  The startup path now uses an async copy; the explicit "reset bundled overlays" action keeps the
+  synchronous one.
 - The splash appeared as a bare dark box that flashed on and off. `ready-to-show` and
   `did-finish-load` both fire before a CSS `background-image` has decoded, so the window went up
   painted in nothing but its `backgroundColor` — and on a quick launch it was retired again before
@@ -21,6 +47,20 @@ Versioning; release tags use the `vX.Y.Z` form.
 
 ### Added
 
+- **`JDDC_STARTUP_TRACE=1` prints one line per startup phase**, including the gap from process
+  spawn to `main.cjs` that no in-app window can ever cover because Electron has not booted yet.
+  Every splash timing constant in this app had been tuned against a single warm Linux launch;
+  this is how a slow launch gets diagnosed on the machine that is actually slow rather than
+  guessed at.
+- **`test/electron-launch.ts` launches Electron for real** and asserts the splash actually became
+  visible, before the workbench mounted, within 2 s. The existing Electron coverage reads
+  `electron/main.cjs` as a *string* and regexes it — its ordering assertion matched the first
+  textual occurrence of `openSplash()`, which is inside a **comment**, and of `createWindow()`,
+  which is the function *declaration*, so it passed without ever looking at a call site and would
+  have kept passing with both calls deleted. That is the false confidence behind four fixes that
+  "tested fine". The new harness skips loudly when it cannot run.
+- The packaged smoke test now reports whether the launch splash was observed, instead of only
+  filtering it out of its target search.
 - **P5 CTS mission recordings (`.msnP5`) can be imported, inspected, edited and exported.** The
   format had no public specification; it was reverse-engineered from a single recording and the
   result is written up in [`docs/P5-MSN.md`](docs/P5-MSN.md), which separates what is confirmed

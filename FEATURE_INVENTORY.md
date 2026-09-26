@@ -859,6 +859,16 @@ Call-site labels:
 
 ## Part 24: Desktop & Electron Features
 
+### Launch Splash
+- Frameless 800×343 always-on-top window, opened as the first act of Electron's `ready`, before any IPC registration or filesystem work
+- Shows the product name, version and an easing progress bar; all of it painted from inline CSS so the **first paint is already a complete splash**. The 222 KB plate is an enhancement that fades in and is never waited on
+- **Three independent routes make it visible** — document first paint, an artwork-decoded report from its preload, and a last-resort timer (`SPLASH_FALLBACK_SHOW_MS`). Any one suffices; the previous single-route design showed nothing at all when its one message was lost
+- A splash whose renderer or preload dies is dismissed rather than left hidden; the artwork report is accepted only from the splash's own renderer
+- Progress stages: `boot` 0.18 → `renderer` 0.32 (workbench `dom-ready`) → `workbench` 0.55 (workbench `did-finish-load`, still before `App.tsx` is imported) → `ready` 1.0 (renderer reports mounted)
+- **The workbench reveals on its own first paint whenever the splash is not visible** (`splashShownAt === null`), so a failed splash cannot hold the window back
+- `SPLASH_MIN_VISIBLE_MS` (900 ms) only binds on launches fast enough to outrun it, so a slow launch pays nothing for it
+- **`JDDC_STARTUP_TRACE=1`** prints one line per startup phase, including the pre-`ready` gap no in-app window can cover. `JDDC_EXIT_AFTER_STARTUP=1` quits once the workbench reports in, for `test/electron-launch.ts`
+
 ### File Archive
 - **`archiveFile(direction, name, data)`** — best-effort duplicate-save of every imported/exported file into local archive folder (outside Downloads); failures logged as warnings, never thrown
 - **`revealFileArchive()`** — opens archive folder in OS file manager (throws if not in Electron)

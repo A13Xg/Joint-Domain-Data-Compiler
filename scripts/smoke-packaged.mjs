@@ -24,9 +24,18 @@ child.stdout.on('data', (chunk) => output.push(String(chunk)))
 child.stderr.on('data', (chunk) => output.push(String(chunk)))
 
 try {
-  const page = await waitForRenderer(port, child)
+  const { page, sawSplash } = await waitForRenderer(port, child)
   await waitForWorkbenchMounted(page.webSocketDebuggerUrl)
   console.log(`Packaged ${process.platform} renderer launched: ${page.title}`)
+  // Reported, not asserted. The splash is retired as soon as the workbench
+  // mounts, so on a launch fast enough to beat this poller's 250 ms interval it
+  // can legitimately never be sampled — failing on that would make this gate
+  // flaky on exactly the fast machines where the splash matters least. Printing
+  // it is what makes a packaged launch that shows NO splash visible in the
+  // release log instead of silent.
+  console.log(sawSplash
+    ? 'Launch splash was observed during startup.'
+    : 'Launch splash was not sampled (startup may have outrun the 250 ms poll).')
 } catch (error) {
   const detail = output.join('').trim()
   if (detail) console.error(detail)
@@ -95,6 +104,11 @@ function availablePort() {
 async function waitForRenderer(port, processHandle) {
   const deadline = Date.now() + 30_000
   let lastPage = null
+  // The splash was only ever filtered OUT here, so the one gate that runs a
+  // packaged build never checked the thing four splash fixes were about. If it
+  // appears, record it: this is the only place the packaged Windows launch is
+  // observed at all.
+  let sawSplash = false
   while (Date.now() < deadline) {
     if (processHandle.exitCode !== null) {
       throw new Error(`Packaged application exited early with code ${processHandle.exitCode}.`)
@@ -107,10 +121,13 @@ async function waitForRenderer(port, processHandle) {
         // launch splash is a second page for the first second or two of
         // startup, and `find` would otherwise keep returning it.
         const pages = targets.filter((target) => target.type === 'page')
+        if (pages.some((target) => target.url.includes('splash.html'))) sawSplash = true
         const page = pages.find((target) => target.url.includes(expectedUrlFragment)) ?? pages[0]
         if (page) {
           lastPage = page
-          if (page.url.includes(expectedUrlFragment) && page.title === expectedTitle) return page
+          if (page.url.includes(expectedUrlFragment) && page.title === expectedTitle) {
+            return { page, sawSplash }
+          }
         }
       }
     } catch {

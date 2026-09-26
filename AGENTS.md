@@ -20,13 +20,17 @@ auditability — not dashboards.
 ```bash
 npm ci                # install (never `npm install` in CI)
 npm run dev           # browser dev server, http://localhost:5173
-npm run check:all     # lint + 93 test harnesses + build + app health
+npm run check:all     # lint + 94 test harnesses + build + app health
 npm run check:e2e     # 10 Playwright workflow tests (needs chromium)
 npm run check:full    # check:all + check:e2e (desktop smoke still needs build:desktop:*)
 npx tsc -b            # types only — fastest feedback loop
 
 npm run fixtures:demo-flight  # regenerate the synthetic demo flight fixtures
 npm run verify:p5 -- <file.msnP5>  # opt-in round-trip proof against a real P5 recording
+
+# Why is launch slow? Prints one line per startup phase, including the pre-`ready`
+# gap no in-app window can cover. Run it on the machine that is actually slow.
+JDDC_STARTUP_TRACE=1 npm run electron          # or the packaged executable
 npm run guide:screenshots     # recapture every screenshot in public/user-guide.html
 ```
 

@@ -61,7 +61,16 @@ check('File archive prunes oldest entries after every write', mainProcessSource.
 // longer needs covering -- and in staying outside the renderer's IPC surface.
 const splashHtmlSource = readFileSync(resolve(process.cwd(), 'electron/splash.html'), 'utf8')
 const splashPreloadSource = readFileSync(resolve(process.cwd(), 'electron/splash-preload.cjs'), 'utf8')
-check('Splash opens before the workbench window is created', mainProcessSource.indexOf('openSplash()') < mainProcessSource.indexOf('createWindow()'))
+// `indexOf` on the bare call text was vacuous: the first `openSplash()` in this
+// file is inside a COMMENT and the first `createWindow()` is the function
+// declaration, so the assertion passed without ever looking at a call site and
+// would have kept passing with both calls deleted. Match the call sites.
+const openSplashCall = /^\s*openSplash\(\)$/m.exec(mainProcessSource)
+const createWindowCall = /^\s*createWindow\(\)$/m.exec(mainProcessSource)
+check('Splash is actually called', openSplashCall !== null)
+check('Workbench window is actually created', createWindowCall !== null)
+check('Splash opens before the workbench window is created',
+  openSplashCall !== null && createWindowCall !== null && openSplashCall.index < createWindowCall.index)
 check('Splash runs sandboxed with context isolation', /openSplash[\s\S]*?sandbox: true[\s\S]*?\}\)/.test(mainProcessSource))
 check('Splash is dismissed before a fatal startup dialog', /function reportFatal[\s\S]*?dismissSplash\(\)[\s\S]*?showErrorBox/.test(mainProcessSource))
 check('Splash stage channel stays out of the renderer IPC surface', !Object.values(IPC_CHANNELS).includes('splash:stage'))
@@ -70,13 +79,36 @@ check('Splash page runs no script of its own', /script-src 'none'/.test(splashHt
 check('Splash preload exposes no bridge to the page', !/exposeInMainWorld/.test(splashPreloadSource))
 check('Splash art ships beside its page', existsSync(resolve(process.cwd(), 'electron/splash.png')))
 
-// Showing the splash window before its artwork has decoded is the bug that
-// shipped twice: 'ready-to-show' and 'did-finish-load' both land before a CSS
-// background-image paints, so the window went up as a bare coloured box. The
-// preload now reports the decode and the main process waits for that report.
-check('Splash waits for its artwork before being shown', /ipcMain\.once\(SPLASH_PAINTED_CHANNEL, markShown\)/.test(mainProcessSource))
-check('Splash is not shown on first paint alone', !/once\('ready-to-show', markShown\)/.test(mainProcessSource))
+// These two assertions previously encoded the BUG as the requirement: they
+// demanded that the splash be shown only on an artwork-decoded IPC message and
+// never on first paint. That design had no fallback, so any failure to deliver
+// that one message meant no splash at all -- which is what users reported after
+// four "successful" fixes. splash.html paints its ground, product name, version
+// and progress bar entirely from inline CSS, so first paint is already a
+// complete splash and the plate is an enhancement.
+//
+// Behaviour is now asserted by test/electron-launch.ts, which launches Electron
+// and checks the splash actually became visible. What is checked here is only
+// that the redundancy still exists in the source.
+check('Splash is shown on the document first paint', /once\('ready-to-show', \(\) => markShown\(/.test(mainProcessSource))
+check('Splash is also shown when the artwork reports in', /ipcMain\.on\(SPLASH_PAINTED_CHANNEL[\s\S]{0,200}markShown\('artwork decoded'\)/.test(mainProcessSource))
+check('The artwork report is accepted only from the splash renderer', /SPLASH_PAINTED_CHANNEL[\s\S]{0,200}event\.sender === window\.webContents/.test(mainProcessSource))
+check('Splash has a last-resort show timer', /SPLASH_FALLBACK_SHOW_MS/.test(mainProcessSource) && /setTimeout\(\(\) => markShown\(/.test(mainProcessSource))
 check('Splash preload reports the decoded artwork', splashPreloadSource.includes("SPLASH_PAINTED_CHANNEL = 'splash:painted'") && splashPreloadSource.includes('plate.decode'))
+// A splash that is constructed but never visible must not suppress the
+// workbench's own first-paint reveal: that guard, written against the window
+// OBJECT rather than its visibility, left a failed splash showing nothing at all
+// until the 8-second timeout.
+check('Workbench reveals on first paint unless the splash is visible',
+  /once\('ready-to-show', \(\) => \{ if \(splashShownAt === null\) reveal\(\) \}\)/.test(mainProcessSource))
+check('A dying splash renderer does not strand the launch',
+  /render-process-gone[\s\S]{0,300}dismissSplash\(\)/.test(mainProcessSource) && /preload-error[\s\S]{0,300}dismissSplash\(\)/.test(mainProcessSource))
+// Startup cannot be diagnosed on a machine you do not own without this.
+check('Startup phases can be traced on demand', /JDDC_STARTUP_TRACE/.test(mainProcessSource) && /function tracePhase/.test(mainProcessSource))
+// The bundled overlay seed is ~23 MB; copying it synchronously on the main
+// process froze the window at the splash-to-workbench handoff on first launch.
+check('Startup seeds the overlay library without blocking the main thread',
+  /await seedKmlLibraryAsync\(/.test(mainProcessSource))
 // The splash window is hidden while it loads, and Chromium runs no frame
 // callbacks for a window that is not on screen: a paint signal built on
 // requestAnimationFrame never arrived, so the splash was never shown at all.
