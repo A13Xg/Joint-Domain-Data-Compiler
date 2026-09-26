@@ -65,3 +65,10 @@
 /* An edited-but-unapplied slot has to be visibly distinct from a saved one, or
    "Apply" reads as a no-op and the edit is lost on rebuild. */
 .p5-roster tr.dirty { background: rgba(234, 179, 8, 0.12); box-shadow: inset 3px 0 #eab308; }
+.p5-origin-mode { display: flex; flex-direction: column; gap: 4px; color: var(--text-dim); font-size: 11px; max-width: 460px; }
+.p5-coverage { display: flex; flex-direction: column; gap: 3px; }
+.p5-coverage-label { display: flex; gap: 6px; align-items: baseline; }
+/* A gap is the point of this bar, so an empty bucket is a solid contrasting
+   cell rather than a faint one — a barely-visible gap defeats the purpose. */
+.p5-coverage-bar { display: flex; gap: 1px; height: 18px; border: 1px solid var(--border); border-radius: 3px; overflow: hidden; background: var(--bg-2); }
+.p5-coverage-cell { flex: 1 1 0; min-width: 0; }

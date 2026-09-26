@@ -14,6 +14,11 @@ import {
   P5_SUBFRAME_BYTES,
   P5_SUBFRAME_HEADER_BYTES,
   P5_SUBFRAME_TRAILER_BYTES,
+  P5_CHECKSUM_SEED,
+  P5_DERIVED_CLOCK_XOR,
+  computeP5SubframeChecksum,
+  readP5SubframeChecksum,
+  p5SlotCoverage,
   decodeP5Clock,
   encodeP5Clock,
   iterateP5Samples,
@@ -234,13 +239,20 @@ console.log('\n--- editing sample positions ---')
 
   const exported = buildP5Export(doc, { datasets: [dataset] })
   check('exactly one record was rewritten', exported.positionsWritten === 1, String(exported.positionsWritten))
-  // Only the 12 position bytes of that one record may move. Some of the twelve
-  // can legitimately keep their old value, so assert the *range*, not the count.
-  const editedRecord = p5RecordOffset(doc, dataset.points[5]!.provenance!.sourceRecord! - 1, 1)
+  // The blast radius of one point edit is exactly two places: that record's
+  // 12-byte position triple, and its subframe's 4-byte XOR integrity word. Some
+  // of the twelve can legitimately keep their old value, so assert membership of
+  // those two ranges rather than a byte count.
+  const editedSubframe = dataset.points[5]!.provenance!.sourceRecord! - 1
+  const editedRecord = p5RecordOffset(doc, editedSubframe, 1)
+  const checksumWord = editedRecord + P5_SLOT_COUNT * P5_RECORD_BYTES
+  const inTriple = (o: number) => o >= editedRecord + 8 && o < editedRecord + 20
+  const inChecksum = (o: number) => o >= checksumWord && o < checksumWord + 4
   const changed = diffOffsets(exported.msn, pristine)
-  check('every changed byte is inside the edited record position triple',
-    changed.length > 0 && changed.every((o) => o >= editedRecord + 8 && o < editedRecord + 20),
-    `${changed.length} bytes at ${changed[0]}..${changed[changed.length - 1]}, record at ${editedRecord}`)
+  check('every changed byte is in the edited position triple or its integrity word',
+    changed.length > 0 && changed.every((o) => inTriple(o) || inChecksum(o)),
+    `${changed.length} bytes at ${changed[0]}..${changed[changed.length - 1]}; triple at ${editedRecord + 8}, checksum at ${checksumWord}`)
+  check('the integrity word did change', changed.some(inChecksum))
 
   const reread = readP5Document(exported.msn, { rpt: exported.rpt })
   check('the edited file still validates', validateP5Document(reread).errors.length === 0)
@@ -546,6 +558,104 @@ console.log('\n--- the document registry ---')
   check('release drops one', getP5Document('audit-a') === undefined && p5DocumentCount() === before + 1)
   retainP5Documents([])
   check('retain([]) drops everything', p5DocumentCount() === 0 && getP5Document('audit-b') === undefined)
+}
+
+console.log('\n--- range-center origin mode ---')
+{
+  // This is what the format actually encodes: frame (0,0,0) is a surveyed range
+  // center. In this mode nothing is inferred from the samples.
+  const doc = readP5Document(msn.slice(), { rpt })
+  const center = { anchorLatDeg: 39.5, anchorLonDeg: -118.5, anchorHeightM: 1200 }
+  const result = buildResultFromDocument(doc, { slots: [1], georeference: { ...center, originMode: 'range-center' } })
+  const geo = parseP5GeoReference(result.meta!.p5GeoReference!)!
+  check('the anchor is the frame origin, not a sample', geo.anchorX === 0 && geo.anchorY === 0 && geo.anchorZ === 0,
+    `${geo.anchorX},${geo.anchorY},${geo.anchorZ}`)
+  check('the mode survives into metadata', geo.originMode === 'range-center')
+  check('the warning names the range center', result.warnings.some((w) => w.includes('range center at 39.50000')))
+
+  // The first sample is 3010 units east of the origin, so at 30.48 m/unit it must
+  // land well east of the center — not on top of it, which is the bug this mode
+  // exists to avoid.
+  const first = result.points[0]!
+  check('a sample offset from the origin stays offset from it', first.lon > center.anchorLonDeg + 0.5,
+    `lon ${first.lon.toFixed(4)} vs centre ${center.anchorLonDeg}`)
+
+  const firstSample = buildResultFromDocument(doc, { slots: [1], georeference: { ...center, originMode: 'first-sample' } })
+  check('first-sample mode still pins sample 0 to the anchor',
+    Math.abs(firstSample.points[0]!.lat - center.anchorLatDeg) < 1e-9)
+  check('and says the position is displaced', firstSample.warnings.some((w) => w.includes('displaced by however far')))
+  check('an unknown origin mode is rejected at the boundary',
+    parseP5GeoReference({ ...center, horizontalUnitMeters: 1, verticalUnitMeters: 1, axisOrder: 'x-east', originMode: 'nonsense' }) === null)
+}
+
+console.log('\n--- per-slot data coverage ---')
+{
+  // The fixture's slots are live in every subframe, so coverage is total and gap
+  // free; that is the baseline the gap detection is measured against.
+  const doc = readP5Document(msn.slice(), { rpt })
+  const coverage = p5SlotCoverage(doc, 16)
+  check('one entry per live slot', coverage.length === doc.liveSlots.length && coverage.length === 2)
+  check('bucket count is honoured', coverage[0]!.buckets.length === 16)
+  check('a fully-covered slot reports every bucket full', Array.from(coverage[0]!.buckets).every((v) => v === 1))
+  check('live subframe count matches the recording', coverage[0]!.liveSubframes === doc.subframeCount)
+  check('first and last are the whole span', coverage[0]!.firstSubframe === 0 && coverage[0]!.lastSubframe === doc.subframeCount - 1)
+  check('a gap-free slot reports no gaps', coverage[0]!.gaps.length === 0)
+
+  // Punch a hole in slot 1 and confirm it is found, bounded correctly, and does
+  // not leak into slot 2.
+  const holed = msn.slice()
+  const hv = new DataView(holed.buffer)
+  const doc2 = readP5Document(holed, { rpt })
+  for (let sf = 5; sf <= 9; sf++) hv.setUint16(p5RecordOffset(doc2, sf, 1), 0x0001, false)
+  const c2 = p5SlotCoverage(readP5Document(holed, { rpt }), 16)
+  const slot1 = c2.find((c) => c.slot === 1)!
+  const slot2 = c2.find((c) => c.slot === 2)!
+  check('the gap is detected', slot1.gaps.length === 1, JSON.stringify(slot1.gaps))
+  check('the gap has the right bounds', slot1.gaps[0]!.fromSubframe === 5 && slot1.gaps[0]!.toSubframe === 9,
+    JSON.stringify(slot1.gaps[0]))
+  check('live count drops by exactly the hole', slot1.liveSubframes === doc.subframeCount - 5)
+  check('the other slot is unaffected', slot2.gaps.length === 0 && slot2.liveSubframes === doc.subframeCount)
+  check('a partially-covered bucket reports a fraction', Array.from(slot1.buckets).some((v) => v > 0 && v < 1))
+}
+
+console.log('\n--- the per-subframe XOR integrity word ---')
+{
+  // Every subframe carries an XOR over its whole 4,400-byte record area. An edit
+  // that does not maintain it leaves a file that still parses but no longer
+  // checks out, which is worse than one that fails outright.
+  const doc = readP5Document(msn.slice(), { rpt })
+  const firstSubframe = doc.blocks[0]!.subframeOffset
+  check('the fixture seals its subframes correctly',
+    computeP5SubframeChecksum(doc, firstSubframe) === readP5SubframeChecksum(doc, firstSubframe))
+  check('validation reports no checksum mismatches', validateP5Document(doc).checksumMismatches === 0)
+  check('the second header clock is the first XOR the fixed constant',
+    validateP5Document(doc).derivedClockMismatches === 0)
+
+  // Corrupt one payload byte: the integrity word must catch it.
+  const tampered = msn.slice()
+  const victim = p5RecordOffset(doc, 0, 1) + 9
+  tampered[victim] ^= 0xff
+  const tamperedDoc = readP5Document(tampered, { rpt })
+  const report = validateP5Document(tamperedDoc)
+  check('a single flipped payload byte is caught', report.checksumMismatches === 1, String(report.checksumMismatches))
+  check('and it is reported as an error', report.errors.some((e) => e.includes('integrity word')))
+
+  // A legitimate edit must leave the subframe consistent.
+  const edited = readP5Document(msn.slice(), { rpt })
+  const offset = p5RecordOffset(edited, 2, 1)
+  setP5SamplePosition(edited, offset, { x: 1234.5, y: -987.25, z: 42 })
+  const editedReport = validateP5Document(edited)
+  check('a position write keeps the integrity word consistent', editedReport.checksumMismatches === 0,
+    String(editedReport.checksumMismatches))
+  check('the written values are still readable',
+    Math.abs(edited.view.getFloat32(offset + 8, false) - 1234.5) < 1e-3)
+  check('an incremental update matches a full recompute', (() => {
+    const sub = edited.blocks[0]!.subframeOffset + 2 * P5_SUBFRAME_BYTES
+    return computeP5SubframeChecksum(edited, sub) === readP5SubframeChecksum(edited, sub)
+  })())
+  check('the seed is the same constant the subframe header carries',
+    edited.view.getUint32(edited.blocks[0]!.subframeOffset + 16, false) === P5_CHECKSUM_SEED)
+  check('the derived-clock constant is exposed', P5_DERIVED_CLOCK_XOR === 0x04010003)
 }
 
 console.log('\n--- subframe geometry constants ---')

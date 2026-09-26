@@ -22,6 +22,8 @@ import {
   P5_SUBFRAME_BYTES,
   P5_SUBFRAME_HEADER_BYTES,
   P5_SUBFRAME_TRAILER_BYTES,
+  P5_CHECKSUM_SEED,
+  P5_DERIVED_CLOCK_XOR,
   encodeP5Clock,
 } from '../../src/core/p5/document.ts'
 
@@ -62,16 +64,27 @@ function writeSubframeShell(bytes: Uint8Array, view: DataView, offset: number, t
   view.setUint32(offset, 0x00000452, false)
   view.setUint32(offset + 4, 0x04010003, false)
   encodeP5Clock(bytes, offset + 8, timeOfDayMs)
-  // Second clock: a real recording runs this one ahead of the data-valid clock
-  // by a fixed offset. Nothing reads it; it is here so the 20-byte header is
-  // shaped like a real one.
-  encodeP5Clock(bytes, offset + 12, (timeOfDayMs + 3_600_000) % 86_400_000)
-  view.setUint32(offset + 16, 0x0332044e, false)
+  // The second header clock is the first XORed with a fixed constant, not an
+  // independent timestamp — so it is derived here the same way a real recording
+  // derives it.
+  view.setUint32(offset + 12, (view.getUint32(offset + 8, false) ^ P5_DERIVED_CLOCK_XOR) >>> 0, false)
+  view.setUint32(offset + 16, P5_CHECKSUM_SEED, false)
 
   const trailer = offset + P5_SUBFRAME_HEADER_BYTES + P5_SLOT_COUNT * P5_RECORD_BYTES
-  view.setUint32(trailer, 0x0332457d, false)
   bytes[trailer + 4] = 0xff
   for (let i = 0; i < 16; i++) view.setUint32(trailer + 8 + i * 4, (i + 1) << 16, false)
+}
+
+/**
+ * Stamp the subframe's XOR integrity word. Must run after the records are
+ * written — a fixture with a wrong one would be rejected by the validator, which
+ * is exactly the behaviour the validator is for.
+ */
+function sealSubframe(view: DataView, offset: number): void {
+  const base = offset + P5_SUBFRAME_HEADER_BYTES
+  let acc = 0
+  for (let i = 0; i < P5_SLOT_COUNT * P5_RECORD_BYTES; i += 4) acc ^= view.getUint32(base + i, false)
+  view.setUint32(base + P5_SLOT_COUNT * P5_RECORD_BYTES, (acc ^ P5_CHECKSUM_SEED) >>> 0, false)
 }
 
 function writeRecords(
@@ -154,6 +167,7 @@ export function buildP5Fixture(options: FixtureOptions = {}): { msn: Uint8Array;
       const timeOfDayMs = (startTimeOfDayMs + subframeOrdinal * 100) % 86_400_000
       writeSubframeShell(msn, view, offset, timeOfDayMs)
       writeRecords(msn, view, offset + P5_SUBFRAME_HEADER_BYTES, subframeOrdinal, slots)
+      sealSubframe(view, offset)
       if (s === count - 1) encodeP5Clock(msn, blockOffset + 8, timeOfDayMs)
       subframeOrdinal++
     }

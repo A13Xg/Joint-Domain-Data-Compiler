@@ -606,6 +606,24 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
   stays disabled, because writing the file back out through a georeference the tracks were not
   built with would rewrite every sample in them.</p>
 
+  <p>Set <strong>Frame origin</strong> to <em>Range center</em> if you know your range's surveyed center — that is
+  what the format actually encodes, and it is the only setting that produces absolute positions. <em>First live
+  sample</em> needs no survey data and is fine for looking at the shape of a sortie, but every coordinate it
+  produces is displaced by however far that first sample was from the true center.</p>
+
+  <h3>Where a track has data</h3>
+  <p><em>Scan coverage</em> draws a bar per aircraft showing exactly where in the recording it was reporting.
+  A P5 pod acquires late, drops out and re-acquires, and on a map those gaps are invisible — the track simply
+  draws a straight line across them. This is the one place you can see them.</p>
+
+  <div class="caution">
+    <strong>These are data gaps, not line-up changes.</strong>
+    A range sends <em>static data</em> during a mission that can change an aircraft's callsign or type mid-flight.
+    No such update appears anywhere in this format as it has been decoded, and there is no role or colour field in
+    the roster at all — every byte of the 80-byte record is accounted for. If you have a recording where a callsign
+    or type is <em>known</em> to have changed mid-mission, that file would settle it; this one cannot.
+  </div>
+
   <h3>Editing the roster</h3>
   <p>Callsign, aircraft id, unit and the one-byte aircraft type code are editable per slot. Edited
   rows are highlighted until you press <em>Apply</em>. Tick <em>show all 50 slots</em> to reach the

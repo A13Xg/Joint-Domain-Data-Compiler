@@ -36,6 +36,20 @@ export interface P5GeoReference {
   verticalUnitMeters: number
   /** Which frame axis is East. Unverified either way; see docs/P5-MSN.md §6. */
   axisOrder: 'x-east' | 'y-east'
+  /**
+   * How the frame is tied to the earth.
+   *
+   * `range-center` is what the format actually is: frame (0,0,0) is a surveyed
+   * range center, and the anchor coordinates below are its latitude, longitude
+   * and altitude. Use this whenever the real range center is known — it is the
+   * only mode that yields absolute positions.
+   *
+   * `first-sample` pins the recording's first live sample to the anchor instead.
+   * It needs no survey data and is useful for looking at the shape of a sortie,
+   * but every coordinate it produces is displaced by however far that sample was
+   * from the true center.
+   */
+  originMode?: 'range-center' | 'first-sample'
 }
 
 /**
@@ -54,6 +68,7 @@ export const P5_DEFAULT_GEOREFERENCE: P5GeoReference = {
   horizontalUnitMeters: 30.48,
   verticalUnitMeters: 1,
   axisOrder: 'x-east',
+  originMode: 'first-sample',
 }
 
 /**
@@ -89,11 +104,18 @@ export function parseP5GeoReference(raw: unknown): P5GeoReference | null {
   const horizontalUnitMeters = positive(candidate.horizontalUnitMeters)
   const verticalUnitMeters = positive(candidate.verticalUnitMeters)
   const axisOrder = candidate.axisOrder === 'x-east' || candidate.axisOrder === 'y-east' ? candidate.axisOrder : null
+  const originMode =
+    candidate.originMode === 'range-center' || candidate.originMode === 'first-sample'
+      ? candidate.originMode
+      : candidate.originMode === undefined
+        ? 'first-sample'
+        : null
 
   if (
     anchorLatDeg === null || Math.abs(anchorLatDeg) > 90 ||
     anchorLonDeg === null || Math.abs(anchorLonDeg) > 180 ||
     anchorHeightM === null ||
+    originMode === null ||
     horizontalUnitMeters === null ||
     verticalUnitMeters === null ||
     axisOrder === null
@@ -116,6 +138,7 @@ export function parseP5GeoReference(raw: unknown): P5GeoReference | null {
     horizontalUnitMeters,
     verticalUnitMeters,
     axisOrder,
+    originMode,
     ...(anchorPresent === 3 ? { anchorX: anchorX!, anchorY: anchorY!, anchorZ: anchorZ! } : {}),
   }
 }
@@ -178,7 +201,13 @@ export function buildResultFromDocument(doc: P5Document, options: ParseP5Options
   let anchorX = geo.anchorX
   let anchorY = geo.anchorY
   let anchorZ = geo.anchorZ
-  if (anchorX === undefined || anchorY === undefined || anchorZ === undefined) {
+  if (geo.originMode === 'range-center') {
+    // Frame (0,0,0) IS the range center, so there is nothing to resolve: the
+    // anchor coordinates describe the origin directly.
+    anchorX = 0
+    anchorY = 0
+    anchorZ = 0
+  } else if (anchorX === undefined || anchorY === undefined || anchorZ === undefined) {
     const first = iterateP5Samples(doc, { maxSamples: 1 }).next()
     if (!first.done) {
       anchorX ??= first.value.x
@@ -254,8 +283,11 @@ export function buildResultFromDocument(doc: P5Document, options: ParseP5Options
   warnings.push(
     `Coordinates are ASSUMED, not read from the file: the P5 range frame's origin and unit scale are not recorded in it. ` +
       `Applied ${geo.horizontalUnitMeters} m per horizontal unit, ${geo.verticalUnitMeters} m per vertical unit, ` +
-      `${geo.axisOrder === 'x-east' ? 'X=East/Y=North' : 'Y=East/X=North'}, anchored at ` +
-      `${geo.anchorLatDeg.toFixed(5)}, ${geo.anchorLonDeg.toFixed(5)}. Raw frame values are kept in the p5_x/p5_y/p5_z channels.`,
+      `${geo.axisOrder === 'x-east' ? 'X=East/Y=North' : 'Y=East/X=North'}, with ` +
+      `${geo.originMode === 'range-center'
+        ? `frame (0,0,0) treated as a range center at ${geo.anchorLatDeg.toFixed(5)}, ${geo.anchorLonDeg.toFixed(5)}, ${geo.anchorHeightM} m`
+        : `the first live sample pinned to ${geo.anchorLatDeg.toFixed(5)}, ${geo.anchorLonDeg.toFixed(5)} (no range center supplied, so absolute position is displaced by however far that sample was from the true center)`}. ` +
+      'Raw frame values are kept in the p5_x/p5_y/p5_z channels.',
   )
   warnings.push(
     'Time base is UNKNOWN, not assumed UTC: the recording carries two clocks about four hours apart and nothing that ' +

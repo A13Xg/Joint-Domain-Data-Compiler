@@ -923,7 +923,8 @@ Appears once a `.msnP5` is loaded. Format reference: `docs/P5-MSN.md`.
 - Any load warnings (e.g. a `.rpt` index that disagrees with the recording) shown inline
 
 ### Range georeference
-- **Anchor latitude / longitude / height** — where the recording's anchor frame point is placed
+- **Frame origin** — `Range center` (frame (0,0,0) is the surveyed range center; the only mode that yields absolute positions) or `First live sample` (no survey data needed; every position displaced by however far that sample sat from the true center). Field labels change with the mode
+- **Anchor latitude / longitude / height** — the range center itself, or where the first live sample is pinned
 - **Horizontal m/unit, Vertical m/unit** — separate scales; the two axes demonstrably differ
 - **Axis order** — `X = East, Y = North` or `Y = East, X = North`
 - **Rebuild tracks** — re-derives every track of that recording with the current settings; no re-import. Flushes any un-exported point edits into the recording first, so a rebuild cannot discard them
@@ -939,8 +940,15 @@ Appears once a `.msnP5` is loaded. Format reference: `docs/P5-MSN.md`.
 - Type code input offers the observed byte values (`0x58`, `0x5F`, `0x62`) as suggestions; any other byte is accepted and preserved
 - A pending roster edit is carried through **Rebuild tracks** rather than silently reset
 
+### Where each track has data
+- **Scan coverage** — one pass over the recording producing, per live slot, a bucketed availability bar, the percentage of the recording covered, and the bounded list of dropout gaps
+- Gaps are invisible on a map (the track draws straight across them); this is the only place they are shown
+- Explicitly labelled **data-availability** changes, not line-up changes — no mid-mission roster update exists in the format as decoded
+
 ### Integrity & export
-- **Validate structure** — re-walks every block, subframe and slot record; reports counts, clock anomalies, and any invariant violations
+- **Validate structure & integrity** — re-walks every block, subframe and slot record; reports counts, clock anomalies, and any invariant violations
+- Includes the **per-subframe XOR integrity word** covering all 4,400 payload bytes of every subframe — the format's only whole-payload check, so a single flipped byte anywhere is caught
+- Position edits maintain that word incrementally, so an edited file stays internally consistent and an edit-then-undo restores the original bytes exactly
 - **Export .msnP5 + .rpt (+ .teq)** — patches the imported bytes and emits the whole set; an unedited export is byte-identical to the source
 - **Disabled while the georeference form differs from the one the tracks were built with**, with an inline explanation: exporting then would rewrite every sample through a transform it was never in. Rebuild first
 - Roster edits are validated as a batch and applied all-or-nothing; only the fields that actually changed are written

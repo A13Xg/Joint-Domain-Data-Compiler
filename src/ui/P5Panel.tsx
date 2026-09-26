@@ -11,7 +11,7 @@ import { useMemo, useState } from 'react'
 import type { Dataset } from '../core/model'
 import type { WorkspaceDisplay } from '../state/workspaceDisplay'
 import { getP5Document } from '../core/p5/registry'
-import { validateP5Document, type P5Document, type P5Participant } from '../core/p5/document'
+import { p5SlotCoverage, validateP5Document, type P5Document, type P5Participant, type P5SlotCoverage } from '../core/p5/document'
 import { buildP5Export, readDatasetGeoReference, type P5RosterEdit } from '../core/exporters/p5'
 import { P5_DEFAULT_GEOREFERENCE, type P5GeoReference } from '../core/parsers/p5'
 import { logger } from '../core/logger'
@@ -52,7 +52,7 @@ function readStoredGeoReference(dataset: Dataset | undefined): P5GeoReference | 
 const OBSERVED_TYPE_CODES = [0x58, 0x5f, 0x62]
 
 /** Only the fields the operator can change; the anchor is derived, not typed. */
-const GEO_FIELDS = ['anchorLatDeg', 'anchorLonDeg', 'anchorHeightM', 'horizontalUnitMeters', 'verticalUnitMeters', 'axisOrder'] as const
+const GEO_FIELDS = ['anchorLatDeg', 'anchorLonDeg', 'anchorHeightM', 'horizontalUnitMeters', 'verticalUnitMeters', 'axisOrder', 'originMode'] as const
 
 function sameGeoReference(a: P5GeoReference, b: P5GeoReference): boolean {
   return GEO_FIELDS.every((field) => a[field] === b[field])
@@ -142,6 +142,9 @@ function P5RecordingCard({
   const [roster, setRoster] = useState<P5Participant[]>(() => doc.roster.map((p) => ({ ...p })))
   const [geo, setGeo] = useState<P5GeoReference>(() => readStoredGeoReference(group.datasets[0]) ?? P5_DEFAULT_GEOREFERENCE)
   const [showAllSlots, setShowAllSlots] = useState(false)
+  // One pass over the whole recording, so it is computed on demand rather than
+  // on every render of a panel the user may not have scrolled to.
+  const [coverage, setCoverage] = useState<P5SlotCoverage[] | null>(null)
   const [validation, setValidation] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -268,6 +271,11 @@ function P5RecordingCard({
     onNotify('Discarded the unapplied roster changes.')
   }
 
+  const showCoverage = () =>
+    run('Coverage scan failed', () => {
+      setCoverage(p5SlotCoverage(doc))
+    })
+
   const runValidation = () =>
     run('Validation failed', () => {
       const report = validateP5Document(doc)
@@ -275,7 +283,8 @@ function P5RecordingCard({
         report.errors.length === 0
           ? `${report.blocks.toLocaleString()} blocks · ${report.subframes.toLocaleString()} subframes · ` +
               `${report.records.toLocaleString()} slot records (${report.liveRecords.toLocaleString()} live) · ` +
-              `${report.clockAnomalies} clock anomal${report.clockAnomalies === 1 ? 'y' : 'ies'} · structure clean`
+              `${report.clockAnomalies} clock anomal${report.clockAnomalies === 1 ? 'y' : 'ies'} · ` +
+              `integrity words all match · structure clean`
           : `${report.errors.length} structural problem(s): ${report.errors.slice(0, 3).join(' | ')}`,
       )
     })
@@ -339,10 +348,22 @@ function P5RecordingCard({
             cannot be written back to the recording.
           </p>
         )}
+        <label className="p5-origin-mode">
+          Frame origin
+          <select value={geo.originMode ?? 'first-sample'} onChange={(e) => setGeo({ ...geo, originMode: e.target.value as P5GeoReference['originMode'] })}>
+            <option value="range-center">Range center — frame (0,0,0) is the surveyed center</option>
+            <option value="first-sample">First live sample — no survey data needed</option>
+          </select>
+        </label>
+        <p className="muted small">
+          {geo.originMode === 'range-center'
+            ? 'The coordinates below are the range center itself. This is what the format actually encodes, and the only mode that yields absolute positions.'
+            : 'The coordinates below are where the recording’s first live sample is pinned. Useful for looking at the shape of a sortie, but every position is displaced by however far that sample was from the true range center.'}
+        </p>
         <div className="p5-geo-grid">
-          <label>Anchor latitude<input type="number" step="0.00001" value={geo.anchorLatDeg} onChange={(e) => setGeo({ ...geo, anchorLatDeg: Number(e.target.value) })} /></label>
-          <label>Anchor longitude<input type="number" step="0.00001" value={geo.anchorLonDeg} onChange={(e) => setGeo({ ...geo, anchorLonDeg: Number(e.target.value) })} /></label>
-          <label>Anchor height (m, your datum)<input type="number" step="1" value={geo.anchorHeightM} onChange={(e) => setGeo({ ...geo, anchorHeightM: Number(e.target.value) })} /></label>
+          <label>{geo.originMode === 'range-center' ? 'Range center latitude' : 'Anchor latitude'}<input type="number" step="0.00001" value={geo.anchorLatDeg} onChange={(e) => setGeo({ ...geo, anchorLatDeg: Number(e.target.value) })} /></label>
+          <label>{geo.originMode === 'range-center' ? 'Range center longitude' : 'Anchor longitude'}<input type="number" step="0.00001" value={geo.anchorLonDeg} onChange={(e) => setGeo({ ...geo, anchorLonDeg: Number(e.target.value) })} /></label>
+          <label>{geo.originMode === 'range-center' ? 'Range center altitude (m)' : 'Anchor height (m, your datum)'}<input type="number" step="1" value={geo.anchorHeightM} onChange={(e) => setGeo({ ...geo, anchorHeightM: Number(e.target.value) })} /></label>
           <label>Horizontal m/unit<input type="number" step="0.01" min="0.0001" value={geo.horizontalUnitMeters} onChange={(e) => setGeo({ ...geo, horizontalUnitMeters: Number(e.target.value) })} /></label>
           <label>Vertical m/unit<input type="number" step="0.01" min="0.0001" value={geo.verticalUnitMeters} onChange={(e) => setGeo({ ...geo, verticalUnitMeters: Number(e.target.value) })} /></label>
           <label>Axis order
@@ -433,9 +454,44 @@ function P5RecordingCard({
       </div>
 
       <div className="p5-section">
+        <div className="p5-section-head">
+          <h3>Where each track has data</h3>
+          <button type="button" disabled={busy} onClick={showCoverage}>{coverage ? 'Rescan' : 'Scan coverage'}</button>
+        </div>
+        <p className="muted small">
+          A P5 pod acquires late, drops out and re-acquires, and the recording marks every missing epoch
+          individually. On a map those gaps are invisible — the track just draws straight across them. This is the
+          one place they are visible. <strong>These are data-availability changes, not line-up changes:</strong> no
+          mid-mission roster update appears anywhere in this format as decoded (<code>docs/P5-MSN.md</code> §10).
+        </p>
+        {coverage?.map((c) => {
+          const participant = roster.find((entry) => entry.slot === c.slot)
+          const pct = (100 * c.liveSubframes) / Math.max(1, doc.subframeCount)
+          return (
+            <div key={c.slot} className="p5-coverage">
+              <div className="p5-coverage-label mono small">
+                slot {c.slot} {participant?.callsign.trim()} {participant?.aircraftId.trim()}
+                <span className="muted"> · {pct.toFixed(1)}% of the recording · {c.gaps.length} gap{c.gaps.length === 1 ? '' : 's'}</span>
+              </div>
+              <div
+                className="p5-coverage-bar"
+                role="img"
+                aria-label={`Slot ${c.slot} carries data in ${pct.toFixed(1)} percent of the recording, with ${c.gaps.length} gaps`}
+              >
+                {Array.from(c.buckets).map((v, i) => (
+                  <span key={i} className="p5-coverage-cell" style={{ opacity: v === 0 ? 1 : undefined, background: v === 0 ? 'var(--bg-2)' : `color-mix(in srgb, var(--accent) ${Math.round(v * 100)}%, var(--bg-2))` }} />
+                ))}
+              </div>
+            </div>
+          )
+        })}
+        {coverage && coverage.length === 0 && <p className="muted small">No slot in this recording carries data.</p>}
+      </div>
+
+      <div className="p5-section">
         <h3>Integrity and export</h3>
         <div className="p5-actions">
-          <button type="button" disabled={busy} onClick={runValidation}>Validate structure</button>
+          <button type="button" disabled={busy} onClick={runValidation}>Validate structure &amp; integrity</button>
           <button type="button" disabled={busy || geoDirty} onClick={exportRecording}>Export .msnP5 + .rpt</button>
         </div>
         {geoDirty && (
@@ -445,6 +501,11 @@ function P5RecordingCard({
           </p>
         )}
         {validation && <p className="small mono">{validation}</p>}
+        <p className="muted small">
+          Validation includes the per-subframe XOR word that covers all 4,400 payload bytes of every subframe — the
+          format’s only whole-payload integrity check, so a single flipped byte anywhere is caught. Edits maintain it
+          automatically.
+        </p>
         <p className="muted small">
           Export patches the bytes of the file that was imported rather than regenerating it, so an export with no
           edits is byte-identical to the source. Point moves are written back through the georeference above; samples

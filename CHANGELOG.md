@@ -49,6 +49,22 @@ Versioning; release tags use the `vX.Y.Z` form.
     identifies its time base — it carries two clocks about four hours apart with no explanation —
     and derived height is only as good as the anchor height the operator supplies. Claiming
     HAE/UTC would let a cross-source comparison proceed silently that ought to warn.
+  - **Every subframe carries an XOR integrity word over its 4,400 payload bytes** — `XOR32(records) ^
+    0x0332044E`, confirmed against all 99,409 subframes of the specimen with zero exceptions. It is the format's
+    only whole-payload check, so a flipped byte anywhere is caught, and validation now verifies it. Position
+    edits maintain it incrementally (XOR is linear and every position field is word-aligned), which also means an
+    edit followed by an undo restores the original bytes exactly.
+  - The subframe header's apparent **second clock is not a clock**: it is the first clock XORed with
+    `0x04010003`. Read as arithmetic it looked like a receipt timestamp four hours ahead with a few-centisecond
+    jitter; it carries no information of its own.
+  - **Frame origin is selectable.** `Range center` treats frame (0,0,0) as the surveyed range center, which is
+    what the format encodes and the only mode that yields absolute positions; `First live sample` needs no survey
+    data but displaces every coordinate. The parked position plus a real range center over-determines both unit
+    scales, which is the way to settle them.
+  - **Per-slot coverage scan.** A pod acquires late, drops out and re-acquires, and on a map those gaps are
+    invisible because the track draws straight across them. The P5 Mission tab now shows a bucketed availability
+    bar, coverage percentage and bounded gap list per aircraft — labelled as data availability, not line-up
+    changes, because no mid-mission roster update exists in the format as decoded.
   - `npm run verify:p5 -- <file.msnP5>` proves the round-trip against a real recording: byte
     identity across all three files, idempotence over two cycles, 500+ bulk edits read back by
     value, a full 50-slot roster round-trip, undo restoring the original bytes, and rejection of

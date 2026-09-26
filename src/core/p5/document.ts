@@ -27,6 +27,19 @@ export const P5_SUBFRAME_INTERVAL_MS = 100
 /** X and Y carry this value when a slot reports no data (see docs/P5-MSN.md §5.4). */
 export const P5_NO_DATA_SENTINEL = 0x45f423f0
 
+/**
+ * Seed for the per-subframe integrity word, and — not a coincidence — the same
+ * constant that sits at subframe header offset 16.
+ */
+export const P5_CHECKSUM_SEED = 0x0332044e
+/**
+ * The second clock in a subframe header is not an independent clock: it is the
+ * first one XORed with this constant, in all 99,409 subframes of the specimen.
+ * Reading it as arithmetic is what made it look like a jittering timestamp
+ * about four hours ahead.
+ */
+export const P5_DERIVED_CLOCK_XOR = 0x04010003
+
 const RPT_INDEX_OFFSET = 0x0fc0
 const RPT_HEADER_BYTES = RPT_INDEX_OFFSET
 const SUBFRAME_SIGNATURE = [0x00, 0x00, 0x04, 0x52, 0x04, 0x01, 0x00, 0x03]
@@ -386,6 +399,73 @@ function findLiveSlots(doc: Pick<P5Document, 'bytes' | 'view' | 'blocks'>): numb
   return [...live].sort((a, b) => a - b)
 }
 
+export interface P5SlotCoverage {
+  slot: number
+  /** Fraction of subframes in each bucket that carry a live sample, 0..1. */
+  buckets: Float32Array
+  /** Global subframe ordinal of the first and last live sample, or -1. */
+  firstSubframe: number
+  lastSubframe: number
+  liveSubframes: number
+  /** Runs of missing data between the first and last live sample. */
+  gaps: { fromSubframe: number; toSubframe: number }[]
+}
+
+/**
+ * Where each roster slot actually has data, in one pass over the recording.
+ *
+ * A P5 slot is not simply present or absent: a pod acquires late, drops out and
+ * re-acquires, and the recording marks each missing epoch individually. Without
+ * this, a gap is invisible — the track just draws a straight line across it — so
+ * the interesting question "where is this aircraft's data missing?" has no answer
+ * in the point list alone.
+ */
+export function p5SlotCoverage(doc: P5Document, bucketCount = 240, maxGaps = 200): P5SlotCoverage[] {
+  const buckets = Math.max(1, Math.floor(bucketCount))
+  const wanted = doc.liveSlots
+  const counts = new Map<number, Float32Array>()
+  const totals = new Float32Array(buckets)
+  const state = new Map<number, P5SlotCoverage>()
+  for (const slot of wanted) {
+    counts.set(slot, new Float32Array(buckets))
+    state.set(slot, { slot, buckets: new Float32Array(buckets), firstSubframe: -1, lastSubframe: -1, liveSubframes: 0, gaps: [] })
+  }
+  const openGap = new Map<number, number>()
+
+  let subframe = 0
+  for (const block of doc.blocks) {
+    for (let s = 0; s < block.subframeCount; s++, subframe++) {
+      const bucket = Math.min(buckets - 1, Math.floor((subframe * buckets) / Math.max(1, doc.subframeCount)))
+      totals[bucket]! += 1
+      const recordsBase = block.subframeOffset + s * P5_SUBFRAME_BYTES + P5_SUBFRAME_HEADER_BYTES
+      for (const slot of wanted) {
+        const rec = recordsBase + (slot - 1) * P5_RECORD_BYTES
+        const live = doc.view.getUint16(rec, false) === P5_STATE_LIVE
+        const entry = state.get(slot)!
+        if (live) {
+          counts.get(slot)![bucket]! += 1
+          entry.liveSubframes++
+          if (entry.firstSubframe < 0) entry.firstSubframe = subframe
+          entry.lastSubframe = subframe
+          const from = openGap.get(slot)
+          if (from !== undefined) {
+            if (entry.gaps.length < maxGaps) entry.gaps.push({ fromSubframe: from, toSubframe: subframe - 1 })
+            openGap.delete(slot)
+          }
+        } else if (entry.firstSubframe >= 0 && !openGap.has(slot)) {
+          openGap.set(slot, subframe)
+        }
+      }
+    }
+  }
+  for (const slot of wanted) {
+    const entry = state.get(slot)!
+    const c = counts.get(slot)!
+    for (let b = 0; b < buckets; b++) entry.buckets[b] = totals[b]! > 0 ? c[b]! / totals[b]! : 0
+  }
+  return wanted.map((slot) => state.get(slot)!)
+}
+
 export interface IterateOptions {
   /** Restrict to these roster slots. Defaults to every live slot. */
   slots?: number[]
@@ -449,6 +529,38 @@ export function* iterateP5Samples(doc: P5Document, options: IterateOptions = {})
       }
     }
   }
+}
+
+/** Byte offset of the 4-byte integrity word that covers a subframe's records. */
+function checksumOffset(subframeOffset: number): number {
+  return subframeOffset + P5_SUBFRAME_HEADER_BYTES + P5_SLOT_COUNT * P5_RECORD_BYTES
+}
+
+/**
+ * The integrity word a subframe's records should carry: the XOR of every
+ * big-endian u32 in the 4,400-byte record area, XORed with the seed. Verified
+ * with zero exceptions across every subframe of the specimen.
+ */
+export function computeP5SubframeChecksum(doc: P5Document, subframeOffset: number): number {
+  const base = subframeOffset + P5_SUBFRAME_HEADER_BYTES
+  let acc = 0
+  for (let i = 0; i < P5_SLOT_COUNT * P5_RECORD_BYTES; i += 4) {
+    acc ^= doc.view.getUint32(base + i, false)
+  }
+  return (acc ^ P5_CHECKSUM_SEED) >>> 0
+}
+
+export function readP5SubframeChecksum(doc: P5Document, subframeOffset: number): number {
+  return doc.view.getUint32(checksumOffset(subframeOffset), false)
+}
+
+/**
+ * Start of the subframe containing a slot record. Every position field sits on a
+ * 4-byte boundary within the record area, which is what lets the integrity word
+ * be maintained incrementally instead of recomputed.
+ */
+function subframeStartForRecord(recordOffset: number, slot: number): number {
+  return recordOffset - P5_SUBFRAME_HEADER_BYTES - (slot - 1) * P5_RECORD_BYTES
 }
 
 /**
@@ -576,9 +688,26 @@ export function setP5SamplePosition(
       throw new P5FormatError(`Refusing to write a non-finite ${axis} (${value}) into a P5 slot record.`)
     }
   }
-  if (position.x !== undefined) doc.view.setFloat32(recordOffset + 8, position.x, false)
-  if (position.y !== undefined) doc.view.setFloat32(recordOffset + 12, position.y, false)
-  if (position.z !== undefined) doc.view.setFloat32(recordOffset + 16, position.z, false)
+
+  const slot = doc.bytes[recordOffset + 7] ?? 1
+  const checksumAt = checksumOffset(subframeStartForRecord(recordOffset, slot))
+  let checksum = doc.view.getUint32(checksumAt, false)
+
+  // The subframe carries an XOR integrity word over its whole record area, so a
+  // position write that did not maintain it would leave the subframe internally
+  // inconsistent — a file that still parses but no longer checks out. XOR is
+  // linear and every position field is u32-aligned within the record area, so
+  // each write costs one XOR rather than a re-scan of 4,400 bytes.
+  const writeWord = (offset: number, value: number) => {
+    const before = doc.view.getUint32(offset, false)
+    doc.view.setFloat32(offset, value, false)
+    checksum = (checksum ^ before ^ doc.view.getUint32(offset, false)) >>> 0
+  }
+  if (position.x !== undefined) writeWord(recordOffset + 8, position.x)
+  if (position.y !== undefined) writeWord(recordOffset + 12, position.y)
+  if (position.z !== undefined) writeWord(recordOffset + 16, position.z)
+
+  doc.view.setUint32(checksumAt, checksum, false)
 }
 
 /** Rebuild the .rpt block index for the current block table. */
@@ -625,16 +754,19 @@ export interface P5ValidationReport {
   errors: string[]
   /** Subframe pairs whose clocks do not differ by exactly 100 ms. */
   clockAnomalies: number
+  /** Subframes whose XOR integrity word does not match their record area. */
+  checksumMismatches: number
+  /** Subframes whose second header clock is not the first XOR the fixed constant. */
+  derivedClockMismatches: number
 }
 
 /**
- * Walk the structural invariants of docs/P5-MSN.md §7 that a reader can check
- * without asserting single-specimen constants: framing, the subframe signature,
- * the clock cadence, the trailer marker, slot indices and state words. The two
- * §7 items left out (the fixed header word at offset 16 and the trailer's
- * constant 64-byte tail) held one value across one recording, which is not
- * enough to reject a file over. Exposed because this is the cheapest way to tell
- * a genuine P5 recording from a file that merely has the right length.
+ * Walk the structural invariants of docs/P5-MSN.md §7: framing, the subframe
+ * signature, the clock cadence, the trailer marker, slot indices, state words,
+ * and — the strongest of them — the per-subframe XOR integrity word over the
+ * record area. Exposed because this is the cheapest way to tell a genuine P5
+ * recording from a file that merely has the right length, and the only way to
+ * tell an intact payload from a corrupted one.
  */
 export function validateP5Document(doc: P5Document): P5ValidationReport {
   const errors: string[] = []
@@ -643,6 +775,8 @@ export function validateP5Document(doc: P5Document): P5ValidationReport {
   let records = 0
   let liveRecords = 0
   let clockAnomalies = 0
+  let checksumMismatches = 0
+  let derivedClockMismatches = 0
   let previousClock = -1
   const note = (message: string) => {
     if (errors.length < 20) errors.push(message)
@@ -670,6 +804,16 @@ export function validateP5Document(doc: P5Document): P5ValidationReport {
       if (bytes[trailer + 4] !== 0xff || bytes[trailer + 5] !== 0 || bytes[trailer + 6] !== 0 || bytes[trailer + 7] !== 0) {
         note(`Block ${b} subframe ${s}: trailer marker is not FF000000.`)
       }
+      // The strongest single check in the format: an XOR over all 4,400 record
+      // bytes. It catches any corruption of the payload, and any edit that did
+      // not maintain it.
+      if (computeP5SubframeChecksum(doc, sub) !== view.getUint32(trailer, false)) {
+        checksumMismatches++
+        note(`Block ${b} subframe ${s}: record-area integrity word does not match its records.`)
+      }
+      if ((view.getUint32(sub + 8, false) ^ P5_DERIVED_CLOCK_XOR) >>> 0 !== view.getUint32(sub + 12, false)) {
+        derivedClockMismatches++
+      }
 
       const recordsBase = sub + P5_SUBFRAME_HEADER_BYTES
       for (let k = 0; k < P5_SLOT_COUNT; k++) {
@@ -683,5 +827,5 @@ export function validateP5Document(doc: P5Document): P5ValidationReport {
     }
   }
 
-  return { blocks: doc.blocks.length, subframes, records, liveRecords, errors, clockAnomalies }
+  return { blocks: doc.blocks.length, subframes, records, liveRecords, errors, clockAnomalies, checksumMismatches, derivedClockMismatches }
 }

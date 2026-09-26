@@ -77,6 +77,10 @@ console.log('\n--- structure ---')
   console.log(`    ${report.blocks.toLocaleString()} blocks · ${report.subframes.toLocaleString()} subframes · ` +
     `${report.records.toLocaleString()} records (${report.liveRecords.toLocaleString()} live) · slots ${doc.liveSlots.join(', ')}`)
   check('structural invariants hold', report.errors.length === 0, report.errors.slice(0, 3).join(' | '))
+  check('every subframe integrity word matches its records', report.checksumMismatches === 0,
+    `${report.checksumMismatches} mismatch(es) of ${report.subframes.toLocaleString()}`)
+  check('every second header clock is the first XOR the fixed constant', report.derivedClockMismatches === 0,
+    String(report.derivedClockMismatches))
   check('block table is contiguous and covers the file',
     doc.blocks[doc.blocks.length - 1]!.offset + doc.blocks[doc.blocks.length - 1]!.size === msn.byteLength)
   check('every track carries a valid georeference',
@@ -157,7 +161,12 @@ console.log('\n--- bulk point edits round-trip by value ---')
   check(`all ${expected.length} edits were written`, out.positionsWritten === expected.length, String(out.positionsWritten))
 
   const reread = readP5Document(out.msn, { rpt: out.rpt, teq: out.teq })
-  check('the edited recording still validates', validateP5Document(reread).errors.length === 0)
+  const editedReport = validateP5Document(reread)
+  check('the edited recording still validates', editedReport.errors.length === 0, editedReport.errors.slice(0, 2).join(' | '))
+  // The point of the incremental XOR: 500 edits across the file must leave every
+  // touched subframe internally consistent, not just parseable.
+  check('every integrity word still matches after bulk edits', editedReport.checksumMismatches === 0,
+    `${editedReport.checksumMismatches} mismatch(es)`)
   const back = buildResultFromDocument(reread, { slots: [slots[0]!] })
   check('the re-read track has the same point count', back.points.length === dataset.points.length,
     `${back.points.length} vs ${dataset.points.length}`)
