@@ -346,10 +346,17 @@ code { font-family: var(--mono); background: var(--bg-3); padding: 1px 5px; bord
 .q-warn .q-icon { background: rgba(234, 179, 8, 0.18); color: var(--amber); }
 .q-detail { color: var(--text-dim); font-family: var(--mono); font-size: 11.5px; }
 .stats-warnings { margin-top: 10px; }
-.compact-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 14px; }
-.compact-table td { padding: 3px 8px; border-bottom: 1px solid var(--bg-3); vertical-align: top; }
-.compact-table td:first-child { color: var(--text-dim); width: 45%; white-space: nowrap; }
-.compact-table td:last-child { text-align: right; word-break: break-word; }
+/* Key/value tables, where the class is on the <table> itself. Scoped to
+   `table.` on purpose: the same class on a WRAPPER div marks a scrolling data
+   grid (analysis.css), and these rules used to reach into those grids too --
+   the comparison table's index column took 45% of the width. */
+table.compact-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 14px; }
+table.compact-table td { padding: 3px 8px; border-bottom: 1px solid var(--bg-3); vertical-align: top; }
+table.compact-table td:first-child { color: var(--text-dim); width: 45%; white-space: nowrap; }
+table.compact-table td:last-child { text-align: right; word-break: break-word; }
+/* An action that reads as a value, e.g. a clickable sample index in a grid. */
+.link-button { background: none; border: none; padding: 0; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
+.link-button:hover { color: var(--text); background: none; }
 .track-metrics h4 { margin: 0 0 6px; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); }
 .metrics-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
 
@@ -471,6 +478,8 @@ button.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--red) 1
 .op-controls { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin-top: auto; }
 .num-field { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--text-dim); }
 .num-field input { width: 88px; }
+/* Timestamps: a full ISO instant is 24 characters. */
+.num-field input.wide-field { width: 26ch; }
 .settings-panel { display: flex; flex-direction: column; gap: 18px; max-width: 640px; }
 .settings-header h3 { margin: 0 0 4px; }
 .settings-group { background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: flex; flex-direction: column; gap: 14px; }

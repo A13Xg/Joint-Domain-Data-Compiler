@@ -58,6 +58,12 @@ function renderChart(points: TrackPoint[], channels: string[]): { container: HTM
   return { container: container as unknown as HTMLElement, root }
 }
 
+function normalizeColor(value: string): string {
+  const rgb = /^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/.exec(value.trim())
+  if (!rgb) return value.trim().toLowerCase()
+  return `#${rgb.slice(1, 4).map((part) => Number(part).toString(16).padStart(2, '0')).join('')}`
+}
+
 // --- Scenario 1: timestamped data, everything valid on mount ---
 const { container } = renderChart(timestampedPoints, ['speed_mps'])
 
@@ -74,12 +80,15 @@ check('timeSeries button (default selection) is marked active', typeButtons[0]?.
 
 check('ChartLegend is rendered', container.querySelector('.chart-legend') !== null)
 const legendItems = Array.from(container.querySelectorAll('.legend-item')) as unknown as HTMLLIElement[]
-check('ChartLegend renders one item for the speed_mps channel', legendItems.length === 1)
-check('legend item starts marked visible (matches default visibleChannels)', legendItems[0]?.classList.contains('visible') === true)
+check('ChartLegend renders one item: the one plotted series', legendItems.length === 1)
+check('legend item starts marked visible (it is plotted)', legendItems[0]?.classList.contains('visible') === true)
+const plottedLine = container.querySelector('.chart-line') as SVGPathElement | null
+const swatch = container.querySelector('.legend-color') as HTMLElement | null
+check('legend swatch matches the colour the series is drawn in', plottedLine !== null && swatch !== null && swatch.style.backgroundColor !== '' && normalizeColor(swatch.style.backgroundColor) === normalizeColor(plottedLine.style.stroke))
 
 check('no mismatch warning shown when the current type fits the data', container.querySelector('.chart-mismatch-warning') === null)
 
-// --- Scenario 2: click the legend's toggle button; it should flip its own visible state ---
+// --- Scenario 2: the legend's Hide button hides the series itself, not just its own entry ---
 // React 18's createRoot schedules the re-render from a dispatched event
 // asynchronously (via its own scheduler) rather than flushing it in the same
 // tick, so the click itself must be wrapped in flushSync to observe the
@@ -87,8 +96,11 @@ check('no mismatch warning shown when the current type fits the data', container
 const legendToggle = container.querySelector('.legend-toggle') as HTMLButtonElement | null
 check('legend toggle button is rendered (onToggleChannel wired)', legendToggle !== null)
 flushSync(() => { legendToggle?.dispatchEvent(new window.Event('click', { bubbles: true })) })
-const legendItemsAfterToggle = Array.from(container.querySelectorAll('.legend-item')) as unknown as HTMLLIElement[]
-check('clicking the legend toggle flips the item to not-visible', legendItemsAfterToggle[0]?.classList.contains('visible') === false)
+check('hiding from the legend removes the series from the plot', container.querySelector('.chart-line') === null)
+check('and removes its legend entry', container.querySelectorAll('.legend-item').length === 0)
+const elevationChip = Array.from(container.querySelectorAll('.chart-channels .chip')).find((chip) => chip.textContent?.includes('elevation')) as HTMLButtonElement | undefined
+flushSync(() => { elevationChip?.dispatchEvent(new window.Event('click', { bubbles: true })) })
+check('re-selecting the series from its chip brings the line and legend entry back', container.querySelector('.chart-line') !== null && container.querySelectorAll('.legend-item').length === 1)
 
 // --- Scenario 3: click the scatter button in ChartTypeSelector; it should become active ---
 const scatterButton = Array.from(container.querySelectorAll('.chart-type-selector button'))[1] as unknown as HTMLButtonElement

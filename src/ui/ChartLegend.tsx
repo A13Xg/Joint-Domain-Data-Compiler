@@ -4,6 +4,10 @@ export interface ChartLegendProps {
   dataset: Dataset
   visibleChannels?: string[]
   onToggleChannel?: (channelKey: string) => void
+  /** Explicit, ordered list of entries. Defaults to the dataset's plottable channels. */
+  channels?: string[]
+  /** Swatch colour per entry, so a caller can match the colours it actually drew with. */
+  colorFor?: (channelKey: string, index: number) => string
 }
 
 /**
@@ -47,8 +51,8 @@ function channelLabel(dataset: Dataset, channelKey: string): string {
  * differently. When `onToggleChannel` is supplied, each item gets a toggle
  * button that reports its channel key back to the caller on click.
  */
-export function ChartLegend({ dataset, visibleChannels, onToggleChannel }: ChartLegendProps) {
-  const channels = dataset.channels.filter((channel) => !NON_SERIES_CHANNELS.has(channel))
+export function ChartLegend({ dataset, visibleChannels, onToggleChannel, channels: explicitChannels, colorFor }: ChartLegendProps) {
+  const channels = (explicitChannels ?? dataset.channels).filter((channel) => !NON_SERIES_CHANNELS.has(channel))
 
   return (
     <div className="chart-legend">
@@ -57,7 +61,7 @@ export function ChartLegend({ dataset, visibleChannels, onToggleChannel }: Chart
           const isVisible = visibleChannels?.includes(channel) ?? false
           const label = channelLabel(dataset, channel)
           const className = ['legend-item', isVisible ? 'visible' : ''].filter(Boolean).join(' ')
-          const color = LEGEND_PALETTE[index % LEGEND_PALETTE.length]
+          const color = colorFor ? colorFor(channel, index) : LEGEND_PALETTE[index % LEGEND_PALETTE.length]
 
           return (
             <li key={channel} className={className}>

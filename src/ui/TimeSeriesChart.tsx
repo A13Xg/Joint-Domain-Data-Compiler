@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { Dataset, TrackPoint } from '../core/model'
 import { epochMsToIso } from '../core/format'
 import { calculateRangeStatistics } from '../core/analytics/rangeStatistics'
@@ -125,7 +125,6 @@ export function TimeSeriesChart({ points, channels, jumpRequested = false, onJum
   const [chartType, setChartType] = useState<string>(() => (
     isMismatch(dataset, 'timeSeries') ? getBestChartType(dataset) : 'timeSeries'
   ))
-  const [visibleChannels, setVisibleChannels] = useState<string[]>(() => channels.filter((channel) => channel !== 'timestamp'))
   const [toast, setToast] = useState<string | null>(null)
 
   // Auto-recover when the dataset changes *after* mount underneath the
@@ -160,16 +159,6 @@ export function TimeSeriesChart({ points, channels, jumpRequested = false, onJum
     () => getValidChartTypes(dataset).find((info) => info.type === chartType)?.reason,
     [dataset, chartType],
   )
-
-  // Kept decoupled from the `selected`/`toggle` series-visibility mechanism
-  // below (which drives what's actually plotted, and is untouched by this
-  // integration) so the legend's own visible/hidden bookkeeping never
-  // changes the existing chart rendering path's behavior.
-  const handleToggleChannel = useCallback((channelKey: string) => {
-    setVisibleChannels((current) => current.includes(channelKey)
-      ? current.filter((key) => key !== channelKey)
-      : [...current, channelKey])
-  }, [])
 
   const hasTime = useMemo(() => points.some((point) => point.time !== undefined), [points])
   const hasDistance = useMemo(() => points.some((point) => typeof point.ext?.distance_m === 'number'), [points])
@@ -607,7 +596,11 @@ export function TimeSeriesChart({ points, channels, jumpRequested = false, onJum
           </div>
         </div>
 
-        <ChartLegend dataset={dataset} visibleChannels={visibleChannels} onToggleChannel={handleToggleChannel} />
+        {/* A key to the lines actually drawn: the plotted series only, in the
+            colours they were drawn with, and Hide goes through the same toggle
+            as the channel chips. It used to keep visibility state of its own
+            that nothing plotted from, so its Hide/Show buttons did nothing. */}
+        <ChartLegend dataset={dataset} channels={selected} visibleChannels={selected} onToggleChannel={toggle} colorFor={(_key, index) => PALETTE[index % PALETTE.length]!} />
       </div>
 
       {toast && <div className="toast">{toast}</div>}
