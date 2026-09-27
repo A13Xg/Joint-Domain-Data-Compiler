@@ -87,6 +87,9 @@ const swatch = container.querySelector('.legend-color') as HTMLElement | null
 check('legend swatch matches the colour the series is drawn in', plottedLine !== null && swatch !== null && swatch.style.backgroundColor !== '' && normalizeColor(swatch.style.backgroundColor) === normalizeColor(plottedLine.style.stroke))
 
 check('no mismatch warning shown when the current type fits the data', container.querySelector('.chart-mismatch-warning') === null)
+const tickLabels = Array.from(container.querySelectorAll('.chart-tick-label')).map((node) => node.textContent)
+// elevation 100..300: gridlines at 75/50/25% of the way down read 250, 200, 150.
+check('interior gridlines are labelled with the plotted series\' values', tickLabels.join(',') === '250.00,200.00,150.00')
 
 // --- Scenario 2: the legend's Hide button hides the series itself, not just its own entry ---
 // React 18's createRoot schedules the re-render from a dispatched event

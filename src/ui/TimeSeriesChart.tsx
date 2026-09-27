@@ -577,6 +577,12 @@ export function TimeSeriesChart({ points, channels, jumpRequested = false, onJum
             {dragStart !== null && hover !== null && <rect x={Math.min(xToPx(dragStart), xToPx(hover))} y={pad.top} width={Math.abs(xToPx(hover) - xToPx(dragStart))} height={plotH} fill={(dragModifiers.ctrl || dragModifiers.shift) && !series[0]?.downsampled ? 'rgba(168,85,247,0.16)' : 'rgba(59,130,246,0.14)'} />}
             {selectedX !== null && xDomain && <line x1={xToPx(selectedX)} x2={xToPx(selectedX)} y1={pad.top} y2={pad.top + plotH} style={{ stroke: '#ea4f2f', strokeWidth: 2 }} />}
             {series.filter((item) => item.values.length > 1).map((item, row) => { const { min, max } = yRange(item); return <g key={item.key}><text x={4} y={pad.top + 4 + row * 11} className="chart-axis-label" style={{ fill: item.color }}>{item.key} ({channelUnit(item.key)}) max {fmt(max)}</text><text x={4} y={pad.top + plotH - row * 11} className="chart-axis-label" style={{ fill: item.color }}>{item.key} ({channelUnit(item.key)}) min {fmt(min)}</text></g> })}
+            {/* Values at the interior gridlines for the first two series -- the
+                first down the left edge, the second down the right, each in its
+                own colour. With only min/max printed, nothing in between could
+                be read off the plot. */}
+            {series.filter((item) => item.values.length > 1).slice(0, 2).map((item, side) => { const { min, max } = yRange(item); return <g key={`ticks-${item.key}`}>{[0.25, 0.5, 0.75].map((grid) => <text key={grid} x={side === 0 ? pad.left + 3 : width - pad.right - 3} y={pad.top + grid * plotH - 3} textAnchor={side === 0 ? 'start' : 'end'} className="chart-axis-label chart-tick-label" style={{ fill: item.color }}>{fmt(max - grid * (max - min))}</text>)}</g> })}
+            {effectiveDomain && [0.25, 0.5, 0.75].map((fraction) => <text key={fraction} x={pad.left + fraction * plotW} y={height - 7} className="chart-axis-label" textAnchor="middle">{formatXTick(effectiveDomain.lo + fraction * (effectiveDomain.hi - effectiveDomain.lo), effectiveX)}</text>)}
             {effectiveDomain && <>
               <text x={pad.left} y={height - 7} className="chart-axis-label chart-axis-label--strong" textAnchor="start">{formatX(effectiveDomain.lo, effectiveX)}</text>
               <text x={width - pad.right} y={height - 7} className="chart-axis-label chart-axis-label--strong" textAnchor="end">{formatX(effectiveDomain.hi, effectiveX)}</text>
@@ -646,6 +652,12 @@ function formatX(value: number, axis: ChartXAxis): string {
   const channelId = channelIdFromXAxis(axis)
   if (channelId !== null) return `${fmt(value)} ${channelUnit(channelId)}`
   return `index ${Math.round(value)}`
+}
+
+/** Interior x ticks: a time of day is enough between the full instants printed at each end. */
+function formatXTick(value: number, axis: ChartXAxis): string {
+  if (axis === 'time') return `${epochMsToIso(value).slice(11, 21)}Z`
+  return formatX(value, axis)
 }
 
 /** Display label for an axis: the bare channel name for a `channel:` axis, the axis id itself otherwise. */
