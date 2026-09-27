@@ -1,9 +1,13 @@
 # Joint Domain Data Compiler
 
 [![Quality Gates](https://github.com/A13Xg/Joint-Domain-Data-Compiler/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/actions/workflows/ci.yml)
-[![Windows package](https://img.shields.io/github/actions/workflow/status/A13Xg/Joint-Domain-Data-Compiler/release.yml?branch=main&label=Windows)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/actions/workflows/release.yml)
-[![macOS package](https://img.shields.io/github/actions/workflow/status/A13Xg/Joint-Domain-Data-Compiler/release.yml?branch=main&label=macOS)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/actions/workflows/release.yml)
-[![Linux package](https://img.shields.io/github/actions/workflow/status/A13Xg/Joint-Domain-Data-Compiler/release.yml?branch=main&label=Linux)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/actions/workflows/release.yml)
+<!-- Platform badges are pinned to the release TAG, not to a branch: packaging runs
+     on `v*` tags, so a `branch=main` badge only ever sees stale manual runs and
+     reads "failing" while every release is green. Bump the tag with package.json;
+     test/release-integrity.ts fails if they drift. -->
+[![Windows package](https://img.shields.io/github/check-runs/A13Xg/Joint-Domain-Data-Compiler/v0.6.0?nameFilter=release%20%2F%20Package%20Windows&label=Windows%20v0.6.0)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/releases/tag/v0.6.0)
+[![Linux package](https://img.shields.io/github/check-runs/A13Xg/Joint-Domain-Data-Compiler/v0.6.0?nameFilter=release%20%2F%20Package%20Linux&label=Linux%20v0.6.0)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/releases/tag/v0.6.0)
+[![macOS package](https://img.shields.io/badge/macOS-built_on_demand-64748b)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/actions/workflows/release-macos.yml)
 [![Runtime audit](https://img.shields.io/badge/runtime_audit-0_high%2Fcritical-15803d)](FUTURE_CONSIDERATIONS.md)
 
 A **single-user trajectory and TSPI engineering workbench** for importing, normalizing, inspecting, transforming, comparing, visualizing, saving and exporting time-space-position-information data.

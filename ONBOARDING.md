@@ -215,7 +215,8 @@ npm run build:desktop:linux  # or :win; use `build:desktop` on macOS
 npm run check:desktop:linux  # or :win, :mac
 ```
 
-Releases run per-platform. Tag `v0.2.0` to build all three, or `linux-v0.2.0` /
+Releases run per-platform. Tag `v0.2.0` to build Linux and Windows (macOS is
+built on demand only, because its runners bill at 10x), or `linux-v0.2.0` /
 `win-v0.2.0` / `mac-v0.2.0` to add a single platform to that same release. Every
 platform workflow can also be run on demand from the Actions tab. macOS signing is manual.
 
@@ -265,10 +266,11 @@ platform workflow can also be run on demand from the Actions tab. macOS signing 
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full release checklist. High-level:
 
-1. Update version in `package.json`, `package-lock.json`, `README.md`
+1. Update version in `package.json`, `package-lock.json`, and the two tag-pinned platform
+   badges at the top of `README.md` (`test/release-integrity.ts` fails if they drift)
 2. Commit release prep, wait for CI (Quality Gates workflow)
 3. Create and push `vX.Y.Z` tag
-4. Wait for Linux/Windows/macOS builds to complete
+4. Wait for the Linux/Windows builds to complete (run *Release (macOS)* by hand if needed)
 5. Verify `SHA256SUMS.txt`, SBOMs, and provenance attestations
 6. Review release notes before announcing
 
