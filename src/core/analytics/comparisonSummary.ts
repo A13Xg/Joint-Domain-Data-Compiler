@@ -111,7 +111,90 @@ export function buildReportComparisonSummary(
   // Both names are populated on the error path too: buildComparisonSection
   // renders the failure as "{reference} vs {target}: {error}".
   if (error) return { ...names, sampleCount: 0, error }
-  return { ...names, sampleCount: samples.length, ...summarizeComparisonRanges(samples) }
+  return {
+    ...names,
+    sampleCount: samples.length,
+    ...summarizeComparisonRanges(samples),
+    distributions: summarizeComparisonDistributions(samples),
+    slantRangeHistogram: histogram(samples.map((sample) => sample.slantRangeM)),
+  }
+}
+
+/**
+ * Shape of one comparison quantity across every aligned sample. A mean alone
+ * hides exactly what a range comparison is usually after -- a track that sits
+ * 50 m off for the whole sortie and one that sits at 0 m then jumps 2 km have
+ * similar means and nothing else in common.
+ */
+export interface DistributionStats {
+  count: number
+  min: number
+  median: number
+  /** 95th percentile, linear interpolation between order statistics. */
+  p95: number
+  max: number
+  mean: number
+  /** Sample standard deviation (n − 1); 0 for a single value. */
+  stdDev: number
+}
+
+export interface ComparisonDistributions {
+  slantRangeM?: DistributionStats
+  horizontalRangeM?: DistributionStats
+  /** |vertical separation|: a signed median of "above" and "below" would cancel out. */
+  verticalSeparationM?: DistributionStats
+  closureRateMps?: DistributionStats
+}
+
+/** Non-finite values are skipped, never coerced. `undefined` when nothing is left. */
+export function distributionStats(values: readonly number[]): DistributionStats | undefined {
+  const sorted = values.filter((value) => Number.isFinite(value)).sort((a, b) => a - b)
+  const n = sorted.length
+  if (n === 0) return undefined
+  const average = mean(sorted)
+  const variance = n > 1 ? sorted.reduce((sum, value) => sum + (value - average) ** 2, 0) / (n - 1) : 0
+  return {
+    count: n,
+    min: sorted[0]!,
+    median: quantile(sorted, 0.5),
+    p95: quantile(sorted, 0.95),
+    max: sorted[n - 1]!,
+    mean: average,
+    stdDev: Math.sqrt(variance),
+  }
+}
+
+export function summarizeComparisonDistributions(samples: readonly RelativePointSample[]): ComparisonDistributions {
+  return {
+    slantRangeM: distributionStats(samples.map((sample) => sample.slantRangeM)),
+    horizontalRangeM: distributionStats(samples.map((sample) => sample.horizontalRangeM)),
+    verticalSeparationM: distributionStats(samples.map((sample) => Math.abs(sample.relativeUpM))),
+    closureRateMps: distributionStats(samples.flatMap((sample) => sample.closureRateMps === undefined ? [] : [sample.closureRateMps])),
+  }
+}
+
+/**
+ * Equal-width histogram. Every finite value lands in exactly one bin (the last
+ * bin is closed at the top), so the counts always sum to the value count.
+ */
+export function histogram(values: readonly number[], binCount = 20): { edges: number[]; counts: number[] } | undefined {
+  const finite = values.filter((value) => Number.isFinite(value))
+  if (finite.length === 0 || !Number.isInteger(binCount) || binCount < 1) return undefined
+  const low = finite.reduce((a, b) => Math.min(a, b), Infinity)
+  const high = finite.reduce((a, b) => Math.max(a, b), -Infinity)
+  const bins = high > low ? binCount : 1
+  const width = high > low ? (high - low) / bins : 1
+  const edges = Array.from({ length: bins + 1 }, (_, i) => (i === bins && high > low ? high : low + i * width))
+  const counts = new Array<number>(bins).fill(0)
+  for (const value of finite) counts[Math.min(bins - 1, Math.floor((value - low) / width))]!++
+  return { edges, counts }
+}
+
+function quantile(sorted: readonly number[], q: number): number {
+  const position = (sorted.length - 1) * q
+  const lower = Math.floor(position)
+  const fraction = position - lower
+  return lower + 1 < sorted.length ? sorted[lower]! + fraction * (sorted[lower + 1]! - sorted[lower]!) : sorted[lower]!
 }
 
 function mean(values: readonly number[]): number {

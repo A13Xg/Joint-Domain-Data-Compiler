@@ -6,9 +6,9 @@ import {
   type ClockDriftEstimate,
   type RelativePointSample,
 } from '../core/analytics/relative'
-import { computeComparisonSamples, summarizeComparisonRanges } from '../core/analytics/comparisonSummary'
+import { computeComparisonSamples, summarizeComparisonDistributions, summarizeComparisonRanges, type DistributionStats } from '../core/analytics/comparisonSummary'
 import { buildComparisonCsv } from '../core/analytics/comparisonReport'
-import { convertDistance, convertSpeed, distanceUnitLabel, speedUnitLabel } from '../core/units'
+import { convertDistance, convertSpeed, distanceUnitLabel, speedUnitLabel, type UnitSystem } from '../core/units'
 import { useAppSettings } from '../state/settings'
 import type { WorkspaceState } from '../state/workspace'
 import { logger } from '../core/logger'
@@ -118,6 +118,7 @@ export function ComparisonPanel({ datasets, activeId, workspace, onWorkspaceChan
             <Metric label="estimated clock offset" value={interpolateTarget ? 'n/a — not meaningful with interpolation enabled' : result.drift === undefined ? 'n/a' : `${format(result.drift.offsetMs)} ms (n=${result.drift.sampleCount})`} title={result.drift === undefined ? undefined : `Offset valid at reference epoch ${new Date(result.drift.referenceEpochMs).toISOString()} (${result.drift.referenceEpochMs} ms); drift rate extrapolates away from this epoch.`} />
             <Metric label="estimated clock drift" value={interpolateTarget ? 'n/a — not meaningful with interpolation enabled' : result.drift === undefined ? 'n/a' : `${format(result.drift.driftRatePerMs * 1_000_000)} ppm (n=${result.drift.sampleCount})`} title={result.drift === undefined ? undefined : `Offset valid at reference epoch ${new Date(result.drift.referenceEpochMs).toISOString()} (${result.drift.referenceEpochMs} ms); drift rate extrapolates away from this epoch.`} />
           </div>
+          <DistributionTable samples={result.samples} unitSystem={unitSystem} distanceUnit={distanceUnit} speedUnit={speedUnit} />
           <button type="button" onClick={() => downloadComparison(result.samples, referenceId, targetId, result.drift)}>Export comparison CSV</button>
           {result.closest && <div className="analysis-summary mono">Closest approach at reference index {result.closest.referenceIndex}, target index {result.closest.targetIndex}: bearing {format(result.closest.bearingDeg)}°, Δt {format(result.closest.deltaTimeMs)} ms, vertical separation {format(convertDistance(result.closest.relativeUpM, unitSystem))} {distanceUnit}.</div>}
           <div className="compact-table"><table><thead><tr><th>Ref</th><th>Target</th><th>Kind</th><th>Δt ms</th><th>Slant {distanceUnit}</th><th>Horizontal {distanceUnit}</th><th>Bearing°</th><th>Up {distanceUnit}</th><th>Closure {speedUnit}</th></tr></thead><tbody>{result.samples.slice(0, 250).map((sample) => <tr key={`${sample.referenceIndex}-${sample.targetIndex}`}><td><button type="button" className="link-button" aria-label={`Select reference point ${sample.referenceIndex}`} onClick={() => onSelectReferenceSample(referenceId, sample.referenceIndex)}>{sample.referenceIndex}</button></td><td>{sample.targetIndex}</td><td>{sample.derived ? 'interpolated' : 'observed'}</td><td>{format(sample.deltaTimeMs)}</td><td>{format(convertDistance(sample.slantRangeM, unitSystem))}</td><td>{format(convertDistance(sample.horizontalRangeM, unitSystem))}</td><td>{format(sample.bearingDeg)}</td><td>{format(convertDistance(sample.relativeUpM, unitSystem))}</td><td>{sample.closureRateMps === undefined ? '' : format(convertSpeed(sample.closureRateMps, unitSystem))}</td></tr>)}</tbody></table></div>
@@ -134,6 +135,38 @@ function Select({ label, value, onChange, datasets }: { label: string; value: st
 
 function NumberField({ label, value, min, onChange }: { label: string; value: number; min?: number; onChange: (value: number) => void }) {
   return <label className="num-field"><span>{label}</span><input type="number" min={min} value={value} onChange={(event) => onChange(Number(event.target.value))} /></label>
+}
+
+// Median / P95 / spread per quantity. Means alone (the cards above) cannot tell a
+// constant 50 m offset from a track that is exact until it jumps 2 km.
+function DistributionTable({ samples, unitSystem, distanceUnit, speedUnit }: { samples: RelativePointSample[]; unitSystem: UnitSystem; distanceUnit: string; speedUnit: string }) {
+  const distributions = useMemo(() => summarizeComparisonDistributions(samples), [samples])
+  const rows: Array<[string, DistributionStats | undefined, (value: number) => number, string]> = [
+    ['slant range', distributions.slantRangeM, (value) => convertDistance(value, unitSystem), distanceUnit],
+    ['horizontal range', distributions.horizontalRangeM, (value) => convertDistance(value, unitSystem), distanceUnit],
+    ['vertical separation |Δup|', distributions.verticalSeparationM, (value) => convertDistance(value, unitSystem), distanceUnit],
+    ['closure rate', distributions.closureRateMps, (value) => convertSpeed(value, unitSystem), speedUnit],
+  ]
+  return (
+    <div className="compact-table comparison-distribution">
+      <table>
+        <thead><tr><th className="left-cell">distribution</th><th>n</th><th>min</th><th>median</th><th>p95</th><th>max</th><th>std dev</th></tr></thead>
+        <tbody>
+          {rows.filter(([, stats]) => stats !== undefined).map(([label, stats, convert, unit]) => (
+            <tr key={label}>
+              <td className="left-cell">{label} ({unit})</td>
+              <td>{stats!.count.toLocaleString()}</td>
+              <td>{format(convert(stats!.min))}</td>
+              <td>{format(convert(stats!.median))}</td>
+              <td>{format(convert(stats!.p95))}</td>
+              <td>{format(convert(stats!.max))}</td>
+              <td>{format(convert(stats!.stdDev))}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
 }
 
 function Metric({ label, value, title }: { label: string; value: string; title?: string }) {

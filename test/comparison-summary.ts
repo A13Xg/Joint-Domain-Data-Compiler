@@ -4,6 +4,8 @@ import {
   computeComparisonSamples,
   resolveComparisonDatasetIds,
   summarizeComparisonRanges,
+  distributionStats,
+  histogram,
   type ComparisonSettings,
 } from '../src/core/analytics/comparisonSummary.ts'
 import { buildHtmlAnalysisReport } from '../src/core/reports/htmlReport.ts'
@@ -180,6 +182,30 @@ const optionOff = buildHtmlAnalysisReport({ ...reportInput, options: { ...DEFAUL
 // substring check would pass for the wrong reason.
 check('The comparison section stays absent when the option is off', !optionOff.includes('<h2>Cross-dataset comparison</h2>'))
 check('The comparison section is present when the option is on', withComparison.includes('<h2>Cross-dataset comparison</h2>'))
+
+// Distribution statistics, against values worked by hand.
+{
+  const stats = distributionStats([4, 1, 3, 2, 5, Number.NaN, Infinity])!
+  check('distribution skips non-finite values rather than coercing them', stats.count === 5)
+  check('distribution min / median / max', stats.min === 1 && stats.median === 3 && stats.max === 5)
+  check('p95 interpolates between order statistics (4.8 for 1..5)', Math.abs(stats.p95 - 4.8) < 1e-12)
+  check('std dev is the sample (n-1) form: sqrt(2.5) for 1..5', Math.abs(stats.stdDev - Math.sqrt(2.5)) < 1e-12)
+  check('an even count takes the midpoint median', distributionStats([1, 2, 3, 4])!.median === 2.5)
+  check('a single value has zero spread', distributionStats([7])!.stdDev === 0 && distributionStats([7])!.p95 === 7)
+  check('no finite values gives no distribution, not zeros', distributionStats([Number.NaN]) === undefined && distributionStats([]) === undefined)
+
+  const values = Array.from({ length: 101 }, (_, i) => i)
+  const hist = histogram(values, 10)!
+  check('histogram counts every value exactly once', hist.counts.reduce((a, b) => a + b, 0) === 101)
+  check('histogram edges span min to max', hist.edges[0] === 0 && hist.edges[hist.edges.length - 1] === 100 && hist.edges.length === 11)
+  check('the maximum lands in the last bin, not past it', hist.counts[9] === 11)
+  check('a constant series is one bin', histogram([3, 3, 3], 10)!.counts.length === 1 && histogram([3, 3, 3], 10)!.counts[0] === 3)
+}
+
+// The report carries the distribution and the histogram for a real comparison.
+check('the report shows the distribution table', withComparison.includes('Distribution across aligned samples') && withComparison.includes('<th>P95</th>'))
+check('the report draws the slant-range histogram as inline SVG', /<svg class="histogram"[^>]*role="img"/.test(withComparison) && withComparison.includes('<rect'))
+check('the report states how P95 and std dev are defined', withComparison.includes('sample (n − 1) form'))
 
 console.log(`\n${failures === 0 ? 'ALL COMPARISON SUMMARY CHECKS PASSED' : `${failures} COMPARISON SUMMARY CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)

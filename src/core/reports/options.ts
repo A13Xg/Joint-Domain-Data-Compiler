@@ -20,6 +20,8 @@
 //    disclosure about synthetic/derived or hand-edited points is the
 //    failure mode this task exists to close.
 
+import type { ComparisonDistributions } from '../analytics/comparisonSummary'
+
 const MAX_TITLE_LENGTH = 200
 
 export interface ReportOptions {
@@ -188,6 +190,8 @@ export interface ReportComparisonSummary {
   meanRangeMeters?: number
   meanHorizontalRangeMeters?: number
   meanClosureRateMps?: number
+  distributions?: ComparisonDistributions
+  slantRangeHistogram?: { edges: number[]; counts: number[] }
   error?: string
 }
 

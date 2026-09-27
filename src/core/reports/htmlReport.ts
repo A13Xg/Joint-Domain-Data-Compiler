@@ -2,6 +2,7 @@ import type { Dataset, TrackPoint } from '../model'
 import type { OperationRecord } from '../recipes/model'
 import type { ProjectBookmark } from '../../persistence/project/manifest'
 import type { FusionReport } from '../fusion/report'
+import type { DistributionStats } from '../analytics/comparisonSummary'
 import { detectQualityEvents } from '../quality/events'
 import { computeStats, formatDuration } from '../stats'
 import {
@@ -132,6 +133,8 @@ td{color:#26372f;background:#fffef8;overflow-wrap:anywhere}
 .evidence-list li:before{content:"";position:absolute;left:13px;top:17px;width:7px;height:7px;border:1px solid var(--vector);transform:rotate(45deg)}
 .empty{margin:0;padding:12px 14px;border-left:2px solid #6f9684;background:#f1f5f1;color:#63746b;font-size:13px}
 .dataset-heading,.metric-grid,table,.evidence-list li{break-inside:avoid}
+.distribution-table th{width:auto}.distribution-table td{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;text-align:right}
+.histogram{display:block;width:100%;height:auto;margin:8px 0;border:1px solid var(--line);background:#fffef8;break-inside:avoid}
 .scope-block{margin:26px 0 0;padding:22px 26px;border:1px solid #6d8980;background:#f4f8f5}
 .scope-block h2{font-size:16px;letter-spacing:.02em}
 .scope-lede{margin:8px 0 16px;color:#405c50;font-size:13px}
@@ -262,7 +265,53 @@ ${row('Maximum range', comparison.maxRangeMeters !== undefined ? `${formatNumber
 ${row('Mean range', comparison.meanRangeMeters !== undefined ? `${formatNumber(comparison.meanRangeMeters)} m` : 'Unavailable')}
 ${row('Mean horizontal range', comparison.meanHorizontalRangeMeters !== undefined ? `${formatNumber(comparison.meanHorizontalRangeMeters)} m` : 'Unavailable')}
 ${row('Mean closure rate', comparison.meanClosureRateMps !== undefined ? `${formatNumber(comparison.meanClosureRateMps)} m/s` : 'Unavailable')}
-</tbody></table>`)
+</tbody></table>${buildComparisonDistributionTable(comparison)}${buildSlantRangeHistogram(comparison)}`)
+}
+
+function buildComparisonDistributionTable(comparison: ReportComparisonSummary): string {
+  const distributions = comparison.distributions
+  if (!distributions) return ''
+  const rows: Array<[string, DistributionStats | undefined, string]> = [
+    ['Slant range', distributions.slantRangeM, 'm'],
+    ['Horizontal range', distributions.horizontalRangeM, 'm'],
+    ['Vertical separation |Δup|', distributions.verticalSeparationM, 'm'],
+    ['Closure rate', distributions.closureRateMps, 'm/s'],
+  ]
+  const body = rows.filter(([, stats]) => stats !== undefined).map(([label, stats, unit]) => {
+    const s = stats!
+    return `<tr><th>${escapeHtml(label)} (${unit})</th><td>${s.count.toLocaleString('en-US')}</td><td>${formatNumber(s.min)}</td><td>${formatNumber(s.median)}</td><td>${formatNumber(s.p95)}</td><td>${formatNumber(s.max)}</td><td>${formatNumber(s.stdDev)}</td></tr>`
+  }).join('\n')
+  if (!body) return ''
+  return `<h3>Distribution across aligned samples</h3>
+<table class="distribution-table"><thead><tr><th>Quantity</th><th>n</th><th>Min</th><th>Median</th><th>P95</th><th>Max</th><th>Std dev</th></tr></thead><tbody>
+${body}
+</tbody></table>
+<p class="empty">P95 interpolates linearly between order statistics; standard deviation is the sample (n − 1) form. Units are canonical SI whatever the app's display setting.</p>`
+}
+
+/** Inline SVG, so the report stays one self-contained file with no script. */
+function buildSlantRangeHistogram(comparison: ReportComparisonSummary): string {
+  const hist = comparison.slantRangeHistogram
+  if (!hist || hist.counts.length === 0) return ''
+  const width = 720, height = 180, pad = { left: 44, right: 12, top: 10, bottom: 34 }
+  const peak = Math.max(...hist.counts, 1)
+  const barWidth = (width - pad.left - pad.right) / hist.counts.length
+  const plotHeight = height - pad.top - pad.bottom
+  const bars = hist.counts.map((count, i) => {
+    const h = (count / peak) * plotHeight
+    const x = pad.left + i * barWidth
+    return `<rect x="${(x + 1).toFixed(1)}" y="${(pad.top + plotHeight - h).toFixed(1)}" width="${Math.max(1, barWidth - 2).toFixed(1)}" height="${h.toFixed(1)}" fill="#157c88"><title>${formatNumber(hist.edges[i]!)}–${formatNumber(hist.edges[i + 1]!)} m: ${count.toLocaleString('en-US')} samples</title></rect>`
+  }).join('')
+  const first = hist.edges[0]!, last = hist.edges[hist.edges.length - 1]!
+  return `<h3>Slant range histogram</h3>
+<svg class="histogram" viewBox="0 0 ${width} ${height}" role="img" aria-label="Histogram of slant range across ${comparison.sampleCount.toLocaleString('en-US')} aligned samples, ${formatNumber(first)} to ${formatNumber(last)} metres">
+<line x1="${pad.left}" y1="${pad.top + plotHeight}" x2="${width - pad.right}" y2="${pad.top + plotHeight}" stroke="#9aaca4"/>
+${bars}
+<text x="${pad.left}" y="${height - 12}" font-size="11" fill="#53685e">${formatNumber(first)} m</text>
+<text x="${width - pad.right}" y="${height - 12}" font-size="11" fill="#53685e" text-anchor="end">${formatNumber(last)} m</text>
+<text x="${pad.left - 6}" y="${pad.top + 10}" font-size="11" fill="#53685e" text-anchor="end">${peak.toLocaleString('en-US')}</text>
+<text x="${pad.left - 6}" y="${pad.top + plotHeight}" font-size="11" fill="#53685e" text-anchor="end">0</text>
+</svg>`
 }
 
 function buildFusionSection(options: ReportOptions, fusion: FusionReport | undefined): string {
