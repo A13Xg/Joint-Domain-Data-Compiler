@@ -457,6 +457,8 @@ table.compact-table td:last-child { text-align: right; word-break: break-word; }
 
 /* ---------- Data table ---------- */
 .data-table { display: flex; flex-direction: column; gap: 8px; }
+/* The table fills the tab, like the map and chart; its grid scrolls inside. */
+.tab-content > .data-table { flex: 1 1 auto; min-height: 0; }
 .data-table-toolbar { display: flex; align-items: center; gap: 12px; }
 .data-search { width: 240px; }
 .data-meta { color: var(--text-faint); font-size: 12px; font-family: var(--mono); }
@@ -464,7 +466,7 @@ table.compact-table td:last-child { text-align: right; word-break: break-word; }
 .grid-th { background: transparent; border: none; border-right: 1px solid var(--border); text-align: left; color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; padding: 7px 8px; border-radius: 0; display: flex; align-items: center; gap: 4px; }
 .grid-th:hover { background: var(--bg-3); }
 .sort-arrow { font-size: 8px; color: var(--accent); }
-.grid-viewport { overflow: auto; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-1); }
+.grid-viewport { overflow: auto; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-1); flex: 1 1 auto; min-height: 260px; }
 .grid-row { display: grid; border-bottom: 1px solid var(--bg-3); width: 100%; user-select: none; }
 .grid-row:nth-child(even) { background: rgba(255, 255, 255, 0.012); }
 .grid-row:hover { background: rgba(234, 79, 47, 0.06); }

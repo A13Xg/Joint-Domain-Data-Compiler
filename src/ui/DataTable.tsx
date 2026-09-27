@@ -18,7 +18,18 @@ interface Column {
   key: string
   label: string
   get: (point: TrackPoint) => number | string | boolean | undefined
+  /** Narrowest the column may get, so its values and header are not cut off. */
+  minWidth?: number
+  /** Display formatting; the CSV export keeps raw values. */
+  format?: (value: number | string | boolean | undefined) => string
 }
+
+// Coordinates always carry the same six decimals (~0.1 m), so an exact -77
+// does not print as "-77" in a column of "-76.99939".
+const formatCoordinate = (value: number | string | boolean | undefined) => typeof value === 'number' && Number.isFinite(value) ? value.toFixed(6) : fmtCell(value)
+
+// ~7.2 px per monospace character at the grid's font size, plus cell padding.
+const widthForChars = (chars: number) => Math.round(chars * 7.2 + 22)
 
 export function DataTable({ points, channels, onDeletePoints }: { points: TrackPoint[]; channels: string[]; onDeletePoints: (indices: number[]) => void }) {
   const [query, setQuery] = useState('')
@@ -36,7 +47,17 @@ export function DataTable({ points, channels, onDeletePoints }: { points: TrackP
   // Set immediately before this grid's own rows publish a hover, and consumed by
   // the follow-selection effect below. See that effect for why.
   const selfDrivenHoverRef = useRef(false)
-  const viewportHeight = 460
+  // The grid fills whatever height the tab gives it. It was a fixed 460 px,
+  // which left most of a tall window empty below a short, scrolling grid.
+  // Every row-window and scroll-to-centre calculation reads this measured value.
+  const [viewportHeight, setViewportHeight] = useState(460)
+  useEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => setViewportHeight(Math.max(ROW_HEIGHT * 4, viewport.clientHeight)))
+    observer.observe(viewport)
+    return () => observer.disconnect()
+  }, [])
   const confirm = useConfirm()
   const { pointIndex, hoverIndex, indexRange, indexSet, selectPoint, setHoverIndex, toggleInSet, extendSetRange, clearPointSelection, clearRangeSelection, clearSet, clearHover } = usePointSelection(points)
   const indexSetLookup = useMemo(() => new Set(indexSet), [indexSet])
@@ -73,13 +94,14 @@ export function DataTable({ points, channels, onDeletePoints }: { points: TrackP
 
   const columns = useMemo<Column[]>(() => {
     const base: Column[] = [
-      { key: 'lat', label: 'latitude', get: (point) => point.lat },
-      { key: 'lon', label: 'longitude', get: (point) => point.lon },
+      { key: 'lat', label: 'latitude', get: (point) => point.lat, format: formatCoordinate },
+      { key: 'lon', label: 'longitude', get: (point) => point.lon, format: formatCoordinate },
       { key: 'ele', label: 'ele (m)', get: (point) => point.ele },
-      { key: 'time', label: 'time (UTC)', get: (point) => point.time !== undefined ? epochMsToIso(point.time) : undefined },
+      // A full ISO instant is 24 characters, and it was being cut to 13.
+      { key: 'time', label: 'time (UTC)', get: (point) => point.time !== undefined ? epochMsToIso(point.time) : undefined, minWidth: widthForChars(24) },
       { key: 'name', label: 'name', get: (point) => point.name },
     ]
-    return [...base, ...channels.map((channel): Column => ({ key: `ext:${channel}`, label: channel, get: (point) => point.ext?.[channel] }))]
+    return [...base, ...channels.map((channel): Column => ({ key: `ext:${channel}`, label: channel, get: (point) => point.ext?.[channel], minWidth: widthForChars(channel.length) }))]
   }, [channels])
 
   const filtered = useMemo(() => {
@@ -134,16 +156,18 @@ export function DataTable({ points, channels, onDeletePoints }: { points: TrackP
     // Rows start below the sticky header inside the same scroll content.
     const rowTop = (headerRef.current?.offsetHeight ?? 0) + targetIndex * ROW_HEIGHT
     const visibleTop = viewport.scrollTop
-    const visibleBottom = visibleTop + viewportHeight - ROW_HEIGHT
+    // Read live rather than from state: a resize must not re-run this and recentre.
+    const height = viewport.clientHeight
+    const visibleBottom = visibleTop + height - ROW_HEIGHT
     if (pointIndex === null && rowTop >= visibleTop && rowTop <= visibleBottom) return
 
-    viewport.scrollTo({ top: Math.max(0, rowTop - viewportHeight / 2), behavior: pointIndex !== null ? 'smooth' : 'auto' })
+    viewport.scrollTo({ top: Math.max(0, rowTop - height / 2), behavior: pointIndex !== null ? 'smooth' : 'auto' })
   }, [pointIndex, hoverIndex, sortKey, query, activeRangeOnly])
 
   // `1fr` still stretches the columns when the grid fits, while minWidth gives
   // the grid an intrinsic width to overflow (and therefore scroll) past when it
   // does not. Header and rows share both so the two stay in register.
-  const gridTemplate = `${INDEX_COL_WIDTH}px repeat(${columns.length}, minmax(${MIN_COL_WIDTH}px, 1fr))`
+  const gridTemplate = `${INDEX_COL_WIDTH}px ${columns.map((column) => `minmax(${Math.max(MIN_COL_WIDTH, column.minWidth ?? 0)}px, 1fr)`).join(' ')}`
   const gridMinWidth = INDEX_COL_WIDTH + columns.length * MIN_COL_WIDTH
 
   const total = sorted.length
@@ -276,7 +300,6 @@ export function DataTable({ points, channels, onDeletePoints }: { points: TrackP
       <div
         ref={viewportRef}
         className="grid-viewport mono"
-        style={{ height: viewportHeight }}
         onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
         role="grid"
         aria-label={`Track points, ${total.toLocaleString()} of ${points.length.toLocaleString()} rows shown`}
@@ -327,7 +350,7 @@ export function DataTable({ points, channels, onDeletePoints }: { points: TrackP
                 style={{ position: 'absolute', top: (startIndex + offset) * ROW_HEIGHT, height: ROW_HEIGHT, gridTemplateColumns: gridTemplate, cursor: 'pointer' }}
               >
                 <div className="grid-cell grid-idx" role="gridcell">{flagged ? '⚠ ' : ''}{index}</div>
-                {columns.map((column) => <div key={column.key} className="grid-cell" role="gridcell" title={fmtCell(column.get(point))}>{fmtCell(column.get(point))}</div>)}
+                {columns.map((column) => { const text = (column.format ?? fmtCell)(column.get(point)); return <div key={column.key} className="grid-cell" role="gridcell" title={text}>{text}</div> })}
               </div>
               )
             })}
@@ -336,6 +359,10 @@ export function DataTable({ points, channels, onDeletePoints }: { points: TrackP
       </div>
     </div>
   )
+}
+
+function rawCell(value: number | string | boolean | undefined): string {
+  return value === undefined ? '' : String(value)
 }
 
 function fmtCell(value: number | string | boolean | undefined): string {
@@ -349,7 +376,9 @@ function fmtCell(value: number | string | boolean | undefined): string {
 
 function downloadRows(rows: Array<{ point: TrackPoint; index: number }>, columns: Column[]): void {
   const header = ['source_index', ...columns.map((column) => column.label)]
-  const body = rows.map(({ point, index }) => [String(index), ...columns.map((column) => csvCell(fmtCell(column.get(point))))].join(','))
+  // Raw values, never the grid's display rounding: an export that quietly cut
+  // coordinates to five decimals (~1 m) would be passing on less than was read.
+  const body = rows.map(({ point, index }) => [String(index), ...columns.map((column) => csvCell(rawCell(column.get(point))))].join(','))
   const csv = `${header.map(csvCell).join(',')}\n${body.join('\n')}\n`
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
   const filename = `jddc-visible-rows-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`
