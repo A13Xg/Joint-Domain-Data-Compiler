@@ -25,14 +25,28 @@ if (!root) throw new Error('Application root element was not found')
 const loadingLabel = document.getElementById('app-loading-label')
 const setLoadingLabel = (text: string) => { if (loadingLabel) loadingLabel.textContent = text }
 
-// App.tsx is loaded dynamically rather than statically imported here. That
-// makes this entry chunk small (React + the skeleton wiring above, no map,
-// chart, table, or 3D code), and it turns "app is starting" into two real,
-// separately-timed stages instead of one: this module already executed by
-// the time the line below runs, so the label genuinely advances between a
-// network+parse step that already happened and one that is about to.
-setLoadingLabel('Loading workbench…')
-import('./App.tsx')
+// Which app to mount: `?app=playback|graph`, default workbench. Picked here
+// (not via a separate HTML entry point or Electron main per app) per
+// docs/superpowers/specs/2026-09-27-jddc-suite-design.md §11 item 4 — the
+// existing single App.tsx / single index.html stays put, so the suite's
+// other apps are just another lazy-loaded module this same entry can choose.
+const requestedApp = new URLSearchParams(window.location.search).get('app')
+const appModule = requestedApp === 'playback'
+  ? import('./playback/App.tsx')
+  : requestedApp === 'graph'
+    ? import('./graph/App.tsx')
+    : import('./App.tsx')
+const appLabel = requestedApp === 'playback' ? 'Loading playback…' : requestedApp === 'graph' ? 'Loading graph analysis…' : 'Loading workbench…'
+
+// App.tsx (or the selected suite app) is loaded dynamically rather than
+// statically imported here. That makes this entry chunk small (React + the
+// skeleton wiring above, no map, chart, table, or 3D code), and it turns
+// "app is starting" into two real, separately-timed stages instead of one:
+// this module already executed by the time the line below runs, so the
+// label genuinely advances between a network+parse step that already
+// happened and one that is about to.
+setLoadingLabel(appLabel)
+appModule
   .then(({ default: App }) => {
     createRoot(root).render(
       <StrictMode>
@@ -58,6 +72,6 @@ import('./App.tsx')
     // gets that far. The skeleton is still on screen, so it's what has to
     // carry the failure instead of leaving the window looking merely stuck.
     const message = error instanceof Error ? error.message : String(error)
-    logger.error('app', `Failed to load the workbench: ${message}`)
+    logger.error('app', `Failed to load ${requestedApp ?? 'the workbench'}: ${message}`)
     setLoadingLabel('Failed to load. Please restart the app.')
   })

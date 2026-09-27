@@ -21,6 +21,7 @@ const IPC_CHANNELS = Object.freeze({
   saveDiagnostics: 'diagnostics:save',
   saveReportPdf: 'report:save-pdf',
   setUnsavedChanges: 'window:set-unsaved-changes',
+  launchSuiteApp: 'suite:launch',
 })
 
 contextBridge.exposeInMainWorld('jointDomainCompiler', {
@@ -57,4 +58,10 @@ contextBridge.exposeInMainWorld('jointDomainCompiler', {
   // instead of a half-painted one. Takes no argument and returns nothing --
   // the renderer cannot ask for anything with it.
   notifyRendererReady: () => ipcRenderer.send(IPC_CHANNELS.rendererReady),
+  // Opens (or focuses) the Playback/Graph window and delivers `bytes` (a
+  // gzip .jddc-playback archive) to it once that window's renderer is ready.
+  // `appType` is validated in the main process against the same closed
+  // SUITE_APPS list this call site can't see — the renderer cannot open any
+  // window this wasn't already going to allow.
+  launchSuiteApp: (appType, bytes) => ipcRenderer.invoke(IPC_CHANNELS.launchSuiteApp, appType, bytes),
 })

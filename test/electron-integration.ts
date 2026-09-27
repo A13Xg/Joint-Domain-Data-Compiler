@@ -26,14 +26,18 @@ function rejects(fn: () => unknown): boolean {
 }
 
 check('IPC channel names are unique', new Set(Object.values(IPC_CHANNELS)).size === Object.keys(IPC_CHANNELS).length)
-check('IPC surface exposes only the expected thirteen operations', Object.keys(IPC_CHANNELS).sort().join(',') === 'archiveFile,list,openUserGuide,readText,remove,rendererReady,reseed,reveal,revealArchive,save,saveDiagnostics,saveReportPdf,setUnsavedChanges')
+check('IPC surface exposes only the expected fourteen operations', Object.keys(IPC_CHANNELS).sort().join(',') === 'archiveFile,launchSuiteApp,list,openUserGuide,readText,remove,rendererReady,reseed,reveal,revealArchive,save,saveDiagnostics,saveReportPdf,setUnsavedChanges')
 check('Exact development origin is allowed', isAllowedAppUrl(DEV_ORIGIN, true))
 check('Development origin paths are allowed', isAllowedAppUrl(`${DEV_ORIGIN}/index.html`, true))
 check('Lookalike development origins are blocked', !isAllowedAppUrl(`${DEV_ORIGIN}.attacker.invalid`, true))
+check('Development origin suite-app query variants are allowed', isAllowedAppUrl(`${DEV_ORIGIN}/?app=playback`, true) && isAllowedAppUrl(`${DEV_ORIGIN}/?app=graph`, true))
 const packagedRendererUrl = 'file:///opt/jddc/dist/index.html'
 check('Packaged renderer URL is allowed', isAllowedAppUrl(packagedRendererUrl, false, packagedRendererUrl))
 check('Other packaged file URLs are blocked', !isAllowedAppUrl('file:///tmp/attacker.html', false, packagedRendererUrl))
 check('Packaged web navigation is blocked', !isAllowedAppUrl('https://example.test', false))
+check('Packaged suite-app query variants are allowed', isAllowedAppUrl(`${packagedRendererUrl}?app=playback`, false, packagedRendererUrl) && isAllowedAppUrl(`${packagedRendererUrl}?app=graph`, false, packagedRendererUrl))
+check('An arbitrary packaged query string is not allowed (closed allowlist, not a loose prefix)', !isAllowedAppUrl(`${packagedRendererUrl}?app=evil`, false, packagedRendererUrl))
+check('Packaged suite-app variant of a different renderer path is not allowed', !isAllowedAppUrl('file:///opt/jddc/dist/other.html?app=playback', false, packagedRendererUrl))
 
 check('Valid KML filename is preserved', safeLibraryName('Track 1.kml') === 'Track 1.kml')
 check('Traversal is reduced to a basename', safeLibraryName('../../track.kmz') === 'track.kmz')
@@ -164,6 +168,28 @@ check('Oversized diagnostic bundle is rejected', rejects(() => diagnosticBundleT
   const guideHandler = mainSource.slice(mainSource.indexOf('function registerUserGuideIpc'), mainSource.indexOf('function registerFileArchiveIpc'))
   check('User guide is not handed to the OS to open', guideHandler.length > 0 && !guideHandler.includes('shell.openPath'))
   check('User guide opens in an app window', guideHandler.includes('openUserGuideWindow()'))
+}
+
+// Suite (Playback/Graph) launch windows. These must never reuse createWindow's
+// splash/unsaved-changes machinery (that state is process-wide today, not
+// per-window — see docs/superpowers/specs/2026-09-27-jddc-suite-design.md §11
+// item 10), and must run with their own, narrower preload rather than the
+// workbench's full-surface preload.cjs.
+{
+  check('Suite windows use their own, narrower preload', mainProcessSource.includes("preload: path.join(__dirname, 'preload-suite.cjs')"))
+  check('Suite windows run sandboxed with context isolation', /function openSuiteWindow[\s\S]*?sandbox: true[\s\S]*?\}\)/.test(mainProcessSource))
+  check('Suite launch never touches the workbench close-confirmation flag', (() => {
+    const start = mainProcessSource.indexOf('// --- Suite windows (Playback / Graph) ---')
+    const end = mainProcessSource.indexOf('function registerFileArchiveIpc')
+    const suiteSection = mainProcessSource.slice(start, end)
+    return start !== -1 && end !== -1 && !suiteSection.includes('hasUnsavedChanges') && !suiteSection.includes('revealCurrentWindow')
+  })())
+  check('Suite launch validates appType against the closed SUITE_APPS list', mainProcessSource.includes('if (!SUITE_APPS.includes(appType))'))
+  check('Suite launch payload is size-bounded the same as every other binary IPC payload', mainProcessSource.includes('ipcBytes(bytes, MAX_ARCHIVE_FILE_BYTES)'))
+
+  const suitePreloadSource = readFileSync(resolve(process.cwd(), 'electron/preload-suite.cjs'), 'utf8')
+  check('Suite preload exposes no workbench-only API (file archive, KML library, diagnostics)', !/fileArchive|kmlLibrary|diagnostics/.test(suitePreloadSource))
+  check('Suite preload and main process agree on the load/ready channel names', suitePreloadSource.includes("SUITE_LOAD_CHANNEL = 'suite:load'") && mainProcessSource.includes("SUITE_LOAD_CHANNEL = 'suite:load'") && suitePreloadSource.includes("SUITE_READY_CHANNEL = 'suite:ready'") && mainProcessSource.includes("SUITE_READY_CHANNEL = 'suite:ready'"))
 }
 
 // Report -> PDF payload validation. The HTML crosses a process boundary, so it

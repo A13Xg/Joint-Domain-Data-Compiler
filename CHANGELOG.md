@@ -3,6 +3,37 @@
 Notable user-facing and operational changes are recorded here. This project follows Semantic
 Versioning; release tags use the `vX.Y.Z` form.
 
+## 0.8.0 - 2026-09-27
+
+### Added
+
+- **JDDC Playback** — a standalone app that loads a `.jddc-playback` scenario (or a `.jddc-project`,
+  ignoring its history/recipes) and animates it: play/pause/seek/speed, per-track visibility and
+  colour, and live range/bearing/closure-rate between two selected tracks. Reached via
+  `?app=playback` in the browser build, or "Launch Playback" in the Workbench's Project panel on
+  desktop, which opens a real window and streams the current data to it over IPC.
+- **JDDC Graph Analysis** — a companion app for numerical review without animation: per-entity
+  altitude/speed/climb-rate charts, a statistics table (mean/min/max), and — for a selected pair —
+  closure-rate and slant-range over time plus a closure-rate-vs-range correlation scatter. Reached
+  the same way, via `?app=graph` or "Launch Graph Analysis".
+- **`.jddc-playback` format** — a scoped profile of the existing `.jddc-project` archive (same
+  gzip-JSON codec, same validation boundary): every loaded dataset's current points and channels,
+  callsign/aircraft-type/colour per dataset, no undo history, recipes, or fusion artifacts, and the
+  original `sourceFormat`/`sourceFileName` preserved rather than rewritten. "Export to Playback" in
+  the Project panel offers gzip (default) or plain, human-readable JSON.
+- Shared building blocks for the two new apps, reusable by future ones: a pairwise range/bearing/
+  closure-rate helper computed on demand and never stored (`src/core/analytics/pairwise.ts`), and a
+  helper that derives missing `standard-kinematics` channels on load without ever overwriting a
+  channel a dataset already carries (`src/core/analytics/ensureChannels.ts`).
+
+### Known limitations
+
+- No desktop shortcut or CLI argument launches Playback/Graph directly in the packaged app; today
+  they're reached from within a running Workbench, or by hand in the browser build. Per-platform
+  launchers (macOS can't pass a launch argument from the Dock) are future work.
+- Not benchmarked at scale — tested with real fixtures up to a couple thousand points across two
+  entities, not the 100-aircraft/multi-million-point exercises the suite is ultimately for.
+
 ## 0.7.0 - 2026-09-27
 
 ### Fixed

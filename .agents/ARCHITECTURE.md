@@ -94,13 +94,34 @@ discovery order), `warnings` (non-fatal parse issues, also logged), and optional
 | `src/compute/` | Worker protocol, task host, client, cancellation. |
 | `src/state/` | Cross-tab state (selection, workspace, display, history). |
 | `src/persistence/project/` | `.jddc-project` archive, manifest, migrations. |
-| `src/ui/` | Tab panels and shared components. |
+| `src/persistence/playback/` | `.jddc-playback` archive: a scoped, history-free profile of the same codec. |
+| `src/ui/` | Tab panels and shared components (Workbench only). |
 | `src/visualization/` | Chart and 3D scene rendering. |
 | `electron/`, `src/electron/` | Desktop main process, preload IPC. |
+| `src/playback/` | Playback app: loads `.jddc-playback`, animates tracks, range/bearing/closure-rate. |
+| `src/graph/` | Graph Analysis app: per-entity charts, statistics, pairwise correlation. |
 
 `src/App.tsx` is the shell: it owns the dataset list, the active dataset, the tab
 router, and the wiring between panels. There is **no router library** — tabs render
 inline, deliberately.
+
+### The suite: Workbench, Playback, Graph
+
+JDDC is one codebase, three apps. `src/main.tsx` picks which one to mount from
+`?app=playback|graph` (default Workbench) via dynamic import — there is no
+separate `index.html` per app and no separate Electron main process per app.
+Playback and Graph are read-only viewers: they load a `.jddc-playback` (or
+`.jddc-project`, ignoring its history/recipes) file independently, or receive
+one pushed from the Workbench's "Launch Playback"/"Launch Graph Analysis"
+buttons via `electron/main.cjs`'s `suite:load`/`suite:ready` IPC handshake
+(`openSuiteWindow`, modeled on the simpler `openUserGuideWindow`, not on
+`createWindow`'s splash/unsaved-changes machinery, which the read-only suite
+windows never touch). Both apps derive missing `standard-kinematics` channels
+on load via `ensureKinematicsChannels` (§10 below) rather than assuming the
+Workbench already computed them, and share one pairwise range/bearing/
+closure-rate helper (`src/core/analytics/pairwise.ts`) rather than each
+re-implementing it. See `docs/superpowers/specs/2026-09-27-jddc-suite-design.md`
+for the full design and §11 for corrections made during implementation.
 
 ---
 
@@ -269,6 +290,15 @@ Breaking any of these is a correctness bug, not a style issue.
    and must reject malformed input loudly.
 7. **Reports contain no executable markup.** Titles and warnings are escaped; tests
    assert this.
+8. **Per-track channels are stored; pairwise metrics are computed on-demand,
+   never stored.** `ground_speed_mps`, `heading_deg`, etc. live in a
+   `Dataset`'s points. Range, bearing, and closure-rate between two tracks
+   (`src/core/analytics/pairwise.ts`) are derived fresh by Playback/Graph at
+   render time — storing them would mean fabricating a value that depends on
+   an alignment choice no single `Dataset` can own.
+9. **Suite formats are schema-versioned and migration-capable**, same as
+   `.jddc-project`. `.jddc-playback` reuses that exact codec/validation
+   boundary rather than inventing a second one.
 
 ---
 

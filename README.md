@@ -5,8 +5,8 @@
      on `v*` tags, so a `branch=main` badge only ever sees stale manual runs and
      reads "failing" while every release is green. Bump the tag with package.json;
      test/release-integrity.ts fails if they drift. -->
-[![Windows package](https://img.shields.io/github/check-runs/A13Xg/Joint-Domain-Data-Compiler/v0.7.0?nameFilter=release%20%2F%20Package%20Windows&label=Windows%20v0.7.0)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/releases/tag/v0.7.0)
-[![Linux package](https://img.shields.io/github/check-runs/A13Xg/Joint-Domain-Data-Compiler/v0.7.0?nameFilter=release%20%2F%20Package%20Linux&label=Linux%20v0.7.0)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/releases/tag/v0.7.0)
+[![Windows package](https://img.shields.io/github/check-runs/A13Xg/Joint-Domain-Data-Compiler/v0.8.0?nameFilter=release%20%2F%20Package%20Windows&label=Windows%20v0.8.0)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/releases/tag/v0.8.0)
+[![Linux package](https://img.shields.io/github/check-runs/A13Xg/Joint-Domain-Data-Compiler/v0.8.0?nameFilter=release%20%2F%20Package%20Linux&label=Linux%20v0.8.0)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/releases/tag/v0.8.0)
 [![macOS package](https://img.shields.io/badge/macOS-built_on_demand-64748b)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/actions/workflows/release-macos.yml)
 [![Runtime audit](https://img.shields.io/badge/runtime_audit-0_high%2Fcritical-15803d)](FUTURE_CONSIDERATIONS.md)
 

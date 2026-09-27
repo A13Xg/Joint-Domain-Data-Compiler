@@ -15,6 +15,10 @@ const MAX_ARCHIVE_FILE_BYTES = 512 * 1024 * 1024
 // oldest files are pruned. This is a safety-net cache, not primary storage.
 const MAX_ARCHIVE_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
 const ARCHIVE_DIRECTIONS = Object.freeze(['inputs', 'outputs'])
+// The only suite apps main.cjs knows how to open a window for — also used to
+// validate the `?app=` query variant in isAllowedAppUrl and the appType
+// argument the renderer passes to IPC_CHANNELS.launchSuiteApp.
+const SUITE_APPS = Object.freeze(['playback', 'graph'])
 const IPC_CHANNELS = Object.freeze({
   archiveFile: 'file-archive:save',
   list: 'kml-library:list',
@@ -29,12 +33,21 @@ const IPC_CHANNELS = Object.freeze({
   saveDiagnostics: 'diagnostics:save',
   saveReportPdf: 'report:save-pdf',
   setUnsavedChanges: 'window:set-unsaved-changes',
+  launchSuiteApp: 'suite:launch',
 })
 
+// Dev already allows a `?app=` suffix without special-casing it: `DEV_ORIGIN +
+// '/'` is a prefix of `DEV_ORIGIN + '/?app=playback'`. The packaged case is
+// the opposite — `packagedRendererUrl` is a single exact `file://` path with
+// no query-string tolerance at all — so it needs an explicit, closed
+// allowlist of the two known suite variants rather than a loose prefix check
+// that would accept an arbitrary `?anything=`.
 function isAllowedAppUrl(url, isDev, packagedRendererUrl) {
   if (typeof url !== 'string') return false
   if (isDev) return url === DEV_ORIGIN || url.startsWith(`${DEV_ORIGIN}/`)
-  return typeof packagedRendererUrl === 'string' && url === packagedRendererUrl
+  if (typeof packagedRendererUrl !== 'string') return false
+  if (url === packagedRendererUrl) return true
+  return SUITE_APPS.some((appType) => url === `${packagedRendererUrl}?app=${appType}`)
 }
 
 function safeLibraryName(name) {
@@ -119,6 +132,7 @@ module.exports = {
   MAX_DIAGNOSTIC_BUNDLE_BYTES,
   MAX_KML_LIBRARY_BYTES,
   MAX_REPORT_HTML_BYTES,
+  SUITE_APPS,
   diagnosticBundleText,
   reportHtmlText,
   safePdfName,

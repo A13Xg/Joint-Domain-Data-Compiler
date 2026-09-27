@@ -13,6 +13,7 @@ const {
   MAX_ARCHIVE_FILE_BYTES,
   MAX_ARCHIVE_TOTAL_BYTES,
   MAX_KML_LIBRARY_BYTES,
+  SUITE_APPS,
   diagnosticBundleText,
   ipcBytes,
   isAllowedAppUrl,
@@ -851,6 +852,150 @@ function registerUserGuideIpc() {
   })
 }
 
+// --- Suite windows (Playback / Graph) ---
+//
+// Opened on demand from the workbench's "Launch Playback"/"Launch Graph"
+// buttons (docs/superpowers/specs/2026-09-27-jddc-suite-design.md §5). Modeled
+// on openUserGuideWindow's singleton-per-window-type pattern above, NOT on
+// createWindow's splash/close-confirmation machinery: these are read-only
+// viewers with no dirty-state of their own, so they never touch the
+// workbench's own module-level unsaved-changes flag or splash-reveal
+// callback (see createWindow, above) at all, and never need those made
+// per-window.
+//
+// Kept outside IPC_CHANNELS/preload.cjs on purpose, same as the splash
+// channels above: this is not part of the workbench's own IPC surface, it is
+// the transport between main and a *different* renderer (preload-suite.cjs),
+// so duplicating the two channel names there (rather than importing them) is
+// the same sandboxed-preload constraint preload.cjs's own comment documents.
+const SUITE_LOAD_CHANNEL = 'suite:load'
+const SUITE_READY_CHANNEL = 'suite:ready'
+// How long to wait for a newly-opened suite window to report ready before
+// warning that its queued payload is stuck. Generous because a cold suite
+// window pays the same bundle-download cost the workbench does on first
+// launch, just without a splash covering it.
+const SUITE_READY_TIMEOUT_MS = 30_000
+const SUITE_TITLES = Object.freeze({ playback: 'Playback', graph: 'Graph Analysis' })
+
+const suiteWindows = { playback: null, graph: null }
+// Set once a window's renderer has called `jddcSuite.ready()`; cleared when
+// the window closes so a later relaunch waits for a fresh mount instead of
+// sending into a torn-down renderer.
+const suiteReady = { playback: false, graph: false }
+// A payload queued because its window wasn't ready yet when launched.
+const suitePendingPayloads = { playback: null, graph: null }
+
+function suiteAppUrl(appType) {
+  return useDevServer ? `${DEV_ORIGIN}/?app=${appType}` : `${packagedRendererUrl}?app=${appType}`
+}
+
+/** In-page anchors are the only navigation a suite window allows, same restriction as the guide window. */
+function isSuiteAppUrl(url, appType) {
+  if (typeof url !== 'string') return false
+  const [withoutHash] = url.split('#')
+  return withoutHash === suiteAppUrl(appType)
+}
+
+function openSuiteWindow(appType) {
+  const existing = suiteWindows[appType]
+  if (existing && !existing.isDestroyed()) {
+    if (existing.isMinimized()) existing.restore()
+    existing.show()
+    existing.focus()
+    return existing
+  }
+  const window = new BrowserWindow({
+    width: 1280,
+    height: 860,
+    minWidth: 720,
+    minHeight: 480,
+    title: `Joint Domain Data Compiler — ${SUITE_TITLES[appType]}`,
+    backgroundColor: '#0b0f17',
+    // Held back until first paint, same rule every window here follows.
+    show: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload-suite.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+    },
+  })
+  labelWindow(window, `${appType} window`)
+  suiteWindows[appType] = window
+  window.once('ready-to-show', () => { if (!window.isDestroyed()) window.show() })
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https://')) void shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  window.webContents.on('will-navigate', (event, url) => {
+    if (isSuiteAppUrl(url, appType)) return
+    event.preventDefault()
+    if (url.startsWith('https://')) void shell.openExternal(url)
+  })
+  window.webContents.on('will-attach-webview', (event) => { event.preventDefault() })
+  window.webContents.on('did-finish-load', () => tracePhase(`${appType} window loaded`))
+  window.on('closed', () => {
+    if (suiteWindows[appType] === window) suiteWindows[appType] = null
+    suiteReady[appType] = false
+    suitePendingPayloads[appType] = null
+  })
+  window.loadURL(suiteAppUrl(appType)).catch((error) => {
+    console.warn(`[suite] Could not load the ${appType} window: ${error instanceof Error ? error.message : String(error)}`)
+    if (!window.isDestroyed()) window.destroy()
+  })
+  return window
+}
+
+/**
+ * Opens (or focuses) `appType`'s window and delivers `buffer` to it — right
+ * away if that window's renderer has already reported ready, otherwise
+ * queued until it does. `launchSuiteApp`'s own IPC handler below is the only
+ * caller, but this stays a separate function so the ready/queue logic reads
+ * apart from request validation.
+ */
+function deliverToSuiteWindow(appType, buffer) {
+  const window = openSuiteWindow(appType)
+  if (suiteReady[appType] && !window.isDestroyed()) {
+    window.webContents.send(SUITE_LOAD_CHANNEL, { format: 'jddc-playback', payload: buffer })
+    return
+  }
+  suitePendingPayloads[appType] = buffer
+  const timeout = setTimeout(() => {
+    if (suitePendingPayloads[appType] === buffer) {
+      console.warn(`[suite] ${appType} window did not report ready within ${SUITE_READY_TIMEOUT_MS}ms; payload still queued`)
+    }
+  }, SUITE_READY_TIMEOUT_MS)
+  window.once('closed', () => clearTimeout(timeout))
+}
+
+function registerSuiteIpc() {
+  ipcMain.handle(IPC_CHANNELS.launchSuiteApp, async (_event, appType, bytes) => {
+    if (!SUITE_APPS.includes(appType)) throw new Error(`Unknown suite app: ${String(appType)}`)
+    const buffer = ipcBytes(bytes, MAX_ARCHIVE_FILE_BYTES)
+    deliverToSuiteWindow(appType, buffer)
+  })
+
+  // Not scoped to IPC_CHANNELS.rendererReady's handler above: that one reveals
+  // the *workbench* window behind the launch splash and has nothing to do
+  // with these. `event.sender` identifies which suite window (if any) this
+  // came from, so one listener serves both app types.
+  ipcMain.on(SUITE_READY_CHANNEL, (event) => {
+    for (const appType of SUITE_APPS) {
+      const window = suiteWindows[appType]
+      if (!window || window.isDestroyed() || window.webContents !== event.sender) continue
+      suiteReady[appType] = true
+      const payload = suitePendingPayloads[appType]
+      if (payload) {
+        window.webContents.send(SUITE_LOAD_CHANNEL, { format: 'jddc-playback', payload })
+        suitePendingPayloads[appType] = null
+      }
+    }
+  })
+}
+
 function registerFileArchiveIpc() {
   ipcMain.handle(IPC_CHANNELS.archiveFile, async (_event, direction, name, bytes) => {
     const dir = fileArchiveDir(direction)
@@ -984,6 +1129,7 @@ app.whenReady().then(async () => {
   registerWindowStateIpc()
   registerUserGuideIpc()
   registerReportPdfIpc()
+  registerSuiteIpc()
 
   tracePhase('startup services registered')
   createWindow()

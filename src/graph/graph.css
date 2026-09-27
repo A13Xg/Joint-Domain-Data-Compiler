@@ -1,0 +1,106 @@
+/* Graph app layout. Reuses index.css's custom properties and utility
+   classes (.muted, .mono, .small, .error-line, .hidden-input) — this file
+   only adds what's specific to Graph's own components. */
+
+.graph-app {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 12px 16px;
+}
+
+.graph-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.graph-header h1 {
+  font-size: 16px;
+  margin: 0;
+}
+
+.graph-app h2 {
+  font-size: 14px;
+  margin: 8px 0 0;
+}
+
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(440px, 1fr));
+  gap: 16px;
+}
+
+.graph-chart {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.graph-chart-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.graph-chart-plot-bg {
+  fill: var(--bg-1);
+}
+
+.graph-chart-axis-label {
+  fill: var(--text-dim);
+  font-size: 10px;
+}
+
+.graph-chart-tick {
+  fill: var(--text-faint);
+  font-size: 10px;
+}
+
+.graph-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.graph-chart-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.graph-chart-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.graph-stats-table {
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.graph-stats-table th,
+.graph-stats-table td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  text-align: right;
+}
+
+.graph-stats-table th:first-child,
+.graph-stats-table td:first-child {
+  text-align: left;
+}
+
+.graph-pair-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}

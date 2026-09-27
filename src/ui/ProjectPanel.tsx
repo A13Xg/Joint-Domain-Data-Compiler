@@ -28,6 +28,8 @@ import {
 } from '../persistence/project/archive'
 import { errorMessage } from '../core/errors'
 import { archiveFile, isDesktopArchiveAvailable, revealFileArchive } from '../desktop/fileArchive'
+import { buildPlaybackArchive, encodePlaybackArchive, encodePlaybackArchiveUncompressed } from '../persistence/playback'
+import { PlaybackExportDialog } from './PlaybackExportDialog'
 
 interface Props {
   datasets: Dataset[]
@@ -57,6 +59,7 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
   const [busy, setBusy] = useState(false)
   const [diagnosticNote, setDiagnosticNote] = useState('')
   const [reportDialogOpen, setReportDialogOpen] = useState(false)
+  const [playbackDialogOpen, setPlaybackDialogOpen] = useState(false)
   const activeDataset = datasets.find((dataset) => dataset.id === activeId) ?? null
   const activeSelection = usePointSelection(activeDataset?.points ?? EMPTY_POINTS)
 
@@ -195,6 +198,55 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
     }
   }
 
+  const confirmExportPlayback = async ({ scenarioName, filename, compressed, datasetMetadata }: {
+    scenarioName: string
+    filename: string
+    compressed: boolean
+    datasetMetadata: Record<string, { callsign?: string; aircraftType?: string }>
+  }) => {
+    setPlaybackDialogOpen(false)
+    setBusy(true)
+    setError(null)
+    try {
+      const playbackArchive = buildPlaybackArchive({
+        datasets,
+        datasetMetadata,
+        datasetDisplay,
+        scenarioName,
+        applicationVersion: __APP_VERSION__,
+      })
+      const blob = compressed ? await encodePlaybackArchive(playbackArchive) : encodePlaybackArchiveUncompressed(playbackArchive)
+      downloadBlob(blob, `${filename}.jddc-playback`)
+      setStatus(`Exported ${datasets.length} dataset(s) to ${filename}.jddc-playback.`)
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Quick-send: no metadata prompt, unlike Export to Playback above — this is
+  // "hand what's loaded to the other window right now," not a file the
+  // operator is curating for someone else. Desktop-only: window.jointDomainCompiler
+  // is absent in the browser build, so the caller gates on it before rendering
+  // the button at all (isDesktopArchiveAvailable's sibling check below).
+  const launchSuiteApp = async (appType: 'playback' | 'graph') => {
+    const launch = window.jointDomainCompiler?.launchSuiteApp
+    if (!launch) return
+    setBusy(true)
+    setError(null)
+    try {
+      const archive = buildPlaybackArchive({ datasets, datasetDisplay, applicationVersion: __APP_VERSION__ })
+      const blob = await encodePlaybackArchive(archive)
+      await launch(appType, await blob.arrayBuffer())
+      setStatus(`Sent ${datasets.length} dataset(s) to ${appType === 'playback' ? 'Playback' : 'Graph Analysis'}.`)
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const openProject = async (file: File) => {
     if (projectDirty && !window.confirm('Open this project and discard unsaved workspace changes?')) return
     setBusy(true)
@@ -220,6 +272,13 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
         <button type="button" disabled={busy} onClick={() => inputRef.current?.click()}>Open project</button>
         <button type="button" disabled={datasets.length === 0 || busy} onClick={exportManifest}>Export manifest only</button>
         <button type="button" disabled={datasets.length === 0 || busy} onClick={() => setReportDialogOpen(true)}>Export report (HTML / PDF)</button>
+        <button type="button" disabled={datasets.length === 0 || busy} onClick={() => setPlaybackDialogOpen(true)}>Export to Playback</button>
+        {window.jointDomainCompiler?.launchSuiteApp && (
+          <>
+            <button type="button" disabled={datasets.length === 0 || busy} onClick={() => void launchSuiteApp('playback')}>Launch Playback</button>
+            <button type="button" disabled={datasets.length === 0 || busy} onClick={() => void launchSuiteApp('graph')}>Launch Graph Analysis</button>
+          </>
+        )}
         <input ref={inputRef} className="hidden-input" type="file" aria-label="Choose a project file to open" accept=".jddc-project,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void openProject(file); event.target.value = '' }} />
       </div>
       <p className="muted small">A <code>.jddc-project</code> file is a self-contained, gzip-compressed workspace archive. It embeds current datasets, semantic metadata, undo/redo snapshots, the active dataset and tab, and point/range selection. The manifest remains versioned and fingerprint-verified during restore.</p>
@@ -231,6 +290,15 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
           persistedOptions={workspace.reportPreferences}
           onCancel={() => setReportDialogOpen(false)}
           onConfirm={confirmExportReport}
+        />
+      )}
+      {playbackDialogOpen && (
+        <PlaybackExportDialog
+          datasets={datasets}
+          suggestedScenarioName={manifest.name}
+          suggestedFilename={safeName(manifest.name)}
+          onCancel={() => setPlaybackDialogOpen(false)}
+          onConfirm={(result) => void confirmExportPlayback(result)}
         />
       )}
       <div className="metric-grid">

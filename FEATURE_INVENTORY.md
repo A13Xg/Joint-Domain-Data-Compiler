@@ -736,6 +736,11 @@ No interactive controls; pure rendering driven by caller (RepairPreviewDialog).
   - **Note:** ProjectPanel is the one place `window.confirm` survives (not ConfirmDialog)
 - **"Export manifest only" button** — human-readable JSON project manifest without embedded data; disabled with 0 datasets or busy
 - **"Export report (HTML / PDF)" button** — opens ReportExportDialog; disabled with 0 datasets or busy
+- **"Export to Playback" button** — opens PlaybackExportDialog; disabled with 0 datasets or busy
+- **"Launch Playback" / "Launch Graph Analysis" buttons** — desktop only (hidden when `window.jointDomainCompiler?.launchSuiteApp` is absent, i.e. the browser build)
+  - Quick-send: every loaded dataset, no metadata prompt (unlike "Export to Playback")
+  - Builds a gzip `.jddc-playback` archive and sends it over IPC to `launchSuiteApp(appType, bytes)`, which opens (or focuses/reuses) the Playback or Graph Analysis window and delivers it once that window reports ready
+  - Disabled with 0 datasets or busy
 
 ### Diagnostics
 - **Diagnostics note textarea** — placeholder "Describe what happened…"; optional free-text included in bundle
@@ -786,6 +791,15 @@ No interactive controls; pure rendering driven by caller (RepairPreviewDialog).
     Includes the distribution table (n / min / median / P95 / max / std dev per quantity) and a
     20-bin slant-range histogram as inline SVG.
   - Downloads file
+
+### PlaybackExportDialog (opened from "Export to Playback" button)
+- **Scenario name field** — prefilled from the project name
+- **Download filename field** — prefilled and sanitized separately; preview shows "{sanitizedFilename}.jddc-playback"
+- **"Gzip-compress" checkbox** — checked by default; unchecked saves plain, human-readable JSON instead (both are valid `.jddc-playback` input — the decoder sniffs gzip magic bytes rather than assuming either)
+- **Per-dataset table** — one row per loaded dataset: name (read-only), callsign field (defaults to the dataset name), aircraft type field (free text, e.g. "F-16C")
+- **"Cancel" button** — closes dialog; no download
+- **Escape key / backdrop click** — both close (no download)
+- **"Export" button** — builds a `.jddc-playback` archive (every loaded dataset's current points/channels; no undo history, recipes, or fusion artifacts; original `sourceFormat`/`sourceFileName` preserved, never rewritten) and downloads it
 
 ---
 
