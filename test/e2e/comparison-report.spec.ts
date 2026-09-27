@@ -67,3 +67,28 @@ test('the comparison section populates without ever opening the Compare tab', as
   expect(html).toContain('comparison-a.csv')
   expect(html).toContain('comparison-b.csv')
 })
+
+// Browser "Save PDF": there is no PDF engine to call, so the report opens in its
+// own tab with the print dialog up. `window.print` is replaced in every page of
+// the context so the test can observe the call without a real dialog blocking.
+test('Save PDF in the browser opens the report in a tab and raises the print dialog', async ({ page, context }) => {
+  await context.addInitScript(() => {
+    window.print = () => { (window as unknown as { __printed: boolean }).__printed = true }
+  })
+  await page.goto('/')
+  await importCsvDataset(page, comparisonFixtureA)
+  await importCsvDataset(page, comparisonFixtureB)
+
+  await page.getByRole('button', { name: 'Project', exact: true }).click()
+  await page.getByRole('button', { name: 'Export report (HTML / PDF)', exact: true }).click()
+  const popup = context.waitForEvent('page')
+  await page.getByRole('button', { name: 'Save PDF', exact: true }).click()
+  const report = await popup
+  await report.waitForLoadState('load')
+  expect(report.url()).toMatch(/^blob:/)
+  await expect(report).toHaveTitle(/Analysis Report/)
+  await expect.poll(() => report.evaluate(() => (window as unknown as { __printed?: boolean }).__printed === true)).toBe(true)
+  // The dialog closes and nothing errors in the app.
+  await expect(page.getByRole('dialog', { name: 'Export report' })).toHaveCount(0)
+  await expect(page.locator('.error-line')).toHaveCount(0)
+})
