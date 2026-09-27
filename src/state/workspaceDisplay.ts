@@ -102,6 +102,13 @@ export function setLabel(display: WorkspaceDisplay, id: string, label: string): 
   return { ...display, [id]: { ...existing, label } }
 }
 
+/** Ignores anything but `#rrggbb`: the same rule a restored project is held to. */
+export function setColor(display: WorkspaceDisplay, id: string, color: string): WorkspaceDisplay {
+  const existing = display[id]
+  if (!existing || !/^#[0-9a-f]{6}$/i.test(color) || existing.color === color) return display
+  return { ...display, [id]: { ...existing, color } }
+}
+
 export function setOpacity(display: WorkspaceDisplay, id: string, opacity: number): WorkspaceDisplay {
   const existing = display[id]
   const clamped = Math.max(0, Math.min(1, opacity))

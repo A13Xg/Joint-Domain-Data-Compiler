@@ -73,6 +73,8 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 select,
 input[type='text'],
 input[type='number'],
+input[type='datetime-local'],
+input:not([type]),
 .log-search,
 .data-search {
   font-family: inherit;
@@ -83,8 +85,25 @@ input[type='number'],
   border-radius: 6px;
   padding: 6px 9px;
 }
+textarea {
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 9px;
+  resize: vertical;
+}
 select:focus,
+textarea:focus,
 input:focus { outline: none; border-color: var(--accent); }
+/* A labelled form control: caption above, control below. Used by the Project
+   and Fusion panels, which had the class but no rule, so their captions sat
+   inline beside a browser-default textarea. */
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--text-dim); max-width: 720px; }
+.field textarea { width: 100%; box-sizing: border-box; }
+.field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin: 8px 0; }
 
 code { font-family: var(--mono); background: var(--bg-3); padding: 1px 5px; border-radius: 4px; }
 
@@ -377,6 +396,11 @@ table.compact-table td:last-child { text-align: right; word-break: break-word; }
 .map-basemap-status { display: flex; align-items: center; gap: 8px; font-size: 12px; width: 100%; }
 .map-other-tracks { gap: 8px; }
 .map-other-track-chip { display: inline-flex; align-items: center; gap: 4px; margin-left: 4px; }
+/* `.map-legend span` below sizes the colour swatches; without this override it
+   also squeezed each track-name chip to 16 px, so names overflowed the toolbar. */
+.map-legend .map-other-track-chip { width: auto; height: auto; border-radius: 0; white-space: nowrap; }
+.map-legend .map-other-track-chip .chip-dot { width: 8px; height: 8px; border-radius: 50%; }
+.map-other-tracks { flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
 .map-basemap-error { color: #eab308; }
 .map-basemap-error button { font-size: 11px; padding: 2px 8px; }
 .map-legend span { width: 16px; height: 10px; border-radius: 2px; display: inline-block; }
@@ -409,7 +433,7 @@ table.compact-table td:last-child { text-align: right; word-break: break-word; }
 .chart-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .chart-channels { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 5px 10px; border-radius: 16px; background: var(--bg-1); border: 1px solid var(--border); }
-.chip-dot { width: 9px; height: 9px; border-radius: 50%; }
+.chip-dot { display: inline-block; flex: none; width: 9px; height: 9px; border-radius: 50%; }
 .chip-on { background: var(--bg-3); }
 .chart-xaxis { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
 /* user-select: none -- without it, a drag-select for zoom/point-selection also

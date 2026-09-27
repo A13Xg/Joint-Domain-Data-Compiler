@@ -1,5 +1,5 @@
 import type { Dataset } from '../core/model'
-import { setVisibility, type WorkspaceDisplay } from '../state/workspaceDisplay'
+import { setColor, setVisibility, type WorkspaceDisplay } from '../state/workspaceDisplay'
 
 interface Props {
   datasets: Dataset[]
@@ -15,7 +15,7 @@ export function SourcesPanel({ datasets, activeId, display, onDisplayChange, onS
   return (
     <div className="sources-panel">
       <p className="muted small">
-        Toggle which loaded datasets are visible as additional color-coded paths on the map, alongside the active dataset.
+        Toggle which loaded datasets are visible as additional color-coded paths on the map, alongside the active dataset, and pick each one's colour.
         Visibility is display-only — it never changes or removes any dataset.
       </p>
       <table className="compact-table sources-table">
@@ -27,7 +27,11 @@ export function SourcesPanel({ datasets, activeId, display, onDisplayChange, onS
             return (
               <tr key={dataset.id} className={isActive ? 'active-row' : undefined}>
                 <td>{isActive ? '●' : ''}</td>
-                <td><span className="chip-dot" style={{ background: entry?.color ?? '#475569' }} /></td>
+                <td>
+                  {entry
+                    ? <input type="color" className="source-color" value={entry.color} aria-label={`Track colour for ${dataset.name}`} title="Colour of this track on the map and in the legend" onChange={(event) => onDisplayChange(setColor(display, dataset.id, event.target.value))} />
+                    : <span className="chip-dot" style={{ background: '#475569' }} />}
+                </td>
                 <td>{dataset.name}</td>
                 <td className="mono">{dataset.sourceFormat}</td>
                 <td className="mono">{dataset.points.length.toLocaleString()}</td>

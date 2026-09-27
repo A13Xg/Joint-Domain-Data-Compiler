@@ -5,6 +5,7 @@ import {
   restoreWorkspaceDisplay,
   setLabel,
   setOpacity,
+  setColor,
   setVisibility,
   syncWorkspaceDisplay,
   visibleDatasetIds,
@@ -61,6 +62,9 @@ function makeDataset(id: string, name = id): Dataset {
   check('setVisibility on an unknown id is a no-op', setVisibility(synced, 'missing', false) === synced)
   check('setOpacity clamps to [0,1]', setOpacity(synced, 'a', 5).a?.opacity === 1 && setOpacity(synced, 'a', -5).a?.opacity === 0)
   check('setLabel updates the label', setLabel(synced, 'a', 'Renamed').a?.label === 'Renamed')
+  check('setColor accepts a #rrggbb colour', setColor(synced, 'a', '#12ab34').a?.color === '#12ab34')
+  check('setColor ignores anything a restored project would reject', setColor(synced, 'a', 'red') === synced && setColor(synced, 'a', '#12ab3') === synced)
+  check('setColor leaves other datasets alone', setColor(synced, 'a', '#12ab34').b === synced.b)
 }
 
 // --- visibleDatasetIds --------------------------------------------------------
