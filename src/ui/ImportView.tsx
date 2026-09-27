@@ -1,9 +1,11 @@
 import { INPUT_FORMATS } from '../core/parsers'
 
-export function ImportView({ dragActive, setDragActive, onFiles, openPicker }: { dragActive: boolean; setDragActive: (value: boolean) => void; onFiles: (files: FileList | null) => void; openPicker: () => void }) {
+// The drop itself is handled window-wide (useWindowFileDrop), so a file dropped
+// here is imported exactly once; this zone only reflects the drag state.
+export function ImportView({ dragActive, openPicker }: { dragActive: boolean; openPicker: () => void }) {
   return (
     <div className="import-view">
-      <div className={`dropzone${dragActive ? ' drag' : ''}`} onDragOver={(event) => { event.preventDefault(); setDragActive(true) }} onDragLeave={() => setDragActive(false)} onDrop={(event) => { event.preventDefault(); setDragActive(false); onFiles(event.dataTransfer.files) }} onClick={openPicker}>
+      <div className={`dropzone${dragActive ? ' drag' : ''}`} role="button" tabIndex={0} aria-label="Drop files here, or press Enter to browse" onClick={openPicker} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openPicker() } }}>
         <div className="dropzone-inner">
           <div className="dropzone-icon">⬇</div>
           <h2>Drop TSPI data here</h2>

@@ -20,6 +20,7 @@ import { StatusLight, type StatusTone } from './ui/StatusLight'
 import type { OtherTrack } from './ui/MapView'
 import { restoreWorkspaceDisplay, syncWorkspaceDisplay, type WorkspaceDisplay } from './state/workspaceDisplay'
 import type { EditPointFields } from './core/operations/edit-point'
+import { useWindowFileDrop } from './ui/useWindowFileDrop'
 import { ImportView } from './ui/ImportView'
 import { getSelectedPointIndex, getSelectedRange, restorePointSelection } from './state/pointSelection'
 import type { ProjectArchive, ProjectDatasetHistory } from './persistence/project/archive'
@@ -647,6 +648,7 @@ export default function App() {
       })
     }
   }, [ingestFile, flashToast])
+  useWindowFileDrop(onFiles, setDragActive)
 
   const applyTransform = useCallback((points: TrackPoint[], summary: string, preserveSelection: boolean, suppliedRecord?: OperationRecord) => {
     if (!active) return
@@ -963,6 +965,7 @@ export default function App() {
 
   return (
     <div className="app">
+      {dragActive && tab !== 'import' && <div className="window-drop-overlay" aria-hidden="true"><div className="window-drop-card"><div className="dropzone-icon">⬇</div><strong>Drop to import</strong><span>Files load as new datasets; a .msnP5 dropped with its .rpt and .teq is read as one set.</span></div></div>}
       <header className="app-header"><div className="brand"><span className="brand-mark">JD</span><div><h1>Joint Domain Data Compiler</h1><p>TSPI flight-data conversion &amp; analysis workbench</p></div></div><div className="header-status">{busy && <Spinner label={busy} />}<StatusLight tone={statusTone} label={statusLabel} detail={statusDetail} /><button type="button" className="header-help" onClick={openUserGuide} title="Open the user guide" aria-label="Open the user guide">?</button></div></header>
       <div className="app-body">
         <aside className="sidebar">
@@ -978,7 +981,7 @@ export default function App() {
             {/* Only Import is bundled eagerly (see the lazy() declarations above);
                 every other panel below suspends here on its first visit per session. */}
             <Suspense fallback={<div className="tab-content-loading"><Spinner label="Loading…" /></div>}>
-              {tab === 'import' && <ImportView dragActive={dragActive} setDragActive={setDragActive} onFiles={onFiles} openPicker={() => fileInputRef.current?.click()} />}
+              {tab === 'import' && <ImportView dragActive={dragActive} openPicker={() => fileInputRef.current?.click()} />}
               {tab === 'mapping' && pendingCsv && <MappingPanel analysis={pendingCsv.analysis} mapping={pendingCsv.mapping} onChange={(mapping) => setPendingCsv((current) => current ? { ...current, mapping } : current)} additionalHeaders={pendingCsv.additionalHeaders} onToggleAdditionalHeaders={(additionalHeaders) => setPendingCsv((current) => current ? { ...current, additionalHeaders } : current)} dataStartRow={pendingCsv.dataStartRow} onDataStartRowChange={(dataStartRow) => setPendingCsv((current) => current ? { ...current, dataStartRow } : current)} onBuild={onBuildCsv} building={building} />}
               {tab === 'overview' && active && <div className="overview-panels"><TrackHealthPanel dataset={active} onDrillDown={handleHealthDrillDown} onDropOutliers={dropHealthOutliers} /><TrackMetricsPanel dataset={active} /><StatsPanel dataset={active} bookmarks={bookmarks} onBookmarksChange={(next) => { setBookmarks(next); setProjectDirty(true) }} /></div>}
               {tab === 'map' && <MapView points={active?.points ?? []} channels={active?.channels ?? []} workspace={workspace.map} onWorkspaceChange={(map) => { setWorkspace((current) => ({ ...current, map })); setProjectDirty(true) }} otherTracks={otherTracks} overlayState={workspace.mapOverlays} onOverlayStateChange={onMapOverlayStateChange} onImportOverlayAsTrack={onImportOverlayAsTrack} browserOverlayFiles={browserOverlayFiles} onBrowserOverlayFile={onBrowserOverlayFile} jumpRequested={pendingJump === 'map'} onJumpHandled={clearPendingJump} />}
