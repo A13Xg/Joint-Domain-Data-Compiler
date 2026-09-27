@@ -423,7 +423,7 @@ All read-only by default; editable text inputs when unlocked:
 ### Filtering & Control
 - **Filter input** — placeholder "filter rows…"; free-text substring filter across all values
 - **Row count readout** — "{shown} / {total} rows"
-- **Export visible CSV button** — downloads/archives currently filtered+sorted rows **at full precision** (raw values, never the grid's display rounding — fixed in 0.8); disabled when zero rows
+- **Export visible CSV button** — downloads/archives currently filtered+sorted rows **at full precision** (raw values, never the grid's display rounding — fixed after 0.7.0, see CHANGELOG Unreleased); disabled when zero rows
 - **Grid height** — fills the tab (ResizeObserver; min 260 px); was a fixed 460 px
 - **Column widths** — per-column minimums: time fits a whole ISO instant, channel columns fit their names; coordinates display with six decimals
 - **Quality-events-only checkbox** — filters to quality-event-flagged rows; only shown when events exist

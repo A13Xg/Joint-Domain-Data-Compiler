@@ -341,7 +341,8 @@ function P5RecordingCard({
           <code> p5_x</code>/<code>p5_y</code>/<code>p5_z</code> channels, so correcting them here and rebuilding
           re-places the tracks without re-importing. See <code>docs/P5-MSN.md</code> §6. Derived altitude carries
           whatever datum your anchor height is in, which is why these tracks report their altitude and time
-          references as <em>unknown</em> rather than guessing.
+          references as <em>unknown</em> rather than guessing. Once you know them, declare them per track under
+          Transform → Declare references; a rebuild keeps the declaration, so keep the anchor height in that datum.
         </p>
         {storedGeo === null && (
           <p className="warn small">

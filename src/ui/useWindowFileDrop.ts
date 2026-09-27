@@ -41,6 +41,10 @@ export function useWindowFileDrop(onFiles: (files: FileList) => void, onDragActi
     const leave = (event: DragEvent) => {
       if (!dragCarriesFiles(event.dataTransfer?.types)) return
       depth.current = Math.max(0, depth.current - 1)
+      // Leaving the window itself (no element to go to, pointer at or past an
+      // edge) always ends the drag, however the enter/leave pairs got unbalanced.
+      const leftWindow = event.relatedTarget === null && (event.clientX <= 0 || event.clientY <= 0 || event.clientX >= window.innerWidth || event.clientY >= window.innerHeight)
+      if (leftWindow) depth.current = 0
       if (depth.current === 0) latest.current.onDragActiveChange(false)
     }
     const drop = (event: DragEvent) => {

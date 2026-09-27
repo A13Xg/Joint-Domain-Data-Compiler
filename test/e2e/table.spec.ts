@@ -11,7 +11,12 @@ test('the table fills the tab, shows whole timestamps, and exports full precisio
 
   const grid = page.getByRole('grid')
   // It used to be a fixed 460 px box whatever the window height.
-  expect((await grid.boundingBox())!.height).toBeGreaterThan(600)
+  const gridHeight = (await grid.boundingBox())!.height
+  expect(gridHeight).toBeGreaterThan(600)
+  // …but it must not grow to its content height either: that would make every
+  // row "visible" and render all of them, which freezes on a 100k-point track.
+  expect(gridHeight).toBeLessThan(1000)
+  expect(await grid.getByRole('row').count()).toBeLessThan(100)
 
   // Display: coordinates at a fixed six decimals, and the whole ISO instant.
   const firstRow = grid.getByRole('row').nth(1)

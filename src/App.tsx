@@ -874,8 +874,14 @@ export default function App() {
       event.preventDefault()
       if (action === 'guide') openUserGuide()
       else if (action === 'open') fileInputRef.current?.click()
-      else if (action === 'undo') undo()
-      else if (action === 'redo') redo()
+      // Off the Transform tab there is no Undo button to watch, so say what happened.
+      else if (action === 'undo') {
+        if (!history || history.past.length === 0) flashToast('Nothing to undo on this dataset.', 'info')
+        else { undo(); flashToast('Undid the last change to the active dataset.', 'info') }
+      } else if (action === 'redo') {
+        if (!history || history.future.length === 0) flashToast('Nothing to redo on this dataset.', 'info')
+        else { redo(); flashToast('Redid the last undone change.', 'info') }
+      }
       else if (action === 'save') {
         if (datasets.length === 0) { flashToast('Nothing to save yet — load a dataset first.', 'info'); return }
         setTab('project')
@@ -884,7 +890,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [undo, redo, datasets.length, flashToast])
+  }, [undo, redo, history, datasets.length, flashToast])
 
   const removeDataset = useCallback((id: string) => {
     const remaining = datasets.filter((dataset) => dataset.id !== id)
