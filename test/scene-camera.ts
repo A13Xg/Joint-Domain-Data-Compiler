@@ -11,8 +11,10 @@ import {
   projectEnu,
   sceneFrame,
   type SceneCamera,
+  axisScreenDirections,
+  cameraForKey,
 } from '../src/visualization/scene3d/camera.ts'
-import { buildSharedTrajectory3dGeometry } from '../src/visualization/scene3d/trajectory.ts'
+import { buildSharedTrajectory3dGeometry, playbackFractionOf, playbackTimeRange, playbackVertexIndex, type Trajectory3dVertex } from '../src/visualization/scene3d/trajectory.ts'
 import type { TrackPoint } from '../src/core/model.ts'
 
 let failures = 0
@@ -82,6 +84,38 @@ const screenB = projectEnu(firstB.eastM, firstB.northM, firstB.upM, sharedFrame,
 check('Companion tracks keep their real separation on screen', screenB.x - screenA.x > 100, `${(screenB.x - screenA.x).toFixed(1)} px apart`)
 check('Floor is the lowest sample of any track, not the origin height', sharedFrame.floorUpM <= Math.min(firstA.upM, firstB.upM))
 check('An empty scene has no frame', sceneFrame([[]]) === null)
+
+// Orientation gizmo
+const topAxes = axisScreenDirections(TOP_SCENE_CAMERA)
+check('Gizmo, Top: north points up the screen', topAxes.north.y < -0.99 && Math.abs(topAxes.north.x) < 1e-9)
+check('Gizmo, Top: east points right', topAxes.east.x > 0.99)
+check('Gizmo, Top: up points at the viewer (no length)', Math.hypot(topAxes.up.x, topAxes.up.y) < 1e-9)
+const sideAxes = axisScreenDirections(SIDE_SCENE_CAMERA)
+check('Gizmo, Side: up points up the screen', sideAxes.up.y < -0.99)
+check('Gizmo, Side: north points into the screen (no length)', Math.hypot(sideAxes.north.x, sideAxes.north.y) < 1e-9)
+check('Gizmo agrees with the projection', Math.sign(topAxes.north.y) === Math.sign(at(TOP_SCENE_CAMERA, 0, 800, 200).y - H / 2))
+
+// Keyboard control
+check('Arrow Down raises the camera, same as dragging down', cameraForKey(SIDE_SCENE_CAMERA, 'ArrowDown', false)!.pitch > 0)
+check('Shift+Arrow pans instead of orbiting', (() => { const c = cameraForKey(SIDE_SCENE_CAMERA, 'ArrowRight', true)!; return c.panX > 0 && c.yaw === SIDE_SCENE_CAMERA.yaw })())
+check('+ zooms in and - zooms out', cameraForKey(SIDE_SCENE_CAMERA, '+', false)!.zoom > 1 && cameraForKey(SIDE_SCENE_CAMERA, '-', false)!.zoom < 1)
+check('Unrelated keys are left to the page', cameraForKey(SIDE_SCENE_CAMERA, 'a', false) === null)
+
+// Playback is proportional to time, not vertex index. Ten vertices one second
+// apart, then ten a tenth of a second apart: halfway through the TIME is inside
+// the first stretch, where index-proportional playback would already be at the join.
+const uneven: Trajectory3dVertex[] = [
+  ...Array.from({ length: 10 }, (_, i) => ({ sourceIndex: i, eastM: i, northM: 0, upM: 0, time: i * 1000 })),
+  ...Array.from({ length: 10 }, (_, i) => ({ sourceIndex: 10 + i, eastM: 10 + i, northM: 0, upM: 0, time: 9000 + (i + 1) * 100 })),
+]
+const halfway = playbackVertexIndex(uneven, 0.5)
+check('Playback at 50% lands at 50% of the elapsed time', Math.abs(uneven[halfway]!.time! - 5000) <= 500, `vertex ${halfway} at ${uneven[halfway]!.time} ms`)
+check('Playback ends are the first and last vertex', playbackVertexIndex(uneven, 0) === 0 && playbackVertexIndex(uneven, 1) === uneven.length - 1)
+check('Fraction and vertex round-trip', playbackVertexIndex(uneven, playbackFractionOf(uneven, 13)) === 13)
+const untimed: Trajectory3dVertex[] = uneven.map((vertex) => ({ ...vertex, time: undefined }))
+check('Untimed tracks fall back to vertex order', playbackTimeRange(untimed) === null && playbackVertexIndex(untimed, 0.5) === 10)
+const backwards = uneven.map((v, i) => i === 5 ? { ...v, time: 0 } : v)
+check('Out-of-order times fall back to vertex order rather than a wrong search', playbackTimeRange(backwards) === null)
 
 console.log(`\n${failures === 0 ? 'ALL SCENE CAMERA CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)

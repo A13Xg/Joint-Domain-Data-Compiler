@@ -147,3 +147,49 @@ function numericChannel(point: TrackPoint, channelId: string | undefined): numbe
   }
   return null
 }
+
+/**
+ * The vertex a playback position lands on. Proportional to TIME when every
+ * vertex carries a non-decreasing timestamp, so the marker moves at the
+ * recording's real relative pace — through a gap it jumps, at a slow segment it
+ * crawls. Falls back to vertex order otherwise. Index-proportional playback
+ * (what this used to be, unconditionally) runs a 1 Hz stretch and a 10 Hz
+ * stretch of the same track at a tenfold difference in apparent speed.
+ */
+export function playbackVertexIndex(vertices: readonly Trajectory3dVertex[], fraction: number): number {
+  if (vertices.length === 0) return -1
+  const f = Math.max(0, Math.min(1, Number.isFinite(fraction) ? fraction : 0))
+  const range = playbackTimeRange(vertices)
+  if (!range) return Math.min(vertices.length - 1, Math.round(f * (vertices.length - 1)))
+  const target = range.startMs + f * (range.endMs - range.startMs)
+  let lo = 0, hi = vertices.length - 1
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (vertices[mid]!.time! < target) lo = mid + 1
+    else hi = mid
+  }
+  // `lo` is the first vertex at or after the target; take whichever neighbour is nearer.
+  if (lo > 0 && target - vertices[lo - 1]!.time! <= vertices[lo]!.time! - target) return lo - 1
+  return lo
+}
+
+/** Playback position (0–1) of a vertex, the inverse of playbackVertexIndex. */
+export function playbackFractionOf(vertices: readonly Trajectory3dVertex[], index: number): number {
+  if (vertices.length < 2 || index <= 0) return 0
+  if (index >= vertices.length - 1) return 1
+  const range = playbackTimeRange(vertices)
+  if (!range) return index / (vertices.length - 1)
+  return (vertices[index]!.time! - range.startMs) / (range.endMs - range.startMs)
+}
+
+/** Start and end time when playback can be time-proportional, else null. */
+export function playbackTimeRange(vertices: readonly Trajectory3dVertex[]): { startMs: number; endMs: number } | null {
+  if (vertices.length < 2) return null
+  let previous = -Infinity
+  for (const vertex of vertices) {
+    if (vertex.time === undefined || !Number.isFinite(vertex.time) || vertex.time < previous) return null
+    previous = vertex.time
+  }
+  const startMs = vertices[0]!.time!, endMs = vertices[vertices.length - 1]!.time!
+  return endMs > startMs ? { startMs, endMs } : null
+}

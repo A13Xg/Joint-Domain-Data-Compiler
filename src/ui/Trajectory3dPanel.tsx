@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { PointerEvent as ReactPointerEvent } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { Dataset } from '../core/model'
 import { DEFAULT_QUALITY_EVENT_CONFIG, detectQualityEvents } from '../core/quality/events'
-import { buildSharedTrajectory3dGeometry, type Trajectory3dVertex } from '../visualization/scene3d/trajectory'
-import { DEFAULT_SCENE_CAMERA, SIDE_SCENE_CAMERA, TOP_SCENE_CAMERA, orbitCamera, projectEnu, sceneFrame, type SceneCamera, type SceneFrame, type SceneProjection } from '../visualization/scene3d/camera'
+import { buildSharedTrajectory3dGeometry, playbackTimeRange, playbackVertexIndex, type Trajectory3dVertex } from '../visualization/scene3d/trajectory'
+import { DEFAULT_SCENE_CAMERA, SIDE_SCENE_CAMERA, TOP_SCENE_CAMERA, axisScreenDirections, cameraForKey, orbitCamera, projectEnu, sceneFrame, type SceneCamera, type SceneFrame, type SceneProjection } from '../visualization/scene3d/camera'
+import type { WorkspaceDisplay } from '../state/workspaceDisplay'
+import { epochMsToIso } from '../core/format'
 import { assessDatasetCompatibility } from '../core/metadataCompatibility'
 import { usePointSelection } from '../state/pointSelection'
 import { useAppSettings } from '../state/settings'
@@ -15,7 +17,9 @@ type Camera = SceneCamera
 type ScreenVertex = Trajectory3dVertex & { x: number; y: number }
 const DEFAULT_CAMERA = DEFAULT_SCENE_CAMERA
 
-export function Trajectory3dPanel({ dataset, datasets, workspace, onWorkspaceChange }: { dataset: Dataset; datasets: Dataset[]; workspace: WorkspaceState['scene3d']; onWorkspaceChange: (next: WorkspaceState['scene3d']) => void }) {
+const COMPANION_FALLBACK_COLOR = '#a78bfa'
+
+export function Trajectory3dPanel({ dataset, datasets, display, workspace, onWorkspaceChange }: { dataset: Dataset; datasets: Dataset[]; display?: WorkspaceDisplay; workspace: WorkspaceState['scene3d']; onWorkspaceChange: (next: WorkspaceState['scene3d']) => void }) {
   const { altitudeExaggeration, projection, gapThresholdSeconds } = workspace
   const [colorChannelId, setColorChannelId] = useState('')
 
@@ -33,11 +37,20 @@ export function Trajectory3dPanel({ dataset, datasets, workspace, onWorkspaceCha
   const { pointIndex, hoverIndex, indexRange, selectPoint, setHoverIndex, clearPointSelection, clearRangeSelection, clearHover } = usePointSelection(dataset.points)
   const { scenePointBudget } = useAppSettings()
   const shared3d = useMemo(() => {
-    const compatible = datasets.filter((candidate) => candidate.id !== dataset.id && assessDatasetCompatibility(dataset, candidate).level === 'compatible')
+    // Companions follow the Sources tab's visibility, like the map's other tracks.
+    const compatible = datasets.filter((candidate) => candidate.id !== dataset.id && display?.[candidate.id]?.visible !== false && assessDatasetCompatibility(dataset, candidate).level === 'compatible')
     return buildSharedTrajectory3dGeometry([dataset, ...compatible].map((candidate) => ({ id: candidate.id, points: candidate.points })), { altitudeExaggeration, maxPoints: scenePointBudget, colorChannelId: colorChannelId || undefined })
-  }, [dataset, datasets, altitudeExaggeration, colorChannelId, scenePointBudget])
+  }, [dataset, datasets, display, altitudeExaggeration, colorChannelId, scenePointBudget])
   const geometry = shared3d.tracks[0]!.geometry
-  const companionGeometries = useMemo(() => shared3d.tracks.slice(1).map((track) => track.geometry), [shared3d])
+  // Each companion in its own Sources-tab colour: a P5 sortie puts every
+  // instrumented aircraft in this scene, and one shared purple made them
+  // impossible to tell apart.
+  const companions = useMemo(() => shared3d.tracks.slice(1).map((track) => ({
+    id: track.id,
+    name: datasets.find((candidate) => candidate.id === track.id)?.name ?? track.id,
+    color: display?.[track.id]?.color ?? COMPANION_FALLBACK_COLOR,
+    geometry: track.geometry,
+  })), [shared3d, datasets, display])
   const frame = useMemo(() => sceneFrame(shared3d.tracks.map((track) => track.geometry.vertices)), [shared3d])
   const incompatibleCount = datasets.filter((candidate) => candidate.id !== dataset.id && assessDatasetCompatibility(dataset, candidate).level === 'blocked').length
   const qualityEvents = useMemo(() => detectQualityEvents(dataset.points, { ...DEFAULT_QUALITY_EVENT_CONFIG, gapMs: Math.max(1, gapThresholdSeconds * 1_000) }), [dataset.points, gapThresholdSeconds])
@@ -54,7 +67,7 @@ export function Trajectory3dPanel({ dataset, datasets, workspace, onWorkspaceCha
 
   useEffect(() => {
     if (!playing || geometry.vertices.length === 0) return
-    setHoverIndex(geometry.vertices[Math.min(geometry.vertices.length - 1, Math.round(playback * (geometry.vertices.length - 1)))]?.sourceIndex ?? null)
+    setHoverIndex(geometry.vertices[playbackVertexIndex(geometry.vertices, playback)]?.sourceIndex ?? null)
   }, [playing, playback, geometry.vertices, setHoverIndex])
 
   useEffect(() => {
@@ -68,17 +81,18 @@ export function Trajectory3dPanel({ dataset, datasets, workspace, onWorkspaceCha
       const projected = project(geometry.vertices, frame, camera, projection, width, height); projectedRef.current = projected
       if (!projected.length) return
       if (showGrid) grid(context, frame, camera, projection, width, height)
-      for (const companion of companionGeometries) path(context, project(companion.vertices, frame, camera, projection, width, height), '', undefined, null, new Set(), new Set(), '#a78bfa')
+      for (const companion of companions) path(context, project(companion.geometry.vertices, frame, camera, projection, width, height), '', undefined, null, new Set(), new Set(), companion.color)
       if (showCurtain) curtain(context, geometry.vertices, projected, frame, camera, projection, width, height)
       path(context, projected, colorChannelId, geometry.colorRange, indexRange, pathBreakIndices, jumpIndices)
       if (showPoints) for (let index = 0, stride = Math.max(1, Math.floor(projected.length / 2500)); index < projected.length; index += stride) dot(context, projected[index]!, 2.2, vertexColor(projected[index]!, geometry.colorRange, colorChannelId), vertexColor(projected[index]!, geometry.colorRange, colorChannelId))
-      const playbackPoint = projected[Math.min(projected.length - 1, Math.round(playback * (projected.length - 1)))]; if (playbackPoint) dot(context, playbackPoint, 8, '#ff4d2e', '#fff')
+      const playbackPoint = projected[playbackVertexIndex(geometry.vertices, playback)]; if (playbackPoint) dot(context, playbackPoint, 8, '#ff4d2e', '#fff')
       const hovered = hoverIndex === null ? null : nearestSource(projected, hoverIndex); if (hovered) dot(context, hovered, 7, '#38bdf8', '#fff')
       const selected = pointIndex === null ? null : nearestSource(projected, pointIndex); if (selected) dot(context, selected, 9, '#fff', '#ea4f2f')
       dot(context, projected[0]!, 6, '#22c55e', '#dcfce7'); dot(context, projected[projected.length - 1]!, 6, '#ef4444', '#fee2e2')
+      gizmo(context, camera, height)
     }
     draw(); const observer = new ResizeObserver(draw); observer.observe(canvas); return () => observer.disconnect()
-  }, [geometry, companionGeometries, frame, camera, projection, showGrid, showCurtain, showPoints, colorChannelId, indexRange, pointIndex, hoverIndex, playback, pathBreakIndices, jumpIndices])
+  }, [geometry, companions, frame, camera, projection, showGrid, showCurtain, showPoints, colorChannelId, indexRange, pointIndex, hoverIndex, playback, pathBreakIndices, jumpIndices])
 
   const nearestPointer = (event: ReactPointerEvent<HTMLCanvasElement>) => { const rect = event.currentTarget.getBoundingClientRect(), x = event.clientX - rect.left, y = event.clientY - rect.top; return projectedRef.current.reduce<{ sourceIndex: number; distance: number } | null>((best, vertex) => { const distance = Math.hypot(vertex.x - x, vertex.y - y); return !best || distance < best.distance ? { sourceIndex: vertex.sourceIndex, distance } : best }, null) }
   const pointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => { const drag = dragRef.current; if (!drag) { const nearest = nearestPointer(event); setHoverIndex(nearest && nearest.distance < 18 ? nearest.sourceIndex : null); return } const dx = event.clientX - drag.x, dy = event.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 2) drag.moved = true; drag.x = event.clientX; drag.y = event.clientY; setCamera((current) => drag.pan ? { ...current, panX: current.panX + dx, panY: current.panY + dy } : orbitCamera(current, dx, dy)) }
@@ -97,7 +111,19 @@ export function Trajectory3dPanel({ dataset, datasets, workspace, onWorkspaceCha
     setCamera((current) => ({ ...current, panX: current.panX + width / 2 - vertex.x, panY: current.panY + height / 2 - vertex.y }))
   }
 
-  const scrub = (value: number) => { setPlaying(false); setPlayback(value); setHoverIndex(geometry.vertices[Math.min(geometry.vertices.length - 1, Math.round(value * Math.max(0, geometry.vertices.length - 1)))]?.sourceIndex ?? null) }
+  const scrub = (value: number) => { setPlaying(false); setPlayback(value); setHoverIndex(geometry.vertices[playbackVertexIndex(geometry.vertices, value)]?.sourceIndex ?? null) }
+  const playbackRange = useMemo(() => playbackTimeRange(geometry.vertices), [geometry.vertices])
+  const playbackVertex = geometry.vertices[playbackVertexIndex(geometry.vertices, playback)]
+  const playbackReadout = playbackRange && playbackVertex?.time !== undefined
+    ? `${epochMsToIso(playbackVertex.time)} · T+${formatElapsed(playbackVertex.time - playbackRange.startMs)}`
+    : `${Math.round(playback * 100)}% (untimed — by sample order)`
+  const onCanvasKey = (event: ReactKeyboardEvent<HTMLCanvasElement>) => {
+    if (event.key === 'Home' || event.key === '0') { event.preventDefault(); setCamera(DEFAULT_CAMERA); return }
+    const next = cameraForKey(camera, event.key, event.shiftKey)
+    if (!next) return
+    event.preventDefault()
+    setCamera(next)
+  }
 
   return <div className="analysis-panel trajectory-panel">
     <div className="analysis-toolbar trajectory-toolbar">
@@ -109,13 +135,13 @@ export function Trajectory3dPanel({ dataset, datasets, workspace, onWorkspaceCha
       <button type="button" onClick={() => setCamera(DEFAULT_CAMERA)}>Reset camera</button><button type="button" onClick={() => setCamera(TOP_SCENE_CAMERA)} title="Look straight down, north up">Top</button><button type="button" onClick={() => setCamera(SIDE_SCENE_CAMERA)} title="Look along the horizon towards north">Side</button><button type="button" onClick={() => setCamera((current) => ({ ...current, zoom: 1, panX: 0, panY: 0 }))}>Fit trajectory</button>
       {pointIndex !== null && <SelectionChip label={`selected #${pointIndex}`} onJump={() => centreOnSelection(pointIndex)} jumpTitle="Centre the scene on this point" onClear={clearPointSelection} clearLabel="Clear point selection" />}{indexRange && <SelectionChip label={`range ${indexRange.start}–${indexRange.end}`} tone="range" onJump={() => centreOnSelection(Math.round((indexRange.start + indexRange.end) / 2))} jumpTitle="Centre the scene on this range" onClear={clearRangeSelection} clearLabel="Clear range selection" />}
     </div>
-    <canvas ref={canvasRef} className="trajectory-three-canvas" aria-label="Interactive local ENU trajectory scene" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); dragRef.current = { x: event.clientX, y: event.clientY, pan: event.button === 2 || event.shiftKey, moved: false } }} onPointerMove={pointerMove} onPointerUp={(event) => { const drag = dragRef.current; dragRef.current = null; if (!drag?.moved) { const nearest = nearestPointer(event); if (nearest && nearest.distance < 18) selectPoint(nearest.sourceIndex) } }} onPointerLeave={() => { dragRef.current = null; clearHover() }} onWheel={(event) => { event.preventDefault(); setCamera((current) => ({ ...current, zoom: clamp(current.zoom * Math.exp(-event.deltaY * 0.001), 0.15, 12) })) }} />
-    <div className="trajectory-playback"><button type="button" onClick={() => setPlaying((value) => !value)}>{playing ? 'Pause' : 'Play'}</button><button type="button" onClick={() => scrub(0)}>Restart</button><input aria-label="Playback position" type="range" min={0} max={1} step={0.001} value={playback} onChange={(event) => scrub(Number(event.target.value))} /><label>speed<select value={speed} onChange={(event) => setSpeed(Number(event.target.value))}><option value={0.25}>0.25×</option><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={2}>2×</option><option value={4}>4×</option></select></label><span className="mono small">{Math.round(playback * 100)}%</span></div>
+    <canvas ref={canvasRef} className="trajectory-three-canvas" tabIndex={0} onKeyDown={onCanvasKey} aria-label="Interactive local ENU trajectory scene. Arrow keys orbit, Shift+arrows pan, plus and minus zoom, Home resets the camera." onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); dragRef.current = { x: event.clientX, y: event.clientY, pan: event.button === 2 || event.shiftKey, moved: false } }} onPointerMove={pointerMove} onPointerUp={(event) => { const drag = dragRef.current; dragRef.current = null; if (!drag?.moved) { const nearest = nearestPointer(event); if (nearest && nearest.distance < 18) selectPoint(nearest.sourceIndex) } }} onPointerLeave={() => { dragRef.current = null; clearHover() }} onWheel={(event) => { event.preventDefault(); setCamera((current) => ({ ...current, zoom: clamp(current.zoom * Math.exp(-event.deltaY * 0.001), 0.15, 12) })) }} />
+    <div className="trajectory-playback"><button type="button" onClick={() => setPlaying((value) => !value)}>{playing ? 'Pause' : 'Play'}</button><button type="button" onClick={() => scrub(0)}>Restart</button><input aria-label="Playback position" type="range" min={0} max={1} step={0.001} value={playback} onChange={(event) => scrub(Number(event.target.value))} /><label>speed<select value={speed} onChange={(event) => setSpeed(Number(event.target.value))}><option value={0.25}>0.25×</option><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={2}>2×</option><option value={4}>4×</option></select></label><span className="mono small" title={playbackRange ? 'Playback advances in proportion to recorded time' : 'No usable timestamps: playback advances by sample order'}>{playbackReadout}</span></div>
     {(dataset.metadata?.altitudeReference === 'UNKNOWN' || dataset.metadata?.timeReference === 'UNKNOWN') && <div className="warn-line">Reference metadata is incomplete: 3D geometry is local visualization only and must not be used for cross-source altitude/time comparison.</div>}
-    {companionGeometries.length > 0 && <div className="analysis-summary">Shared ENU frame includes {companionGeometries.length} compatible companion track{companionGeometries.length === 1 ? '' : 's'} (purple).</div>}
+    {companions.length > 0 && <div className="analysis-summary scene-companions">Shared ENU frame with {companions.length} compatible companion track{companions.length === 1 ? '' : 's'}:{companions.map((companion) => <span key={companion.id} className="scene-companion"><span className="chip-dot" style={{ background: companion.color }} />{companion.name}</span>)}<span className="muted small">Colours and visibility follow the Sources tab.</span></div>}
     {incompatibleCount > 0 && <div className="warn-line">{incompatibleCount} dataset{incompatibleCount === 1 ? ' is' : 's are'} excluded from shared 3D because their metadata references are incompatible.</div>}
     <div className="metric-grid"><Metric label="source points" value={geometry.sourcePointCount.toLocaleString()} /><Metric label="valid coordinates" value={geometry.validPointCount.toLocaleString()} /><Metric label="rendered vertices" value={geometry.renderedPointCount.toLocaleString()} /><Metric label="east span" value={`${format(geometry.bounds.maxEastM - geometry.bounds.minEastM)} m`} /><Metric label="north span" value={`${format(geometry.bounds.maxNorthM - geometry.bounds.minNorthM)} m`} /><Metric label="up span" value={`${format(geometry.bounds.maxUpM - geometry.bounds.minUpM)} m`} /></div>
-    <div className="muted small">Drag to orbit, Shift/right-drag to pan, and use the wheel to zoom. Hover or playback updates the synchronized data cursor; click selects a persistent point.</div>
+    <div className="muted small">Drag to orbit (dragging down raises the camera), Shift/right-drag to pan, and use the wheel to zoom — or focus the scene and use the arrow keys, Shift+arrows, +/− and Home. The axes in the corner show east (E), north (N) and up (U). Playback moves in proportion to recorded time. Hover or playback updates the synchronized data cursor; click selects a persistent point.</div>
   </div>
 }
 
@@ -133,6 +159,25 @@ function curtain(context: CanvasRenderingContext2D, vertices: readonly Trajector
 function dot(context: CanvasRenderingContext2D, vertex: ScreenVertex, radius: number, fill: string, stroke: string) { context.beginPath(); context.arc(vertex.x, vertex.y, radius, 0, Math.PI * 2); context.fillStyle = fill; context.fill(); context.strokeStyle = stroke; context.lineWidth = 2; context.stroke() }
 function vertexColor(vertex: Trajectory3dVertex, range: { min: number; max: number } | undefined, channel: string) { if (!channel || !range || vertex.colorValue === undefined) return '#38bdf8'; const ratio = range.max === range.min ? 0.5 : clamp((vertex.colorValue - range.min) / (range.max - range.min), 0, 1); return `hsl(${220 - ratio * 210} 78% 58%)` }
 function nearestSource(vertices: ScreenVertex[], sourceIndex: number) { return vertices.reduce<ScreenVertex | null>((best, vertex) => !best || Math.abs(vertex.sourceIndex-sourceIndex) < Math.abs(best.sourceIndex-sourceIndex) ? vertex : best, null) }
+// Orientation axes in the lower-left corner, drawn through the same rotation as
+// the scene: without them a view from above and a view from below look alike.
+function gizmo(context: CanvasRenderingContext2D, camera: Camera, height: number) {
+  const origin = { x: 44, y: height - 44 }, length = 28, axes = axisScreenDirections(camera)
+  const entries: Array<[string, { x: number; y: number }, string]> = [['E', axes.east, '#f87171'], ['N', axes.north, '#4ade80'], ['U', axes.up, '#60a5fa']]
+  context.save()
+  context.fillStyle = 'rgba(2,6,23,.55)'; context.beginPath(); context.arc(origin.x, origin.y, 38, 0, Math.PI * 2); context.fill()
+  context.font = '600 10px system-ui'; context.textAlign = 'center'; context.textBaseline = 'middle'
+  for (const [label, direction, color] of entries) {
+    const tip = { x: origin.x + direction.x * length, y: origin.y + direction.y * length }
+    context.strokeStyle = color; context.fillStyle = color; context.lineWidth = 2
+    context.beginPath(); context.moveTo(origin.x, origin.y); context.lineTo(tip.x, tip.y); context.stroke()
+    // An axis pointing at (or away from) the viewer has no length; label it in place.
+    const reach = Math.hypot(direction.x, direction.y)
+    context.fillText(label, origin.x + (reach < 0.2 ? 0 : direction.x / reach) * (length + 8), origin.y + (reach < 0.2 ? 0 : direction.y / reach) * (length + 8))
+  }
+  context.restore()
+}
+function formatElapsed(ms: number) { const total = Math.max(0, Math.round(ms / 1000)), h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60), sec = total % 60; return `${h > 0 ? `${h}:` : ''}${String(m).padStart(h > 0 ? 2 : 1, '0')}:${String(sec).padStart(2, '0')}` }
 function Metric({ label, value }: { label: string; value: string }) { return <div className="metric-card"><span className="metric-label">{label}</span><strong className="mono">{value}</strong></div> }
 function format(value: number) { return Math.abs(value) >= 1000 ? value.toFixed(0) : value.toFixed(1) }
 function clamp(value: number, min: number, max: number) { return Math.max(min, Math.min(max, value)) }

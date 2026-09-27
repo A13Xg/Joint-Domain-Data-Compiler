@@ -92,4 +92,28 @@ export function orbitCamera(camera: SceneCamera, dxPx: number, dyPx: number): Sc
   }
 }
 
+/**
+ * Screen direction of each world axis under the camera's rotation, for the
+ * orientation gizmo: x right, y DOWN (canvas convention), length 0–1. An axis
+ * pointing straight at the viewer has length ~0 — e.g. Up in the Top view.
+ */
+export function axisScreenDirections(camera: SceneCamera): Record<'east' | 'north' | 'up', { x: number; y: number }> {
+  const cy = Math.cos(camera.yaw), sy = Math.sin(camera.yaw), cp = Math.cos(camera.pitch), sp = Math.sin(camera.pitch)
+  const direction = (e: number, n: number, u: number) => {
+    const forward = e * sy + n * cy
+    return { x: e * cy - n * sy, y: -(u * cp + forward * sp) }
+  }
+  return { east: direction(1, 0, 0), north: direction(0, 1, 0), up: direction(0, 0, 1) }
+}
+
+/** Keyboard orbit/pan/zoom, so the scene can be driven without a pointer. */
+export function cameraForKey(camera: SceneCamera, key: string, shift: boolean): SceneCamera | null {
+  const step = 24
+  if (key === '+' || key === '=') return { ...camera, zoom: clamp(camera.zoom * 1.2, 0.15, 12) }
+  if (key === '-' || key === '_') return { ...camera, zoom: clamp(camera.zoom / 1.2, 0.15, 12) }
+  const delta = key === 'ArrowLeft' ? [-step, 0] : key === 'ArrowRight' ? [step, 0] : key === 'ArrowUp' ? [0, -step] : key === 'ArrowDown' ? [0, step] : null
+  if (!delta) return null
+  return shift ? { ...camera, panX: camera.panX + delta[0]!, panY: camera.panY + delta[1]! } : orbitCamera(camera, delta[0]!, delta[1]!)
+}
+
 function clamp(value: number, min: number, max: number) { return Math.max(min, Math.min(max, value)) }
