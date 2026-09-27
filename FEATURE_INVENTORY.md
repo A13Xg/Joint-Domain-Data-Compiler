@@ -74,7 +74,8 @@ Always present; tabs enabled/disabled by state:
 - **Ctrl/⌘+S** — saves the complete project from any tab (switches to Project; ProjectPanel runs its own save via a `pendingSave` request, acknowledged in the same timer callback so it cannot run twice); with no datasets, a toast says there is nothing to save
 - **Ctrl/⌘+Z** — undo; **Ctrl/⌘+Shift+Z** or **Ctrl+Y** — redo (same handlers as the Transform buttons)
 - **F1** — opens the user guide
-- Suppressed while focus is in a text-like field (its own undo wins) and while any `aria-modal="true"` dialog is open
+- Undo/redo are suppressed while focus is in a text-like field (its own undo wins); save/open/help work there too. Everything is suppressed while any `aria-modal="true"` dialog is open. Ctrl/⌘+S, Ctrl/⌘+O and F1 always `preventDefault` (no browser Save Page / Open File / Help)
+- Keyboard undo/redo raise a toast saying what happened, or that there was nothing to undo/redo
 - Hints on the Load data, Save complete project, Undo and Redo buttons
 
 ### Window-wide File Drop (`src/ui/useWindowFileDrop.ts`)
@@ -293,6 +294,7 @@ All read-only by default; editable text inputs when unlocked:
 - **Fit range button** — fits to current index-range selection; disabled unless range with valid positions exists
 
 ### Data Summary & Selection
+- **Hover cursor marker** — drawn over the hovered sample, non-interactive so a click reaches the sample underneath (before this, map click-to-select never worked)
 - **Point/valid count readout** — "{n} valid pts · {m} drawn" (m = downsampled to `mapPointBudget` from Settings)
 - **Selection chips:**
   - **Point chip** — label "selected #{index}"; jump ("Centre the map on this point") / clear

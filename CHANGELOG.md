@@ -15,6 +15,9 @@ Versioning; release tags use the `vX.Y.Z` form.
   counted, with an opt-in to draw them marked "ref. unknown"; conflicting ones are counted as
   excluded; hidden ones are counted. The companion-legend styling the 0.7.0 notes described is
   now actually included.
+- **Clicking a sample on the map did not select it.** The hover "cursor" marker is drawn on top of
+  the hovered sample and, as an interactive layer, took the click. It is now click-through, which
+  is also what lets Measure snap to a sample.
 - **Table "Export visible CSV" rounded the data.** It passed values through the grid's display
   formatter, cutting coordinates to five decimals (~1 m). It now writes the raw values.
 - **A file dropped on any tab but Import was taken by the browser**, which navigated to it and
@@ -34,8 +37,10 @@ Versioning; release tags use the `vX.Y.Z` form.
   offline basemap, which was a blank grey plane; and a **Measure** tool — click points (or snap to
   samples) for per-leg great-circle distance and initial true bearing, and the total.
 - **Keyboard shortcuts** from any tab: Ctrl/⌘+O load data, Ctrl/⌘+S save project, Ctrl/⌘+Z undo,
-  Ctrl/⌘+Shift+Z or Ctrl+Y redo, F1 user guide. Suppressed while typing in a field or while a
-  dialog is open. The desktop app has no menu bar, so it previously had no accelerators at all.
+  Ctrl/⌘+Shift+Z or Ctrl+Y redo, F1 user guide. Undo/redo leave a focused text field's own undo
+  alone; save, open and help work everywhere and always block the browser's Save Page / Open
+  File / Help. Nothing fires while a dialog is open, and a keyboard undo/redo says what it did.
+  The desktop app has no menu bar, so it previously had no accelerators at all.
 - **Drop files anywhere** in the window, with a "Drop to import" overlay.
 - **Charts:** the interior gridlines carry values for the first two plotted series, and the time
   axis has intermediate ticks.
