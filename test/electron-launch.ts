@@ -77,21 +77,36 @@ if (!(await originUp())) {
 }
 const stopPreview = () => { if (preview?.pid) try { process.kill(-preview.pid) } catch { /* already gone */ } }
 
-const run = spawnSync(command, args, {
-  encoding: 'utf8',
-  timeout: 90_000,
-  // JDDC_SMOKE_OPEN_GUIDE: open the user guide before exiting, so its window is
-  // observed too. JDDC_NO_DEVTOOLS: a detached DevTools is a window of its own.
-  env: { ...process.env, JDDC_STARTUP_TRACE: '1', JDDC_EXIT_AFTER_STARTUP: '1', JDDC_SMOKE_OPEN_GUIDE: '1', JDDC_SMOKE_REPORT_PDF: '1', JDDC_NO_DEVTOOLS: '1' },
-})
-
-stopPreview()
-const output = `${run.stdout ?? ''}${run.stderr ?? ''}`
-const phases = new Map<string, number>()
-for (const line of output.split(/\r?\n/)) {
-  const match = /^\[startup\]\s+(\d+)ms\s+(.+)$/.exec(line.trim())
-  if (match) phases.set(match[2]!.trim(), Number(match[1]))
+function launchOnce(): { output: string; phases: Map<string, number> } {
+  const run = spawnSync(command, args, {
+    encoding: 'utf8',
+    timeout: 90_000,
+    // JDDC_SMOKE_OPEN_GUIDE / JDDC_SMOKE_REPORT_PDF: open the user guide and
+    // render a report PDF before exiting, so those windows are observed too.
+    // JDDC_NO_DEVTOOLS: a detached DevTools is a window of its own.
+    env: { ...process.env, JDDC_STARTUP_TRACE: '1', JDDC_EXIT_AFTER_STARTUP: '1', JDDC_SMOKE_OPEN_GUIDE: '1', JDDC_SMOKE_REPORT_PDF: '1', JDDC_NO_DEVTOOLS: '1' },
+  })
+  const output = `${run.stdout ?? ''}${run.stderr ?? ''}`
+  const phases = new Map<string, number>()
+  for (const line of output.split(/\r?\n/)) {
+    const match = /^\[startup\]\s+(\d+)ms\s+(.+)$/.exec(line.trim())
+    if (match) phases.set(match[2]!.trim(), Number(match[1]))
+  }
+  return { output, phases }
 }
+
+// When the workbench's own first paint beats the splash's, the app reveals the
+// workbench at once and drops the splash -- the designed fallback, so a slow
+// splash can never hold the window back. It happens on a loaded machine (the
+// full check:all run, say), and it says nothing about whether the splash works.
+// Relaunch once in that case; a second loss is a real failure.
+let { output, phases } = launchOnce()
+const lostRace = (p: Map<string, number>) => ![...p.keys()].some((n) => n.startsWith('splash visible')) && p.has('workbench revealed')
+if (lostRace(phases)) {
+  console.log('  note: the workbench painted before the splash on this launch (the designed no-splash path); relaunching once.')
+  ;({ output, phases } = launchOnce())
+}
+stopPreview()
 
 if (phases.size === 0) {
   console.log('  [FAIL] the startup trace produced no phases — the main process did not start.')
