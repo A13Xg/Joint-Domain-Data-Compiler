@@ -33,7 +33,6 @@ test-results
 # build/icon.png survived only because it was already tracked.
 build/*
 !build/icon.png
-!build/portable-splash.bmp
 .env.local
 .env.*.local
 

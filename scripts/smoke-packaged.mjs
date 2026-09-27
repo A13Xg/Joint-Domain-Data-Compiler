@@ -18,6 +18,11 @@ const args = process.platform === 'linux' ? ['-a', executable, ...electronArgs] 
 const child = spawn(command, args, {
   detached: process.platform !== 'win32',
   stdio: ['ignore', 'pipe', 'pipe'],
+  // The startup trace names every window the app creates and each show/hide/
+  // close. Printed below, it puts a real record of what a packaged launch puts
+  // on screen into every release log -- including Windows, which cannot be
+  // launched anywhere else in this project's tooling.
+  env: { ...process.env, JDDC_STARTUP_TRACE: '1' },
 })
 
 child.stdout.on('data', (chunk) => output.push(String(chunk)))
@@ -36,12 +41,45 @@ try {
   console.log(sawSplash
     ? 'Launch splash was observed during startup.'
     : 'Launch splash was not sampled (startup may have outrun the 250 ms poll).')
+  await openUserGuide(page.webSocketDebuggerUrl, port)
+  printStartupTrace()
 } catch (error) {
   const detail = output.join('').trim()
   if (detail) console.error(detail)
   throw error
 } finally {
   stopPackagedApp(child)
+}
+
+// The guide lives inside app.asar. It once opened through the OS default
+// browser, which cannot read into an asar -- so the info button worked from a
+// checkout and did nothing in every installed build. This drives the real
+// button's IPC and requires the guide to render, from the archive, in the app.
+async function openUserGuide(webSocketDebuggerUrl, debugPort) {
+  await evaluateDevTools(webSocketDebuggerUrl, 'window.jointDomainCompiler.openUserGuide().then(() => true)', true)
+  const deadline = Date.now() + 15_000
+  while (Date.now() < deadline) {
+    const targets = await fetch(`http://127.0.0.1:${debugPort}/json/list`).then((response) => response.json()).catch(() => [])
+    const guide = targets.find((target) => target.type === 'page' && target.url.includes('user-guide.html'))
+    if (guide && /User Guide/.test(guide.title)) {
+      console.log(`User guide opened inside the app: ${guide.title}`)
+      return
+    }
+    await new Promise((resolveWait) => setTimeout(resolveWait, 250))
+  }
+  throw new Error('The user guide did not open inside the packaged app within 15 seconds.')
+}
+
+function printStartupTrace() {
+  const lines = output.join('').split(/\r?\n/).filter((line) => line.startsWith('[startup]'))
+  if (lines.length === 0) {
+    console.log('No startup trace was captured (this platform may not forward a GUI process\'s stdout).')
+    return
+  }
+  console.log('Startup and window trace:')
+  for (const line of lines) console.log(`  ${line}`)
+  const created = lines.filter((line) => / window #\d+ created$/.test(line)).length
+  console.log(`Windows created by the app: ${created} (splash, workbench, user guide expected).`)
 }
 
 async function waitForWorkbenchMounted(webSocketDebuggerUrl) {
@@ -59,11 +97,11 @@ async function waitForWorkbenchMounted(webSocketDebuggerUrl) {
   throw new Error(`Packaged renderer opened, but the JDDC React workbench did not mount into #root: ${JSON.stringify(state)}`)
 }
 
-function evaluateDevTools(url, expression) {
+function evaluateDevTools(url, expression, awaitPromise = false) {
   return new Promise((resolveValue, reject) => {
     const socket = new WebSocket(url)
     const timer = setTimeout(() => { socket.close(); reject(new Error('Timed out evaluating packaged renderer DOM.')) }, 10_000)
-    socket.addEventListener('open', () => socket.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression, returnByValue: true } })))
+    socket.addEventListener('open', () => socket.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression, returnByValue: true, awaitPromise } })))
     socket.addEventListener('message', (event) => {
       const response = JSON.parse(String(event.data))
       if (response.id !== 1) return

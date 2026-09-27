@@ -36,7 +36,7 @@ contextBridge.exposeInMainWorld('jointDomainCompiler', {
   diagnostics: {
     save: (text) => ipcRenderer.invoke(IPC_CHANNELS.saveDiagnostics, text),
   },
-  // Opens the packaged user guide in the OS default browser. Takes no argument
+  // Opens the packaged user guide in an app window. Takes no argument
   // on purpose: the path is resolved in the main process, so the renderer can
   // never ask it to open an arbitrary file.
   openUserGuide: () => ipcRenderer.invoke(IPC_CHANNELS.openUserGuide),

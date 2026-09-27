@@ -65,7 +65,8 @@
         align-items: center;
         justify-content: space-between;
         gap: 20px;
-        padding: 0 24px 17px;
+        /* Clears the progress track below it. */
+        padding: 0 24px 30px;
         font-size: 10.5px;
         letter-spacing: 0.11em;
         text-transform: uppercase;
@@ -118,11 +119,20 @@
         font-variant-numeric: tabular-nums;
       }
 
+      /* An inset, rounded track rather than a hairline along the window's bottom
+         edge. The edge version was 3 px tall and sat on the frame line, where it
+         read as a border -- a launch was reported as having no progress bar
+         while it was on screen the whole time. */
       .bar {
         position: fixed;
-        inset: auto 0 0 0;
-        height: 3px;
-        background: rgba(148, 190, 230, 0.13);
+        left: 24px;
+        right: 24px;
+        bottom: 14px;
+        height: 6px;
+        border-radius: 3px;
+        overflow: hidden;
+        background: rgba(148, 190, 230, 0.2);
+        box-shadow: inset 0 0 0 1px rgba(148, 190, 230, 0.14);
       }
 
       /* One long ease-out per stage does the work two animations normally
@@ -133,6 +143,7 @@
         position: relative;
         width: 0;
         height: 100%;
+        border-radius: 3px;
         background: linear-gradient(90deg, #22d3ee 0%, #7dd3fc 55%, #f5c542 100%);
         box-shadow: 0 0 12px rgba(56, 189, 248, 0.55);
         transition: width 5s cubic-bezier(0.16, 1, 0.3, 1);

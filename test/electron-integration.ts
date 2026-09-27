@@ -146,5 +146,25 @@ check('Oversized diagnostic bundle is rejected', rejects(() => diagnosticBundleT
   padding: 'x'.repeat(MAX_DIAGNOSTIC_BUNDLE_BYTES),
 }))))
 
+// Windows portable launcher. electron-builder's portable.nsi calls
+// `SetSilent silent` only when NO splashImage is configured; with one, the NSIS
+// launcher runs in GUI mode and puts up its own dialog and a BgImage window,
+// then tears both down before the app starts -- windows that open and close
+// before JDDC's own splash, with no progress bar on any of them.
+{
+  const packageJson = JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as { build: { portable?: Record<string, unknown> } }
+  check('Windows portable launcher runs silently (no NSIS splashImage)', packageJson.build.portable?.splashImage === undefined)
+}
+
+// The user guide ships inside app.asar. The OS default browser cannot read into
+// an asar, so handing it the path (shell.openPath) did nothing in every
+// installed build; it has to be loaded by an Electron window instead.
+{
+  const mainSource = readFileSync(resolve('electron/main.cjs'), 'utf8')
+  const guideHandler = mainSource.slice(mainSource.indexOf('function registerUserGuideIpc'), mainSource.indexOf('function registerFileArchiveIpc'))
+  check('User guide is not handed to the OS to open', guideHandler.length > 0 && !guideHandler.includes('shell.openPath'))
+  check('User guide opens in an app window', guideHandler.includes('openUserGuideWindow()'))
+}
+
 console.log(`\n${failures === 0 ? 'ALL ELECTRON INTEGRATION CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)

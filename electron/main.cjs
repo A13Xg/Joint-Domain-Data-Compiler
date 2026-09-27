@@ -47,7 +47,31 @@ if (STARTUP_TRACE) {
 }
 
 const isDev = !app.isPackaged
+const useDevServer = isDev
 const packagedRendererUrl = pathToFileURL(path.join(__dirname, '../dist/index.html')).href
+const packagedGuideUrl = pathToFileURL(path.join(__dirname, '../dist/user-guide.html')).href
+
+// Window lifecycle, traced alongside the startup phases. A report of windows
+// that "open and close" at launch cannot be reproduced on every platform here,
+// so the trace names every window this process creates and each time one is
+// shown, hidden or closed -- enough to tell which window a flash belongs to, or
+// that it is not one of ours at all (a portable launcher's extraction splash,
+// say, which runs before this process exists).
+const windowLabels = new WeakMap()
+function labelWindow(window, label) {
+  windowLabels.set(window, label)
+  tracePhase(`window #${window.id} is the ${label}`)
+}
+if (STARTUP_TRACE) {
+  app.on('browser-window-created', (_event, window) => {
+    const id = window.id
+    const name = () => `${windowLabels.get(window) ?? 'unlabelled'} window #${id}`
+    tracePhase(`window #${id} created`)
+    window.on('show', () => tracePhase(`${name()} shown`))
+    window.on('hide', () => tracePhase(`${name()} hidden`))
+    window.on('closed', () => tracePhase(`${name()} closed`))
+  })
+}
 
 // Mirrors the renderer's `projectDirty`, pushed over IPC on every change.
 //
@@ -251,6 +275,7 @@ function openSplash() {
   })
 
   tracePhase('splash window created')
+  labelWindow(window, 'splash')
   splashWindow = window
   // A splash that cannot load is a cosmetic loss, not a startup failure: drop
   // it and let the workbench window reveal on first paint as it did before.
@@ -334,6 +359,7 @@ function createWindow() {
       dismissSplash()
       window.show()
       warmKmlLibrary()
+      exitAfterStartupIfAsked()
       return
     }
     // The workbench is ready, but the splash may only just have appeared.
@@ -351,16 +377,12 @@ function createWindow() {
         // order leaves a beat with no window of ours on screen at all.
         dismissSplash()
         warmKmlLibrary()
-        // Lets test/electron-launch.ts assert on a completed startup without
-        // having to kill a GUI process and race its output.
-        if (process.env.JDDC_EXIT_AFTER_STARTUP) {
-          tracePhase('exiting after startup (JDDC_EXIT_AFTER_STARTUP)')
-          app.quit()
-        }
+        exitAfterStartupIfAsked()
       }, SPLASH_OUTRO_MS)
     }, splashHoldMs())
   }
   revealCurrentWindow = reveal
+  labelWindow(window, 'workbench')
 
   // Defensive: if the ready signal never arrives -- 'ready-to-show' swallowed
   // (observed to be flaky on some Linux/GPU combinations for other Electron
@@ -389,7 +411,7 @@ function createWindow() {
   })
 
   window.webContents.on('will-navigate', (event, url) => {
-    if (!isAllowedAppUrl(url, isDev, packagedRendererUrl)) {
+    if (!isAllowedAppUrl(url, useDevServer, packagedRendererUrl)) {
       event.preventDefault()
       if (url.startsWith('https://')) void shell.openExternal(url)
     }
@@ -401,13 +423,22 @@ function createWindow() {
 
   // loadURL/loadFile reject when the dev server is down or dist/ is missing;
   // unawaited that is a blank window with no explanation anywhere.
-  const load = isDev
+  const load = useDevServer
     ? window.loadURL(DEV_ORIGIN)
     : window.loadFile(path.join(__dirname, '../dist/index.html'))
   load.catch((error) => {
-    reportFatal(isDev ? `Could not load the dev server at ${DEV_ORIGIN}` : 'Could not load the packaged renderer', error)
+    reportFatal(useDevServer ? `Could not load the dev server at ${DEV_ORIGIN}` : 'Could not load the packaged renderer', error)
   })
-  if (isDev) window.webContents.openDevTools({ mode: 'detach' })
+  // Development only. A detached DevTools is a window of its own, so
+  // test/electron-launch.ts turns it off to count only the app's windows.
+  if (useDevServer && !process.env.JDDC_NO_DEVTOOLS) window.webContents.openDevTools({ mode: 'detach' })
+
+  // The guide is a child of the workbench in lifetime, not in stacking: left
+  // open it would keep the app running with no workbench, because
+  // 'window-all-closed' never fires while it exists.
+  window.on('closed', () => {
+    if (guideWindow && !guideWindow.isDestroyed()) guideWindow.close()
+  })
 
   // `forceClose` breaks the recursion: the second close() must pass straight
   // through this handler rather than prompt again.
@@ -436,6 +467,27 @@ function createWindow() {
   })
 
   return window
+}
+
+// Lets test/electron-launch.ts assert on a completed startup without having to
+// kill a GUI process and race its output. JDDC_SMOKE_OPEN_GUIDE additionally
+// opens the user guide first and waits for it to load, which is the only way to
+// prove the guide renders from inside a packaged app's asar.
+function exitAfterStartupIfAsked() {
+  if (!process.env.JDDC_EXIT_AFTER_STARTUP) return
+  const quit = () => {
+    tracePhase('exiting after startup (JDDC_EXIT_AFTER_STARTUP)')
+    app.quit()
+  }
+  if (!process.env.JDDC_SMOKE_OPEN_GUIDE) return quit()
+  const guide = openUserGuideWindow()
+  const timer = setTimeout(quit, 10_000)
+  guide.webContents.once('did-finish-load', () => { clearTimeout(timer); setTimeout(quit, 200) })
+  guide.webContents.once('did-fail-load', (_event, code, description) => {
+    tracePhase(`user guide failed to load (${code} ${description})`)
+    clearTimeout(timer)
+    quit()
+  })
 }
 
 function kmlLibraryDir() {
@@ -706,17 +758,85 @@ function registerKmlLibraryIpc() {
   })
 }
 
+// The user guide, opened in a window of the app's own.
+//
+// It used to be handed to the OS with shell.openPath(). In a packaged build the
+// guide lives INSIDE app.asar, and an asar archive is only a directory to
+// Electron's own fs and loaders -- to the OS default browser the path does not
+// exist, so the info button did nothing on the installed app while working
+// perfectly from a dev checkout. Loading it here reads it straight out of the
+// archive, needs no browser and no network, and keeps it beside the workbench.
+let guideWindow = null
+
+function userGuideUrl() {
+  return useDevServer ? `${DEV_ORIGIN}/user-guide.html` : packagedGuideUrl
+}
+
+/** In-page anchors are the only navigation the guide window allows. */
+function isUserGuideUrl(url) {
+  if (typeof url !== 'string') return false
+  const [withoutHash] = url.split('#')
+  return withoutHash === userGuideUrl()
+}
+
+function openUserGuideWindow() {
+  if (guideWindow && !guideWindow.isDestroyed()) {
+    if (guideWindow.isMinimized()) guideWindow.restore()
+    guideWindow.show()
+    guideWindow.focus()
+    return guideWindow
+  }
+  const window = new BrowserWindow({
+    width: 1120,
+    height: 880,
+    minWidth: 640,
+    minHeight: 480,
+    title: 'Joint Domain Data Compiler — User Guide',
+    backgroundColor: '#0f172a',
+    // Shown at first paint, not on construction, so it never appears as an
+    // empty frame -- the same rule every other window here follows.
+    show: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      // No preload: the guide is a static document and gets no API surface.
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+    },
+  })
+  labelWindow(window, 'user guide')
+  guideWindow = window
+  window.once('ready-to-show', () => { if (!window.isDestroyed()) window.show() })
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https://')) void shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  window.webContents.on('will-navigate', (event, url) => {
+    if (isUserGuideUrl(url)) return
+    event.preventDefault()
+    if (url.startsWith('https://')) void shell.openExternal(url)
+  })
+  window.webContents.on('will-attach-webview', (event) => { event.preventDefault() })
+  window.webContents.on('did-finish-load', () => tracePhase(`user guide loaded (${window.webContents.getTitle()})`))
+  window.on('closed', () => { if (guideWindow === window) guideWindow = null })
+  window.loadURL(userGuideUrl()).catch((error) => {
+    console.warn(`[guide] Could not load the user guide: ${error instanceof Error ? error.message : String(error)}`)
+    if (!window.isDestroyed()) window.destroy()
+  })
+  return window
+}
+
 function registerUserGuideIpc() {
+  // Takes no argument from the renderer, so this handler can only ever open the
+  // one document that ships with the app.
   ipcMain.handle(IPC_CHANNELS.openUserGuide, async () => {
-    // Resolved here rather than passed in from the renderer, so this handler
-    // can only ever open the one document that ships with the app.
-    const guidePath = path.join(__dirname, '../dist/user-guide.html')
-    if (!fs.existsSync(guidePath)) throw new Error('The user guide is not present in this build')
-    // openPath resolves with an error STRING instead of rejecting, so an
-    // unchecked call makes the info button look like a no-op when it fails.
-    const failure = await shell.openPath(guidePath)
-    if (failure) throw new Error(`Could not open the user guide: ${failure}`)
-    return guidePath
+    if (!useDevServer && !fs.existsSync(path.join(__dirname, '../dist/user-guide.html'))) {
+      throw new Error('The user guide is not present in this build')
+    }
+    openUserGuideWindow()
+    return userGuideUrl()
   })
 }
 
