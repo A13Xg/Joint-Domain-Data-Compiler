@@ -165,12 +165,14 @@ code { font-family: var(--mono); background: var(--bg-3); padding: 1px 5px; bord
 
 /* ---------- Workspace / tabs ---------- */
 .workspace { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+/* Wraps rather than clipping. With `overflow: hidden` every tab past the
+   window's width was simply unreachable -- Settings at the default 1480 px
+   window, and everything after Project at the 1100 px minimum. */
 .tab-bar {
-  display: flex; align-items: center; gap: 2px;
+  display: flex; align-items: flex-end; flex-wrap: wrap; gap: 2px;
   padding: 8px 12px 0;
   background: var(--bg-1);
   border-bottom: 1px solid var(--border);
-  overflow: hidden;
 }
 .tab {
   background: transparent;
@@ -185,7 +187,10 @@ code { font-family: var(--mono); background: var(--bg-3); padding: 1px 5px; bord
 .tab:hover:not(:disabled) { background: var(--bg-2); color: var(--text); }
 .tab.active { background: var(--bg-2); color: var(--text); border-color: var(--border); position: relative; }
 .tab.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--accent); }
-.tab-active-name { margin-left: auto; color: var(--text-faint); font-size: 11px; padding-right: 8px; }
+/* Takes whatever the row has left and ellipsizes, so a long filename never
+   forces the tabs onto a second row by itself. */
+.tab-active-name { flex: 1 1 0; min-width: 0; text-align: right; align-self: center; color: var(--text-faint); font-size: 11px; padding: 0 8px 0 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 1560px) { .tab { padding: 8px 10px; } }
 
 .tab-content { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 18px; background: var(--bg-2); display: flex; flex-direction: column; }
 /* Default: a tab's content sizes to itself and .tab-content scrolls. The two
