@@ -360,8 +360,8 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
   return (
     <div className="transform-panel">
       <div className="transform-history">
-        <button type="button" disabled={!canUndo} onClick={onUndo}>↶ Undo</button>
-        <button type="button" disabled={!canRedo} onClick={onRedo}>↷ Redo</button>
+        <button type="button" disabled={!canUndo} onClick={onUndo} title="Undo (Ctrl/⌘+Z)">↶ Undo</button>
+        <button type="button" disabled={!canRedo} onClick={onRedo} title="Redo (Ctrl/⌘+Shift+Z or Ctrl+Y)">↷ Redo</button>
         <span className="muted small">{points.length.toLocaleString()} points</span>
         <label className="chk"><input type="checkbox" checked={scopeToSelection} disabled={!indexRange} onChange={(event) => setScopeToSelection(event.target.checked)} />selected range only{indexRange ? ` (${indexRange.start}–${indexRange.end})` : ''}</label>
         <label className="chk" title="Draw the original and the proposed repair on one frame, and apply nothing until you press Accept"><input type="checkbox" checked={previewRepairs} onChange={(event) => onPreviewRepairsChange(event.target.checked)} />preview repairs</label>

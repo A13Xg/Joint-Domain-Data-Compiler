@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Dataset } from '../core/model'
 import { EMPTY_WORKSPACE_SELECTION } from '../core/selection'
 import { usePointSelection } from '../state/pointSelection'
@@ -30,6 +30,9 @@ import { errorMessage } from '../core/errors'
 import { archiveFile, isDesktopArchiveAvailable, revealFileArchive } from '../desktop/fileArchive'
 
 interface Props {
+  /** Set by the Ctrl/⌘+S shortcut: save once, then report back so it is not repeated. */
+  pendingSave?: boolean
+  onPendingSaveHandled?: () => void
   datasets: Dataset[]
   histories: Record<string, ProjectDatasetHistory>
   activeId: string | null
@@ -50,7 +53,7 @@ interface Props {
   onRestoreProject: (archive: ProjectArchive) => void
 }
 
-export function ProjectPanel({ datasets, histories, activeId, activeTab, workspace, datasetDisplay, bookmarks, operationRecords, namedRecipes, fusionArtifacts, projectName, projectNotes, projectDirty, onWorkspaceChange, onProjectNameChange, onProjectNotesChange, onProjectSaved, onRestoreProject }: Props) {
+export function ProjectPanel({ pendingSave, onPendingSaveHandled, datasets, histories, activeId, activeTab, workspace, datasetDisplay, bookmarks, operationRecords, namedRecipes, fusionArtifacts, projectName, projectNotes, projectDirty, onWorkspaceChange, onProjectNameChange, onProjectNotesChange, onProjectSaved, onRestoreProject }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -98,6 +101,22 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
       setBusy(false)
     }
   }
+
+  // Shortcut-driven save (Ctrl/⌘+S from any tab). Deferred through a timer --
+  // the same pattern the toast timers use -- so the save's state updates happen
+  // in a callback rather than synchronously in the effect body, and the request
+  // is acknowledged in that same callback so it can never run twice.
+  const saveProjectRef = useRef(saveProject)
+  useEffect(() => { saveProjectRef.current = saveProject })
+  const canSave = datasets.length > 0 && !busy
+  useEffect(() => {
+    if (!pendingSave) return
+    const id = window.setTimeout(() => {
+      onPendingSaveHandled?.()
+      if (canSave) void saveProjectRef.current()
+    }, 0)
+    return () => window.clearTimeout(id)
+  }, [pendingSave, canSave, onPendingSaveHandled])
 
   const exportManifest = () => {
     downloadBlob(new Blob([serializeProjectManifest(manifest)], { type: 'application/json' }), `${safeName(manifest.name)}.manifest.json`)
@@ -216,7 +235,7 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
       <div className="analysis-toolbar">
         {projectDirty && <span className="badge">Unsaved changes</span>}
         <label className="num-field"><span>project name</span><input type="text" value={projectName} placeholder={manifest.name} onChange={(event) => onProjectNameChange(event.target.value)} /></label>
-        <button type="button" className="export-btn" disabled={datasets.length === 0 || busy} onClick={() => void saveProject()}>{busy ? 'Working…' : 'Save complete project'}</button>
+        <button type="button" className="export-btn" disabled={datasets.length === 0 || busy} onClick={() => void saveProject()} title="Save complete project (Ctrl/⌘+S from any tab)">{busy ? 'Working…' : 'Save complete project'}</button>
         <button type="button" disabled={busy} onClick={() => inputRef.current?.click()}>Open project</button>
         <button type="button" disabled={datasets.length === 0 || busy} onClick={exportManifest}>Export manifest only</button>
         <button type="button" disabled={datasets.length === 0 || busy} onClick={() => setReportDialogOpen(true)}>Export report (HTML / PDF)</button>

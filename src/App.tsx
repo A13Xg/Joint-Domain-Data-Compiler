@@ -21,6 +21,7 @@ import type { OtherTrack } from './ui/MapView'
 import { restoreWorkspaceDisplay, syncWorkspaceDisplay, type WorkspaceDisplay } from './state/workspaceDisplay'
 import type { EditPointFields } from './core/operations/edit-point'
 import { useWindowFileDrop } from './ui/useWindowFileDrop'
+import { matchShortcut, shortcutsSuppressed } from './ui/shortcuts'
 import { ImportView } from './ui/ImportView'
 import { getSelectedPointIndex, getSelectedRange, restorePointSelection } from './state/pointSelection'
 import type { ProjectArchive, ProjectDatasetHistory } from './persistence/project/archive'
@@ -858,6 +859,29 @@ export default function App() {
     logger.info('transform', 'Redo')
   }, [active, history])
 
+  // Ctrl/⌘+S from any tab: switch to Project and let its own save run there,
+  // rather than a second copy of the archive-building code living up here.
+  const [pendingProjectSave, setPendingProjectSave] = useState(false)
+  const clearPendingProjectSave = useCallback(() => setPendingProjectSave(false), [])
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const action = matchShortcut(event)
+      if (!action || shortcutsSuppressed(event.target, document)) return
+      event.preventDefault()
+      if (action === 'guide') openUserGuide()
+      else if (action === 'open') fileInputRef.current?.click()
+      else if (action === 'undo') undo()
+      else if (action === 'redo') redo()
+      else if (action === 'save') {
+        if (datasets.length === 0) { flashToast('Nothing to save yet — load a dataset first.', 'info'); return }
+        setTab('project')
+        setPendingProjectSave(true)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [undo, redo, datasets.length, flashToast])
+
   const removeDataset = useCallback((id: string) => {
     const remaining = datasets.filter((dataset) => dataset.id !== id)
     setDatasets(remaining)
@@ -969,7 +993,7 @@ export default function App() {
       <header className="app-header"><div className="brand"><span className="brand-mark">JD</span><div><h1>Joint Domain Data Compiler</h1><p>TSPI flight-data conversion &amp; analysis workbench</p></div></div><div className="header-status">{busy && <Spinner label={busy} />}<StatusLight tone={statusTone} label={statusLabel} detail={statusDetail} /><button type="button" className="header-help" onClick={openUserGuide} title="Open the user guide" aria-label="Open the user guide">?</button></div></header>
       <div className="app-body">
         <aside className="sidebar">
-          <button type="button" className="primary-action" onClick={() => fileInputRef.current?.click()}>+ Load data</button>
+          <button type="button" className="primary-action" onClick={() => fileInputRef.current?.click()} title="Load data (Ctrl/⌘+O)">+ Load data</button>
           <input ref={fileInputRef} type="file" multiple className="hidden-input" accept=".csv,.tsv,.txt,.gpx,.geojson,.json,.kml,.kmz,.nmea,.gps,.log,.gpb,.bin,.msnP5,.rpt,.teq" onChange={(event) => { onFiles(event.target.files); event.target.value = '' }} />
           <div className="dataset-list">{datasets.length === 0 && <p className="muted small pad">No datasets yet.</p>}{datasets.map((dataset) => <div key={dataset.id} className={`dataset-item${dataset.id === activeId ? ' active' : ''}`} onClick={() => { setActiveId(dataset.id); if (tab === 'import' || tab === 'mapping') setTab('overview') }}><div className="dataset-item-main"><span className="dataset-name">{dataset.name}</span><span className="dataset-sub mono">{dataset.sourceFormat} · {dataset.points.length.toLocaleString()} pts</span></div><button type="button" className="dataset-remove" onClick={(event) => { event.stopPropagation(); removeDataset(dataset.id) }} aria-label="Remove dataset">×</button></div>)}</div>
           <div className="sidebar-foot"><span className="muted small">Supported in:</span><div className="format-badges">{INPUT_FORMATS.map((format) => <span key={format.id} className="badge" title={format.description}>{format.label}</span>)}</div></div>
@@ -991,7 +1015,7 @@ export default function App() {
               {tab === 'compare' && <ComparisonPanel datasets={datasets} activeId={activeId} workspace={workspace.comparison} onWorkspaceChange={(comparison) => { setWorkspace((current) => ({ ...current, comparison })); setProjectDirty(true) }} onSelectReferenceSample={(datasetId, pointIndex) => { const reference = datasets.find((dataset) => dataset.id === datasetId); if (!reference) return; restorePointSelection(reference.points, pointIndex, null); setActiveId(datasetId) }} />}
               {tab === 'scene3d' && active && <Trajectory3dPanel dataset={active} datasets={datasets} display={syncedDisplay} workspace={workspace.scene3d} onWorkspaceChange={(scene3d) => { setWorkspace((current) => ({ ...current, scene3d })); setProjectDirty(true) }} />}
               {tab === 'transform' && active && <div className="transform-workspace"><TransformPanel dataset={active} onApply={applyTransform} onUndo={undo} onRedo={redo} canUndo={!!history && history.past.length > 0} canRedo={!!history && history.future.length > 0} operationHistory={operationRecords[active.id] ?? []} replaySource={history?.past[0]} namedRecipes={namedRecipes[active.id] ?? []} onSaveRecipe={(recipe) => { setNamedRecipes((current) => ({ ...current, [active.id]: [...(current[active.id] ?? []), recipe] })); setProjectDirty(true) }} onDeleteRecipe={(recipeId) => { setNamedRecipes((current) => ({ ...current, [active.id]: (current[active.id] ?? []).filter((recipe) => recipe.id !== recipeId) })); setProjectDirty(true) }} onReplay={applyReplay} onRestoreOriginal={restoreOriginal} onNotify={flashToast} previewRepairs={previewRepairs} onPreviewRepairsChange={setPreviewRepairs} /><NotionalSmoothingPanel dataset={active} onCreateDataset={addDataset} /></div>}
-              {tab === 'project' && <ProjectPanel datasets={datasets} histories={histories} activeId={activeId} activeTab={workspace.lastWorkspaceTab} workspace={workspace} datasetDisplay={syncedDisplay} bookmarks={bookmarks} operationRecords={operationRecords} namedRecipes={namedRecipes} fusionArtifacts={fusionArtifacts} projectName={projectName} projectNotes={projectNotes} projectDirty={projectDirty} onWorkspaceChange={(next) => { setWorkspace(next); setProjectDirty(true) }} onProjectNameChange={(name) => { setProjectName(name); setProjectDirty(true) }} onProjectNotesChange={(notes) => { setProjectNotes(notes); setProjectDirty(true) }} onProjectSaved={() => setProjectDirty(false)} onRestoreProject={restoreProject} />}
+              {tab === 'project' && <ProjectPanel pendingSave={pendingProjectSave} onPendingSaveHandled={clearPendingProjectSave} datasets={datasets} histories={histories} activeId={activeId} activeTab={workspace.lastWorkspaceTab} workspace={workspace} datasetDisplay={syncedDisplay} bookmarks={bookmarks} operationRecords={operationRecords} namedRecipes={namedRecipes} fusionArtifacts={fusionArtifacts} projectName={projectName} projectNotes={projectNotes} projectDirty={projectDirty} onWorkspaceChange={(next) => { setWorkspace(next); setProjectDirty(true) }} onProjectNameChange={(name) => { setProjectName(name); setProjectDirty(true) }} onProjectNotesChange={(notes) => { setProjectNotes(notes); setProjectDirty(true) }} onProjectSaved={() => setProjectDirty(false)} onRestoreProject={restoreProject} />}
 
               {tab === 'export' && active && <ExportPanel dataset={active} />}
               {tab === 'settings' && <SettingsPanel />}
