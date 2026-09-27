@@ -1,5 +1,8 @@
 import { test, type Page } from '@playwright/test'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { buildP5Fixture } from '../helpers/p5Fixture'
 import { resolve } from 'node:path'
 
 // Capture tool, not an assertion suite. It regenerates every screenshot in
@@ -160,4 +163,29 @@ test('capture the repair flow screenshots', async ({ page }) => {
   await page.locator('.dialog-backdrop').waitFor()
   await shoot(page, '20-repair-preview')
   await page.locator('.dialog-backdrop').getByRole('button', { name: 'Revert', exact: true }).click()
+})
+
+// P5: built from the synthetic fixture the format tests use, never from a real
+// recording -- a real one is operational data, and this image ships in the guide.
+test('capture the P5 mission screenshot', async ({ page }) => {
+  test.setTimeout(120_000)
+  mkdirSync(OUTPUT_DIR, { recursive: true })
+  const dir = mkdtempSync(join(tmpdir(), 'jddc-guide-p5-'))
+  const { msn, rpt } = buildP5Fixture({ extraBlocks: 60 })
+  // A .teq is a preallocated 220,000-byte file carrying only the start clock.
+  const teq = new Uint8Array(220_000)
+  teq.set([0x05, 0x01, 0x03, 0x00, 0x09, 0x0f, 0x1e, 0x00], 0)
+  const files = { msn: join(dir, 'SYNTHETIC-RANGE-P5-01.msnP5'), rpt: join(dir, 'SYNTHETIC-RANGE-P5-01.rpt'), teq: join(dir, 'SYNTHETIC-RANGE-P5-01.teq') }
+  writeFileSync(files.msn, msn)
+  writeFileSync(files.rpt, rpt)
+  writeFileSync(files.teq, teq)
+
+  // Tall enough that the whole card is on screen: it scrolls inside the tab,
+  // and an element shot only captures what is currently scrolled into view.
+  await page.setViewportSize({ width: 1400, height: 2400 })
+  await page.goto('/')
+  await page.locator('input[type="file"]').setInputFiles([files.msn, files.rpt, files.teq])
+  await page.locator('.p5-roster').waitFor()
+  await settle(page)
+  await shootElement(page, '.p5-card', '21-p5-mission')
 })

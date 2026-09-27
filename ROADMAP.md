@@ -9,10 +9,32 @@ audit of parsers, exporters, accessibility, settings, tests, desktop integration
 checks; the rest are carryover, which is why the total list is longer than that — nothing was
 trimmed to hit a number.
 
-**Current Release:** v0.4.0
-**Latest Stable:** v0.4.0
+**Current Release:** v0.7.0
+**Latest Stable:** v0.7.0
 
 ---
+
+## Shipped in 0.7.0
+
+Full detail in `CHANGELOG.md`. Roadmap-relevant items:
+
+- [x] **Enrich the comparison report section (part 2 of 2)** — `distributionStats` /
+  `summarizeComparisonDistributions` / `histogram` in `core/analytics/comparisonSummary.ts`: n, min,
+  median, P95 (linear interpolation), max and sample std dev for slant range, horizontal range,
+  |vertical separation| and closure rate, shown in the Compare tab and the report, plus a 20-bin
+  slant-range histogram as inline SVG in the report.
+- [x] **PDF report export** — decided as "the app renders it": desktop uses Electron's
+  `printToPDF` on the existing print stylesheet (hidden, script-disabled window, temp file, native
+  save dialog); the browser build opens the report with the print dialog up. No bundled PDF library.
+- [x] **Playback controls refinement (3D part)** — 3D playback is now proportional to recorded time
+  with a UTC / `T+` readout. Map and chart playback surfaces are unchanged; the remaining scope is
+  a shared playback clock across views.
+- [x] **3D view correctness** — the camera orbited upside down and companion tracks were drawn
+  re-centred onto the primary; both fixed, with an orientation gizmo, keyboard control and
+  per-track colours added.
+- [x] **Desktop user guide** — opens in an app window from `app.asar` (it silently failed in every
+  installed build).
+
 
 ## Shipped in 0.4.0
 
@@ -317,7 +339,7 @@ session). Kept here only as the historical record other roadmap sections cross-r
 7. Y-axis zoom and pan ✅
 
 ### Comparison Module
-- [ ] **Enrich the comparison report section (part 2 of 2)** — Part 1 shipped this session (see
+- [x] **Enrich the comparison report section (part 2 of 2)** — Shipped in 0.7.0 (see above). Original scoping kept for the record: Part 1 shipped (see
   *Comparison results reach the HTML report* above): `ProjectPanel`'s report export now passes a
   re-derived `comparison`, so `buildComparisonSection` is live rather than permanently dead code.
   What remains is the originally-scoped enrichment: a stats helper (median/p95/stddev over
@@ -377,7 +399,7 @@ session). Kept here only as the historical record other roadmap sections cross-r
 
 ## New: Export
 
-- [ ] **PDF report export** — The HTML analysis report has no direct PDF path; browser
+- [x] **PDF report export** — Shipped in 0.7.0 (see above). Original note: the HTML analysis report had no direct PDF path; browser
   print-to-PDF is the only route today. Small if scoped as "a documented print stylesheet," larger
   if scoped as "a bundled PDF renderer" — needs a decision before sizing further.
 

@@ -17,7 +17,7 @@ material behind `public/user-guide.html`, and stands on its own as a developer r
 - **StatusLight** — persistent indicator: `idle` ("No datasets loaded"), `busy` ("Working"), `ok` ("Ready", shows dataset count), `warn` (N warnings), `error` (N errors); precedence: errors > warnings > ok
 
 ### Sidebar
-- **"+ Load data" button** — opens hidden `<input type="file" multiple>` picker; accepts `.csv,.tsv,.txt,.gpx,.geojson,.json,.kml,.kmz,.nmea,.gps,.log,.gpb,.bin`
+- **"+ Load data" button** — opens hidden `<input type="file" multiple>` picker; accepts `.csv,.tsv,.txt,.gpx,.geojson,.json,.kml,.kmz,.nmea,.gps,.log,.gpb,.bin,.msnP5,.rpt,.teq`
 - **Dataset list** — one row per loaded dataset (name, source format, point count `format · N pts`)
   - Click row → sets active dataset; if on Import/Mapping tab, switches to Overview
   - **Remove button (×)** — deletes dataset, history, operation records, recipes, bookmarks, fusion artifacts; reconciles Comparison refs; re-selects another dataset if removed one was active
@@ -42,7 +42,11 @@ Always present; tabs enabled/disabled by state:
 15. **P5 Mission** — enabled if any loaded dataset has `sourceFormat === 'p5'`
 16. **Settings** — always enabled
 
-**Active dataset name** shown at right of tab bar.
+**Active dataset name** shown at right of tab bar; it shrinks into whatever the row has left and ellipsizes, with the full name on hover.
+
+**Wraps, never clips** — the bar wraps onto a second row in a narrow window (tabs tighten below 1560 px). It used to be `overflow: hidden`, which made Settings unreachable at the default 1480 px window and everything after Project unreachable at the 1100 px minimum.
+
+**`?` user-guide button** (header and Settings) — desktop: opens the bundled guide in an app window (see Part 24); browser: opens `user-guide.html` in a named tab.
 
 ### Global Progress & Control
 - **Progress bar** — visible when `progress !== null` (CSV analysis/build); shows % + busy text
@@ -379,9 +383,10 @@ All read-only by default; editable text inputs when unlocked:
 - **Usage hint text** — documents gestures; conditional sentence: "Ctrl/⌘+click or +drag adds to delete set…" OR "Zoom in to build delete set…"; note about downsampling budget (Settings)
 
 ### Chart Legend
-- Per channel: color swatch (8-color palette), human label (dataset displayName+unit or raw key)
-- **Show/Hide toggle** per item — calls `onToggleChannel(channelKey)`; toggles item visibility class + label state
-- **Note:** deliberately decoupled from TimeSeriesChart's `selected` channels; affects only legend UI
+- One entry per **plotted** series, in plot order, with the swatch in the exact colour the line is drawn with
+- **Hide** per entry — removes that series from the chart through the same toggle as its channel chip (the entry disappears with it; re-select the chip to restore)
+- Standalone `ChartLegend` still defaults to a dataset's plottable channels and an 8-colour palette when no `channels` / `colorFor` are passed
+- **Fixed in 0.7.0:** it used to keep visibility state of its own that nothing plotted from, so its Show/Hide buttons did nothing, and it omitted elevation
 
 ### Chart Type Selector
 - **Buttons** — "Time Series" / "Scatter" / "Area" (`role="group"` labeled "Chart type"); `aria-pressed` marks active
@@ -508,9 +513,13 @@ All read-only by default; editable text inputs when unlocked:
 - **Ground grid checkbox**
 - **Vertical curtain checkbox**
 - **Points checkbox**
-- **Reset camera button**
-- **Top / Side view buttons**
+- **Reset camera button** — default oblique view from above
+- **Top** — straight down, north up the screen (matches the Map); **Side** — along the horizon towards north
 - **Fit trajectory button** — resets zoom/pan, keeps yaw/pitch
+- **Orientation gizmo** — E / N / U axes in the lower-left corner, drawn through the scene's rotation; an axis pointing at the viewer collapses to its label
+- **Floor** — the grid and the curtain's foot sit at the scene's lowest sample (across all tracks), not at the first sample's height
+- **Vertical curtain** — each drop line runs to that sample's own projected foot on the floor
+- **Companion tracks** — compatible datasets that are *visible* in the Sources tab, each in its Sources colour, listed by name under the scene. All tracks are projected through one shared frame (fixed in 0.7.0: companions used to be re-centred onto the primary track)
 
 ### Selection & Playback
 - **Selection chips:**
@@ -520,10 +529,12 @@ All read-only by default; editable text inputs when unlocked:
 - **Restart button** — resets playback position to 0
 - **Playback scrubber** — range input 0–1; `aria-label="Playback position"` (manual scrub pauses playback)
 - **Playback speed select** — "0.25×", "0.5×", "1×", "2×", "4×"
-- **Playback % readout** — "{pct}%"
+- **Playback readout** — sample UTC time and `T+m:ss` elapsed; "{pct}% (untimed — by sample order)" when timestamps are missing or out of order
+- **Time-proportional playback** — marker and scrubber positions map to recorded time (`playbackVertexIndex`), falling back to sample order for untimed/out-of-order tracks
 
 ### Interaction
-- **Orbit drag** — left-drag rotates camera (yaw/pitch)
+- **Orbit drag** — left-drag rotates camera (yaw/pitch). Dragging **down raises the camera** (fixed in 0.7.0: the projection rotated by −pitch, so it used to view from below the floor and the Top preset was a side view)
+- **Keyboard (canvas focused, `tabIndex=0`)** — arrows orbit (same directions as dragging), Shift+arrows pan, `+`/`-` zoom, `Home`/`0` reset
 - **Pan drag** — shift+drag or right-drag pans camera; right-click context menu suppressed
 - **Wheel zoom** — clamped 0.15×–12×
 - **Hover select** — nearest vertex within 18px hit radius sets shared hover
@@ -607,7 +618,9 @@ All read-only by default; editable text inputs when unlocked:
   - Rows: time-aligned pairs; `Kind` = interpolated/observed
   - Capped to first 250 rows: "Showing first 250 aligned samples."
   - Reference-index link button per row (`aria-label="Select reference point {i}"`); calls `onSelectReferenceSample`
+- **Distribution table** — for slant range, horizontal range, |vertical separation| and closure rate: n, min, median, P95 (linear interpolation), max, sample std dev (n − 1); display units follow Settings; non-finite values skipped, empty quantities omitted
 - **Export comparison CSV** — downloads/archives aligned samples + drift estimate
+- **Ref index link** — styled as an inline link (`.link-button`); the table no longer inherits the key/value table's 45% first column
 
 ---
 
@@ -722,7 +735,7 @@ No interactive controls; pure rendering driven by caller (RepairPreviewDialog).
   - Uses native `window.confirm("Open this project and discard unsaved workspace changes?")` only if `projectDirty`
   - **Note:** ProjectPanel is the one place `window.confirm` survives (not ConfirmDialog)
 - **"Export manifest only" button** — human-readable JSON project manifest without embedded data; disabled with 0 datasets or busy
-- **"Export HTML report" button** — opens ReportExportDialog; disabled with 0 datasets or busy
+- **"Export report (HTML / PDF)" button** — opens ReportExportDialog; disabled with 0 datasets or busy
 
 ### Diagnostics
 - **Diagnostics note textarea** — placeholder "Describe what happened…"; optional free-text included in bundle
@@ -735,11 +748,11 @@ No interactive controls; pure rendering driven by caller (RepairPreviewDialog).
 - **"Open archive folder" button** — opens desktop local file archive; Electron-only; calls `revealFileArchive()`
 - **Error/status line** — dynamic text showing last error or success/status message
 
-### ReportExportDialog (opened from "Export HTML report" button)
+### ReportExportDialog (opened from "Export report (HTML / PDF)" button)
 
 #### Configuration
 - **Report title field** — prefilled with suggested title (project name + date)
-- **Download filename field** — prefilled from suggested filename; sanitized separately; preview shows "{sanitizedFilename}.html"
+- **Download filename field** — prefilled from suggested filename; sanitized separately; preview shows "{sanitizedFilename}.html" / ".pdf" and how PDF is produced on this platform
 - **"Evidence sections (n/N included)" `<details>` checklist** — 9 checkboxes:
   1. Source file, checksum, parser, reference-frame metadata
   2. Import/parser warnings
@@ -760,7 +773,8 @@ No interactive controls; pure rendering driven by caller (RepairPreviewDialog).
 #### Actions
 - **"Cancel" button** — closes dialog; no download
 - **Escape key / backdrop click** — both close (no download)
-- **"Generate report" button** — builds self-contained HTML analysis report
+- **"Save PDF" button** — same report as PDF. Desktop: `saveReportPdf` IPC renders it in a hidden, script-disabled window via `printToPDF` (A4, CSS page size) from a temp file, then a native save dialog. Browser: opens the report in a new tab with the print dialog up; a blocked pop-up is reported as an error
+- **"Save HTML" button** — builds self-contained HTML analysis report
   - Title, generated timestamp, app version, datasets, bookmarks, operation records, overlays
   - Latest fusion run's report if fusion has run ≥1 time (only most recent)
   - Cross-dataset comparison summary, when that section is enabled: re-derived at export time
@@ -769,6 +783,8 @@ No interactive controls; pure rendering driven by caller (RepairPreviewDialog).
     comparison that aligned nothing reports zero samples rather than claiming no comparison
     exists. Re-deriving runs the alignment synchronously, so enabling the section on two long
     tracks can briefly block at export time; the work is skipped entirely when it is off.
+    Includes the distribution table (n / min / median / P95 / max / std dev per quantity) and a
+    20-bin slant-range histogram as inline SVG.
   - Downloads file
 
 ---
@@ -778,11 +794,11 @@ No interactive controls; pure rendering driven by caller (RepairPreviewDialog).
 ### Display
 - **Empty state** — "Load one or more datasets to manage sources." (shown when 0 datasets)
 - **Explanation text** — "Toggle which loaded datasets are visible as additional color-coded paths on map…Visibility is display-only — never changes or removes any dataset."
-- **Sources table** — columns: active marker (●), color chip, name, format, points, visible checkbox, action
-  - Read-only except checkboxes & action button
+- **Sources table** — columns: active marker (●), colour, name, format, points, visible checkbox, action
 
 ### Interactions
-- **Visibility checkbox** — per dataset, `aria-label="Toggle visibility of {name}"`; toggles WorkspaceDisplay `visible` flag (affects Map `otherTracks`)
+- **Colour picker** — per dataset (`aria-label="Track colour for {name}"`); `setColor` accepts only `#rrggbb`, the rule a restored project is validated against. Drives the map, 3D and legends; saved with the project
+- **Visibility checkbox** — per dataset, `aria-label="Toggle visibility of {name}"`; toggles WorkspaceDisplay `visible` flag (affects Map `otherTracks` and 3D companions)
 - **"Make active" button** — sets that dataset as active dataset; only shown for non-active rows
 
 ---
@@ -861,13 +877,19 @@ Call-site labels:
 
 ### Launch Splash
 - Frameless 800×343 always-on-top window, opened as the first act of Electron's `ready`, before any IPC registration or filesystem work
-- Shows the product name, version and an easing progress bar; all of it painted from inline CSS so the **first paint is already a complete splash**. The 222 KB plate is an enhancement that fades in and is never waited on
+- Shows the product name, version and an easing progress bar (a 6 px inset track since 0.7.0 — the old 3 px line on the window's bottom edge read as a border); all of it painted from inline CSS so the **first paint is already a complete splash**. The 222 KB plate is an enhancement that fades in and is never waited on
 - **Three independent routes make it visible** — document first paint, an artwork-decoded report from its preload, and a last-resort timer (`SPLASH_FALLBACK_SHOW_MS`). Any one suffices; the previous single-route design showed nothing at all when its one message was lost
 - A splash whose renderer or preload dies is dismissed rather than left hidden; the artwork report is accepted only from the splash's own renderer
 - Progress stages: `boot` 0.18 → `renderer` 0.32 (workbench `dom-ready`) → `workbench` 0.55 (workbench `did-finish-load`, still before `App.tsx` is imported) → `ready` 1.0 (renderer reports mounted)
 - **The workbench reveals on its own first paint whenever the splash is not visible** (`splashShownAt === null`), so a failed splash cannot hold the window back
 - `SPLASH_MIN_VISIBLE_MS` (900 ms) only binds on launches fast enough to outrun it, so a slow launch pays nothing for it
-- **`JDDC_STARTUP_TRACE=1`** prints one line per startup phase, including the pre-`ready` gap no in-app window can cover. `JDDC_EXIT_AFTER_STARTUP=1` quits once the workbench reports in, for `test/electron-launch.ts`
+- **`JDDC_STARTUP_TRACE=1`** prints one line per startup phase, including the pre-`ready` gap no in-app window can cover, **and every window the process creates, labelled, with each show/hide/close**. `JDDC_EXIT_AFTER_STARTUP=1` quits once the workbench reports in; `JDDC_SMOKE_OPEN_GUIDE=1` / `JDDC_SMOKE_REPORT_PDF=1` additionally open the guide and render a report PDF first; `JDDC_NO_DEVTOOLS=1` suppresses the dev-mode DevTools window. All for `test/electron-launch.ts`
+- **Windows portable launcher runs silent** — no NSIS `splashImage` (removed in 0.7.0). With one, electron-builder's portable launcher runs in NSIS GUI mode and flashes its own dialog and a BgImage window before the app starts
+
+### User Guide Window
+- Opened by the `?` buttons through the `openUserGuide` IPC (no arguments — the path is resolved in main)
+- A sandboxed, preload-free `BrowserWindow` loading `dist/user-guide.html` out of `app.asar` (dev: the dev server's copy); the OS default browser cannot read inside an asar, which is why `shell.openPath` did nothing in installed builds before 0.7.0
+- Reused and focused if already open; shown at first paint; navigation locked to in-page anchors; `https://` links go to the system browser; closed when the workbench closes
 
 ### File Archive
 - **`archiveFile(direction, name, data)`** — best-effort duplicate-save of every imported/exported file into local archive folder (outside Downloads); failures logged as warnings, never thrown
@@ -887,11 +909,13 @@ Call-site labels:
 - **Window** — 1480×920 default, min 1100×700, dark (`#0f172a`), held hidden until `ready-to-show` or 1s fallback
 - **External links** — redirected to OS default browser via `shell.openExternal`
 - **Unsaved-changes close guard** — native modal dialog; buttons: "Close without saving" (id 0, forces close) / "Cancel" (id 1, default, aborts)
-- **DevTools** — auto-opened in detached mode when `isDev`
+- **DevTools** — auto-opened in detached mode when `isDev` (unless `JDDC_NO_DEVTOOLS`)
 - **KML library IPC** — handlers: `list`, `save`, `readText`, `remove`, `reseed`, `reveal`
 - **File archive IPC** — handlers: `archiveFile`, `revealArchive`
 - **Window-state IPC** — `setUnsavedChanges` (one-way send)
 - **Diagnostics IPC** — `saveDiagnostics` (native save dialog, returns path or null)
+- **Report PDF IPC** — `saveReportPdf(html, suggestedName)`: HTML must be a complete document ≤ 64 MB; suggested name reduced to a bare `*.pdf` basename; returns the saved path or null
+- **User guide IPC** — `openUserGuide` (see User Guide Window)
 - **Startup KML fetch** — background, non-blocking, caches overlays before Map tab opened
 
 ### Electron Preload
@@ -899,6 +923,8 @@ Call-site labels:
   - `platform`, `isDesktop: true`
   - `kmlLibrary.{list, save, readText, remove, reseed, reveal}`
   - `diagnostics.save(text)`
+  - `saveReportPdf(html, suggestedName)`
+  - `openUserGuide()`
   - `fileArchive.{save, reveal}`
   - `setUnsavedChanges(dirty)`
 
@@ -928,6 +954,13 @@ becomes a gap in the user guide.
 
 Appears once a `.msnP5` is loaded. Format reference: `docs/P5-MSN.md`.
 
+### Files in this set
+- Table of the three files — `.msnP5`, `.rpt`, `.teq` — with what each is and what this session holds of it:
+  - `.msnP5`: loaded, with size
+  - `.rpt` (block index, confirmed): supplied and cross-checked / supplied but disagreeing (warning) / not supplied — derived from the recording, and export writes a fresh one
+  - `.teq` (contents not decoded): supplied with matching start time / supplied with a different start time (warning) / not supplied — export produces `.msnP5` + `.rpt` only
+- Claims keep `docs/P5-MSN.md`'s evidence tiers
+
 ### Recording summary
 - Mission date, block count, subframe count, duration at 10 Hz, instrumented-vs-total slot count
 - Any load warnings (e.g. a `.rpt` index that disagrees with the recording) shown inline
@@ -943,7 +976,7 @@ Appears once a `.msnP5` is loaded. Format reference: `docs/P5-MSN.md`.
 
 ### Participant roster
 - One row per slot; **show all 50 slots** toggle reveals the slots that carry no data
-- Editable: **callsign** (20 chars), **aircraft id** (8), **unit** (8), **type code** (one byte, 0–255)
+- Editable: **callsign** (20 chars), **aircraft id** (8), **unit** (8), **type code** (one byte, 0–255; shown in hex beside the field; wide enough for three digits — it used to clip to one)
 - **Colour** — per-slot swatch bound to the workspace display settings; does *not* round-trip into the file
 - Edited rows highlighted until **Apply**; applying patches the source document and rebuilds tracks
 - **Discard changes** — drops unapplied roster edits and re-reads the roster from the recording
@@ -959,7 +992,7 @@ Appears once a `.msnP5` is loaded. Format reference: `docs/P5-MSN.md`.
 - **Validate structure & integrity** — re-walks every block, subframe and slot record; reports counts, clock anomalies, and any invariant violations
 - Includes the **per-subframe XOR integrity word** covering all 4,400 payload bytes of every subframe — the format's only whole-payload check, so a single flipped byte anywhere is caught
 - Position edits maintain that word incrementally, so an edited file stays internally consistent and an edit-then-undo restores the original bytes exactly
-- **Export .msnP5 + .rpt (+ .teq)** — patches the imported bytes and emits the whole set; an unedited export is byte-identical to the source
+- **Export .msnP5 + .rpt (+ .teq)** — the button names the `.teq` when one was supplied; patches the imported bytes and emits the whole set; an unedited export is byte-identical to the source
 - **Disabled while the georeference form differs from the one the tracks were built with**, with an inline explanation: exporting then would rewrite every sample through a transform it was never in. Rebuild first
 - Roster edits are validated as a batch and applied all-or-nothing; only the fields that actually changed are written
 - P5 exports are not mirrored into the desktop file archive — a 450 MB shadow copy per export is not a safety net worth its cost

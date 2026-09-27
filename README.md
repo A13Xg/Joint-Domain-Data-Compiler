@@ -5,8 +5,8 @@
      on `v*` tags, so a `branch=main` badge only ever sees stale manual runs and
      reads "failing" while every release is green. Bump the tag with package.json;
      test/release-integrity.ts fails if they drift. -->
-[![Windows package](https://img.shields.io/github/check-runs/A13Xg/Joint-Domain-Data-Compiler/v0.6.0?nameFilter=release%20%2F%20Package%20Windows&label=Windows%20v0.6.0)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/releases/tag/v0.6.0)
-[![Linux package](https://img.shields.io/github/check-runs/A13Xg/Joint-Domain-Data-Compiler/v0.6.0?nameFilter=release%20%2F%20Package%20Linux&label=Linux%20v0.6.0)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/releases/tag/v0.6.0)
+[![Windows package](https://img.shields.io/github/check-runs/A13Xg/Joint-Domain-Data-Compiler/v0.7.0?nameFilter=release%20%2F%20Package%20Windows&label=Windows%20v0.7.0)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/releases/tag/v0.7.0)
+[![Linux package](https://img.shields.io/github/check-runs/A13Xg/Joint-Domain-Data-Compiler/v0.7.0?nameFilter=release%20%2F%20Package%20Linux&label=Linux%20v0.7.0)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/releases/tag/v0.7.0)
 [![macOS package](https://img.shields.io/badge/macOS-built_on_demand-64748b)](https://github.com/A13Xg/Joint-Domain-Data-Compiler/actions/workflows/release-macos.yml)
 [![Runtime audit](https://img.shields.io/badge/runtime_audit-0_high%2Fcritical-15803d)](FUTURE_CONSIDERATIONS.md)
 
@@ -21,8 +21,9 @@ JDDC is a functional engineering workbench with a strong deterministic core. It 
 ### Documentation
 
 - **In-app user guide** — press the **?** button in the header (or in Settings) for the illustrated
-  guide to every tab, control, and keyboard gesture. It ships with the app and works offline;
-  the source is `public/user-guide.html`.
+  guide to every tab, control, and keyboard gesture. It ships with the app and works offline —
+  the desktop app opens it in a window of its own, read from the installed files; the source is
+  `public/user-guide.html`.
 - **`FEATURE_INVENTORY.md`** — Exhaustive reference for every control and behavior in the workbench.
 - **`CHANGELOG.md`** — User-visible changes grouped by release.
 - **`ROADMAP.md`** — Planned features, phases, and future direction.
@@ -42,7 +43,7 @@ JDDC is a functional engineering workbench with a strong deterministic core. It 
 | NMEA 0183 | `.nmea .gps .log` | ✓ | ✓ | GGA, RMC and GLL with checksum handling. |
 | GPB | `.gpb .bin` | ✓ | ✓ | Compact JDDC numeric binary transport. GPB is not a complete lossless workspace format. |
 | EAG TSPI | `.eag .txt` | ✓ | ✓ | European Air Group TSPI: tab-delimited ECEF coordinates from NATO/European range instrumentation. Filename-based date extraction and per-row HH:MM:SS time reconstruction. |
-| P5 CTS mission | `.msnP5` (+ `.rpt`, `.teq`) | △ | ✓ | P5 Combat Training System recording. Reverse-engineered container: 10 Hz, 50-slot roster, one track per instrumented slot. Positions use an **operator-supplied range georeference** — the file does not record one. Exports the whole set back out byte-identically. Desktop recommended: a recording is typically 400–500 MB and is held in memory for the session, which a browser tab may refuse. See [`docs/P5-MSN.md`](docs/P5-MSN.md). |
+| P5 CTS mission | `.msnP5` (+ `.rpt`, `.teq`) | △ | ✓ | P5 Combat Training System recording. Reverse-engineered container: 10 Hz, 50-slot roster, one track per instrumented slot. Positions use an **operator-supplied range georeference** — the file does not record one. The `.rpt` is a block index (optional — JDDC can rebuild it); the `.teq` is an undecoded companion carried through byte-for-byte. Exports the whole set back out byte-identically. Desktop recommended: a recording is typically 400–500 MB and is held in memory for the session, which a browser tab may refuse. See [`docs/P5-MSN.md`](docs/P5-MSN.md). |
 
 All supported inputs normalize into a shared dataset model with source metadata, channel definitions, provenance fields, warnings and quality flags.
 
@@ -115,19 +116,23 @@ Multi-pane layouts, explicit per-series scales, statistical plots and image expo
 ### 3D
 
 - Local ENU trajectory geometry rendered through a custom Canvas perspective/orthographic viewer.
-- Orbit, pan, zoom, reset, fit, point picking, channel coloring, altitude exaggeration, ground grid, vertical curtain and linked cursor/selection/ranges.
-- Fraction-based playback and speed controls.
+- Orbit (mouse or keyboard), pan, zoom, Top/Side/reset/fit presets, point picking, channel coloring, altitude exaggeration, floor grid, vertical curtain and linked cursor/selection/ranges.
+- An E/N/U orientation gizmo drawn through the scene's rotation.
+- Compatible companion tracks in one shared frame, each in its Sources-tab colour.
+- Playback proportional to recorded time, with a UTC / elapsed-time readout and speed control.
 
-Timestamp-accurate playback, follow/chase behavior, multi-track rendering and performance validation remain roadmap work.
+Follow/chase behavior and performance validation remain roadmap work.
 
 ### Comparison
 
 - Two-dataset reference/target comparison.
 - Nearest-time or interpolated alignment with tolerance/gap controls and manual target time offset.
 - Local-ENU relative position, horizontal/slant range, bearing, vertical separation, closure rate and closest approach.
+- Distribution statistics (n, min, median, P95, max, std dev) per quantity, and a slant-range histogram in the report.
 
-Time/altitude-reference compatibility guards are applied before sensitive analysis. Drift
-estimation, multi-track comparison visualization and richer reports remain roadmap work.
+Time/altitude-reference compatibility guards are applied before sensitive analysis. Clock
+offset/drift is estimated for nearest-time alignment. Multi-track comparison visualization remains
+roadmap work.
 
 ## Transforms
 
@@ -159,13 +164,13 @@ JDDC can save and reopen a bounded, self-contained gzip `.jddc-project` archive 
 - bookmarks.
 - validated transform/operation history.
 
-The Project tab can also export a self-contained, print-ready HTML analysis report with dataset
-statistics, source/reference metadata, quality-event evidence, warnings, bookmarks and recorded
-transform history. Its light VectorPunk/HUD visual system is designed for economical printing
-and browser-based PDF export.
+The Project tab can also export a self-contained analysis report — as HTML, or as PDF — with
+dataset statistics, source/reference metadata, quality-event evidence, warnings, bookmarks,
+recorded transform history and, optionally, comparison distributions and a range histogram. The
+desktop app renders the PDF itself; in a browser the report opens with the print dialog up.
 
 Archive schema migration infrastructure is in place. Operation recipes, annotations, compact
-history and richer reports remain roadmap work.
+history remain roadmap work.
 
 ## Export
 

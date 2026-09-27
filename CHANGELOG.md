@@ -3,6 +3,77 @@
 Notable user-facing and operational changes are recorded here. This project follows Semantic
 Versioning; release tags use the `vX.Y.Z` form.
 
+## 0.7.0 - 2026-09-27
+
+### Fixed
+
+- **The 3D view orbited upside down.** The projection rotated by −pitch, so a positive pitch put
+  the camera *below* the floor looking up: dragging down tipped the scene the wrong way, the
+  default view was from underneath, and the **Top** preset (pitch 0) was actually a side view. The
+  rotation itself is corrected (not the drag sign flipped), so dragging down now raises the camera,
+  **Top** looks straight down with north up — matching the Map — and **Side** looks along the
+  horizon towards north. `test/scene-camera.ts` pins the visible behaviour.
+- **3D companion tracks were drawn on top of the primary track.** Each track was centred on its
+  own vertices, so two tracks a kilometre apart overlapped in a view labelled "shared ENU frame".
+  All tracks now project through one frame. The grid and the vertical curtain use the scene's real
+  floor instead of the first sample's height and a fixed 120 px screen line.
+- **The user guide did nothing in installed desktop builds.** The `?` button handed the guide to
+  the OS with `shell.openPath()`, but in a packaged app it lives inside `app.asar`, which only
+  Electron can read — so it worked from a checkout and failed silently everywhere else. It now
+  opens in a sandboxed app window that reads it straight out of the archive, with no browser and
+  no network. The packaged smoke gate now opens it through the real IPC on every release.
+- **Windows portable: windows that opened and closed before the app.** electron-builder's portable
+  launcher only runs silently when no `splashImage` is configured; with the bitmap added in 0.5.x
+  it ran in NSIS GUI mode, putting up its own dialog and a BgImage window and tearing both down
+  before JDDC started. The splash image is removed. The startup trace now names every window the
+  app creates, and the release smoke prints it, so any remaining flash can be attributed.
+- **The launch splash's progress bar was easy to miss** — a 3 px line on the window's bottom edge
+  that read as a border. It is now a 6 px inset track.
+- **README platform badges read "failing" while every release was green.** They queried
+  `release.yml` on `main`, where the only runs are stale manual dispatches from August; packaging
+  runs on tags. Windows and Linux badges are now pinned to the release tag's own check runs (and
+  `test/release-integrity.ts` fails if the pin drifts from `package.json`); macOS, which is never on
+  the automatic path, says it is built on demand.
+- **P5 roster type code was clipped** to about one visible digit by an 8ch field; it now fits three
+  digits and shows the hex value beside it. Callsign / aircraft id / unit inputs had no `type` and
+  missed the theme's input styling.
+- **Tabs were unreachable in a narrow window.** The tab bar was `overflow: hidden`: Settings was
+  cut off at the default 1480 px window, and everything after Project at the 1100 px minimum. It
+  now wraps.
+- **The chart legend's Hide/Show buttons did nothing.** It kept visibility state of its own that
+  nothing plotted from, omitted elevation, and coloured swatches from a different palette. It now
+  lists the plotted series in their drawn colours, and Hide works like the channel chips.
+- Controls rendering with browser defaults because their rule was missing or did not match: the
+  Compare table's index column took 45% of the width (a key/value table rule leaking into data
+  grids), the Clip-to-time-window fields showed 9 of 24 characters, project and diagnostic notes
+  were cramped unstyled textareas beside inline captions, the Sources colour column was empty,
+  "other visible" track names on the map spilled off the toolbar, the Fusion priority field was
+  pinned to the far edge, and Export's output-name field was unthemed.
+- `test/electron-launch.ts` no longer fails when no dev server is running; it serves `dist/` with
+  `vite preview` itself. (Loading `dist/` over plain `file://` is not an option: the dev Electron
+  binary fails a random subset of lazy chunks there, while the packaged app — reading from
+  `app.asar` — loads every one.)
+
+### Added
+
+- **P5: "Files in this set".** A table on each recording saying what the `.msnP5`, `.rpt` and
+  `.teq` each are and what this session holds of them: the `.rpt` is a block index JDDC can rebuild
+  (supplied and cross-checked, or derived), the `.teq` is an undecoded companion carried
+  byte-for-byte. The export button names the `.teq` when one will be written. The guide gains a
+  P5 section screenshot, captured from a synthetic recording.
+- **Save the analysis report as PDF.** The export dialog offers *Save PDF* beside *Save HTML*. The
+  desktop app renders it in a hidden, script-disabled window with `printToPDF` and asks where to
+  save; a browser opens the report with the print dialog up.
+- **Comparison distribution statistics** — n, min, median, P95, max and standard deviation for
+  slant range, horizontal range, |vertical separation| and closure rate, in the Compare tab and the
+  report, plus a slant-range histogram in the report.
+- **3D:** an E/N/U orientation gizmo; keyboard camera control (arrows orbit, Shift+arrows pan,
+  +/− zoom, Home resets); playback proportional to recorded time with a UTC / `T+` readout
+  (falling back to sample order, and saying so, for untimed tracks); companion tracks in their
+  Sources colours with a named legend, following the Sources visibility toggle.
+- **Track colour is editable for every dataset** from the Sources tab (it was only editable for P5
+  slots), and drives the map, 3D and legends.
+
 ## 0.6.0 - 2026-09-26
 
 ### Fixed

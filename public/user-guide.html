@@ -191,7 +191,8 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
     <tbody>
       <tr><td>Dataset list</td><td>One row per loaded dataset, with its format and point count. Click a row to make it the active dataset — every view follows the active dataset. The <code>×</code> removes it along with its history, operation records, recipes, and bookmarks.</td></tr>
       <tr><td>Status light</td><td>Idle, busy, ready, warning, or error, with a count. Errors take precedence over warnings, warnings over ready, so the worst current state is always what you see.</td></tr>
-      <tr><td>Tab bar</td><td>Tabs enable themselves as they become usable: most need an active dataset, Compare and Fusion need two, Project needs at least one. A disabled tab means the data it needs is not loaded yet.</td></tr>
+      <tr><td>Tab bar</td><td>Tabs enable themselves as they become usable: most need an active dataset, Compare and Fusion need two, Project needs at least one. A disabled tab means the data it needs is not loaded yet. In a narrow window the bar wraps onto a second row rather than hiding tabs; the active dataset's name sits at the end of the row (hover it for the full name).</td></tr>
+      <tr><td><code>?</code> (user guide)</td><td>Opens this guide. In the desktop app it opens in a window of the app's own, read straight from the installed files — no browser and no network needed.</td></tr>
       <tr><td>Undo / Redo</td><td>Steps through applied transforms for the active dataset. History is per dataset, so undoing on one track never touches another.</td></tr>
       <tr><td>Log dock</td><td>The bar along the bottom. Collapsed by default showing the last line; expand it for the full stream with level and text filters, plus Export and Clear.</td></tr>
       <tr><td>Toasts</td><td>Transient confirmations in the corner, up to three at a time. They dismiss themselves; the same information is in the log if you miss one.</td></tr>
@@ -342,6 +343,7 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
       <tr><td>x-axis</td><td>Time, sample index, cumulative distance, or (scatter only) any numeric channel.</td></tr>
       <tr><td>Export SVG / PNG</td><td>Writes the current chart to a file, at the resolution you see.</td></tr>
       <tr><td>Reset zoom</td><td>Clears both axes back to the full extent.</td></tr>
+      <tr><td>Legend</td><td>Below the plot: one entry per plotted series, in the colour it is drawn with. <em>Hide</em> removes that series from the chart, exactly like clicking its chip; click the chip again to bring it back.</td></tr>
     </tbody>
   </table></div>
 
@@ -440,6 +442,15 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
     </tbody>
   </table></div>
 
+  <h3>Distribution table</h3>
+  <p>Below the summary cards, for slant range, horizontal range, vertical separation (as a
+  magnitude, so “above” and “below” do not cancel) and closure rate: the number of samples, min,
+  median, 95th percentile, max and standard deviation. The means on the cards cannot tell a track
+  that sits 50 m off all sortie from one that is exact until it jumps 2 km; the median and P95 can.
+  P95 interpolates between order statistics and the standard deviation is the sample (n − 1) form.
+  The same table, plus a slant-range histogram, goes into the HTML/PDF report when its comparison
+  section is included.</p>
+
   <div class="caution">
     <strong>Incompatible metadata blocks the comparison.</strong>
     If the two tracks declare different altitude or time references, the app refuses to compare them
@@ -454,7 +465,7 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
 
   <figure>
     <img src="user-guide/11-scene3d.png" alt="The 3D tab showing a trajectory rendered in perspective with camera and playback controls.">
-    <figcaption>The trajectory with a ground grid. Drag to orbit, wheel to zoom.</figcaption>
+    <figcaption>The trajectory above its floor grid, with the orientation axes in the lower-left corner. Drag to orbit, wheel to zoom.</figcaption>
   </figure>
 
   <div class="tablewrap"><table class="wrap">
@@ -462,9 +473,26 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
     <tbody>
       <tr><td>altitude exaggeration</td><td>Scales the vertical axis from 0.1× to 100×. A long, shallow flight needs exaggeration before its profile is readable.</td></tr>
       <tr><td>projection</td><td>Perspective for a natural view, orthographic for measuring shape without foreshortening.</td></tr>
-      <tr><td>ground grid / vertical curtain</td><td>A reference plane, and dropped lines from the track to it, to make altitude legible.</td></tr>
-      <tr><td>Reset / Top / Side / Fit</td><td>Preset camera positions.</td></tr>
-      <tr><td>Playback</td><td>Play, pause, restart, scrub, and 0.25×–4× speed. The cursor stays linked to the other views as it moves.</td></tr>
+      <tr><td>ground grid / vertical curtain</td><td>A reference plane at the scene's lowest sample, and a line from each sample straight down to it, to make altitude legible.</td></tr>
+      <tr><td>Reset / Top / Side / Fit</td><td>Preset camera positions. <em>Top</em> looks straight down with north up the screen, like the map. <em>Side</em> looks along the horizon towards north. <em>Fit</em> resets zoom and pan but keeps your orbit.</td></tr>
+      <tr><td>Orientation axes</td><td>E (east), N (north) and U (up) in the lower-left corner, turned with the scene, so a view from above can never be mistaken for one from below. An axis pointing straight at you shrinks to its label.</td></tr>
+      <tr><td>Playback</td><td>Play, pause, restart, scrub, and 0.25×–4× speed. The marker moves in proportion to <em>recorded time</em>, so it jumps across a gap and crawls through densely sampled stretches, and the readout shows the sample's UTC time and elapsed <code>T+</code> time. A track without usable timestamps plays by sample order and says so. The cursor stays linked to the other views as it moves.</td></tr>
+      <tr><td>Companion tracks</td><td>Other loaded datasets with compatible reference metadata share the scene, each in its Sources-tab colour and named in the legend under the scene. Hide one in the Sources tab to take it out of the 3D view as well as the map.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>3D camera controls</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Input</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td>Drag</td><td>Orbit. Dragging <em>down</em> raises the camera to look more from above, as if pulling the near edge of the scene towards you; dragging right swings the near side right.</td></tr>
+      <tr><td><kbd>Shift</kbd> + drag, or right-drag</td><td>Pan</td></tr>
+      <tr><td>Wheel</td><td>Zoom</td></tr>
+      <tr><td>Arrow keys (scene focused)</td><td>Orbit, in the same directions as dragging</td></tr>
+      <tr><td><kbd>Shift</kbd> + arrow keys</td><td>Pan</td></tr>
+      <tr><td><kbd>+</kbd> / <kbd>−</kbd></td><td>Zoom in / out</td></tr>
+      <tr><td><kbd>Home</kbd> or <kbd>0</kbd></td><td>Reset the camera</td></tr>
+      <tr><td>Click (no drag)</td><td>Select the nearest sample everywhere</td></tr>
     </tbody>
   </table></div>
 </section>
@@ -591,6 +619,24 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
   <p>Recordings are large — a two-hour sortie is around 450 MB, and the file is held for the
   session so it can be exported byte-for-byte. Use the desktop app for these if you can.</p>
 
+  <figure>
+    <img src="user-guide/21-p5-mission.png" alt="The P5 Mission card for a synthetic recording: a table of the three files in the set and their status, the range georeference form, the participant roster with type codes in decimal and hex, and the coverage and export sections.">
+    <figcaption>A synthetic recording loaded with its <code>.rpt</code> and <code>.teq</code>. Real recordings are operational data and never appear in this guide.</figcaption>
+  </figure>
+
+  <h3>The three files: <code>.msnP5</code>, <code>.rpt</code> and <code>.teq</code></h3>
+  <p>A recording arrives as three files sharing one name. Drop all three in the same batch and they are paired by
+  name; the <em>Files in this set</em> table at the top of the card shows what each one is and what this session
+  has of it.</p>
+  <div class="tablewrap"><table class="wrap">
+    <thead><tr><th>File</th><th>What it is</th><th>If you leave it out</th></tr></thead>
+    <tbody>
+      <tr><td><code>.msnP5</code></td><td>The recording. Every position sample for every roster slot, one block per mission second, plus the participant roster.</td><td>Nothing to load — this is the data.</td></tr>
+      <tr><td><code>.rpt</code></td><td>A <strong>block index</strong>: where each one-second block starts inside the <code>.msnP5</code>, and the mission date. It holds no samples; it exists so a reader can jump to any second of a 400 MB file without walking it. When supplied, JDDC cross-checks it against the recording and warns if they disagree.</td><td>Nothing is lost. Every block after the first has a fixed size, so JDDC derives the index from the recording itself, and export writes a fresh <code>.rpt</code>.</td></tr>
+      <tr><td><code>.teq</code></td><td>A companion table whose contents are <strong>not decoded</strong>. In the one recording examined it held the mission start time and was otherwise all zeros; its size fits a per-participant table that sortie never filled. What would fill it (equipment configuration, weapons events, line-up changes) is unknown. JDDC reads only the start time, to check the file belongs to this mission, and otherwise carries it untouched.</td><td>The tracks are unaffected. Export then produces the <code>.msnP5</code> and <code>.rpt</code> only; supply the <code>.teq</code> if the set you hand on has to match the set you received.</td></tr>
+    </tbody>
+  </table></div>
+
   <div class="caution">
     <strong>The coordinates are an assumption, and the app says so every time.</strong>
     A P5 recording stores positions in a range-local frame whose origin and unit scale are not
@@ -625,7 +671,8 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
   </div>
 
   <h3>Editing the roster</h3>
-  <p>Callsign, aircraft id, unit and the one-byte aircraft type code are editable per slot. Edited
+  <p>Callsign, aircraft id, unit and the one-byte aircraft type code are editable per slot; the type code is
+  shown in hex beside the field too, which is how the format reference lists the observed values. Edited
   rows are highlighted until you press <em>Apply</em>. Tick <em>show all 50 slots</em> to reach the
   slots that carry no data — their identity fields are still part of the file.</p>
 
@@ -633,7 +680,7 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
   not applied yet are carried through a rebuild rather than lost.</p>
 
   <h3>Exporting</h3>
-  <p><em>Export .msnP5 + .rpt</em> writes the recording back out by patching the bytes that were
+  <p><em>Export .msnP5 + .rpt</em> (<em>+ .teq</em> when one was supplied) writes the recording back out by patching the bytes that were
   read, not by rebuilding the file. An export with no edits is byte-identical to the file you
   imported. If you dropped the <code>.teq</code> in with it, that is written alongside unchanged,
   so you get back the same set you brought in. Two things deliberately do not round-trip:
@@ -661,6 +708,10 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
     <img src="user-guide/17-sources.png" alt="The Sources tab listing datasets with colour chips, point counts, visibility checkboxes, and make-active buttons.">
     <figcaption>Per-dataset colour, visibility, and active selection in one place.</figcaption>
   </figure>
+
+  <p>Click a dataset's colour swatch to pick a new colour. It is the colour that track is drawn in on the map,
+  in the 3D view and in the chart legends, and it is saved with the project. Unticking <em>visible</em> takes a
+  dataset out of the map and the 3D view without removing it.</p>
 </section>
 
 <section id="export">
@@ -716,16 +767,22 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
       <tr><td>Save complete project</td><td>A <code>.jddc-project</code> archive: every dataset, its history snapshots, operation records, recipes, bookmarks, notes, and workspace state.</td></tr>
       <tr><td>Open project</td><td>Restores all of the above. Confirms first, since it replaces the current session.</td></tr>
       <tr><td>Export manifest only</td><td>The human-readable project description with no embedded point data.</td></tr>
-      <tr><td>Export HTML report</td><td>A self-contained analysis report — see below.</td></tr>
+      <tr><td>Export report (HTML / PDF)</td><td>A self-contained analysis report, saved as HTML or PDF — see below.</td></tr>
       <tr><td>Export diagnostic bundle</td><td>Logs and environment details for a bug report, with a note you write yourself.</td></tr>
     </tbody>
   </table></div>
 
-  <h3>The HTML analysis report</h3>
+  <h3>The analysis report (HTML or PDF)</h3>
   <figure>
     <img src="user-guide/15-report-dialog.png" alt="The report export dialog showing a title field, filename field, and a checklist of evidence sections.">
-    <figcaption>Choose what the report includes before it is generated. Nothing downloads until you confirm.</figcaption>
+    <figcaption>Choose what the report includes before it is generated. Nothing is saved until you press Save PDF or Save HTML.</figcaption>
   </figure>
+
+  <p><em>Save HTML</em> writes one self-contained file with no scripts and no external resources.
+  <em>Save PDF</em> produces the same report as a PDF: the desktop app renders it itself and asks where
+  to save it; in a browser the report opens in its own tab with the print dialog up, where you choose
+  <em>Save as PDF</em>. Either way the report's print layout is used — plain background, A4 pages,
+  sections kept whole where they fit.</p>
 
   <p>Nine evidence sections can be included or left out: source metadata, import warnings, quality
   events, bookmarks, operation history, cross-dataset comparison, fusion decisions, data quality, and
@@ -851,6 +908,16 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
   the <em>portable</em> build — the executable unpacking itself into a temporary folder on every
   single launch. If that line dominates, install the app with the regular installer instead of
   running the portable build; an installed copy runs from disk and skips the unpacking entirely.</p>
+
+  <p>The trace also names every window the app opens — the splash, the workbench, and the user
+  guide when you open it — and each time one is shown or closed. If you see a window appear and
+  vanish that is not in that list, it is not the app's: the portable build's unpacking step used to
+  flash two of its own before the app started, and no longer does.</p>
+
+  <h3>The <code>?</code> button did nothing</h3>
+  <p>In desktop builds before 0.7.0 the guide was handed to the operating system to open, which
+  cannot read inside the app's packaged files. It now opens in an app window. This page is also in
+  the repository as <code>public/user-guide.html</code>.</p>
 
 
   <h3>A tab is greyed out</h3>

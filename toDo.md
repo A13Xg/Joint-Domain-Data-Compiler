@@ -14,4 +14,6 @@ Done:
 - Launch loading skeleton + code-split every tab but Import, so the window
   never sits blank while the workbench loads (bytes needed before first
   paint down ~63%, 745 KB -> 275 KB).
-
+- 0.7.0 pass: 3D orbit direction and shared frame, README badges, P5 type code and .rpt/.teq
+  explanation, user guide inside the desktop app, portable launcher ghost windows, UI audit of
+  every tab, 3D gizmo/keyboard/time playback, comparison distributions, PDF report.
