@@ -178,6 +178,7 @@ ensureBuiltinOperationsRegistered()
 
 const VALID_OPERATION_PARAMS: Record<string, unknown[]> = {
   'offset-elevation': [{ meters: 12.5 }, { meters: -3 }, { meters: 0 }],
+  'declare-references': [{ altitudeReference: 'MSL' }, { timeReference: 'GPS' }, { altitudeReference: 'HAE', timeReference: 'UTC' }],
   'shift-time': [{ seconds: 30 }, { seconds: -1.25 }],
   'standard-kinematics': [undefined, {}],
   'resample-fixed-rate': [
@@ -229,6 +230,7 @@ const VALID_OPERATION_PARAMS: Record<string, unknown[]> = {
 // JSON `__proto__` key rides alongside a valid `meters`.
 const TOLERATED_BY_OPERATION: Record<string, string[]> = {
   'offset-elevation': ['prototype-polluting key', 'negative fields'],
+  'declare-references': [],
   'shift-time': ['negative fields'],
   'standard-kinematics': ['undefined', 'empty object'],
   'resample-fixed-rate': [],

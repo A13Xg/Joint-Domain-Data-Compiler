@@ -371,7 +371,7 @@ code { font-family: var(--mono); background: var(--bg-3); padding: 1px 5px; bord
    the comparison table's index column took 45% of the width. */
 table.compact-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 14px; }
 table.compact-table td { padding: 3px 8px; border-bottom: 1px solid var(--bg-3); vertical-align: top; }
-table.compact-table td:first-child { color: var(--text-dim); width: 45%; white-space: nowrap; }
+table.compact-table td:first-child { color: var(--text-dim); width: 45%; white-space: nowrap; text-align: left; }
 table.compact-table td:last-child { text-align: right; word-break: break-word; }
 /* An action that reads as a value, e.g. a clickable sample index in a grid. */
 .link-button { background: none; border: none; padding: 0; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }

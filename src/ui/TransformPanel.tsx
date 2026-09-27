@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Dataset, TrackPoint } from '../core/model'
+import type { AltitudeReference, Dataset, TimeReference, TrackPoint } from '../core/model'
+import { ALTITUDE_REFERENCES, TIME_REFERENCES } from '../core/operations/references'
 import type { DuplicateTimestampPolicy, UntimedPointPolicy } from '../core/transforms'
 import type { ElevationFilterMode } from '../core/operations/filters'
 import type { ReducePointsMode } from '../core/operations/reduce'
@@ -21,9 +22,12 @@ import { ComputeClient, type ComputeRunHandle } from '../compute/client'
 import { logger } from '../core/logger'
 import { errorMessage, isAbortError } from '../core/errors'
 
+export interface DeclaredReferences { altitudeReference: AltitudeReference; timeReference: TimeReference }
+
 interface Props {
   dataset: Dataset
-  onApply: (points: TrackPoint[], summary: string, preserveSelection: boolean, record?: OperationRecord) => void
+  /** `references` is set only when an operation changed the declared altitude/time reference. */
+  onApply: (points: TrackPoint[], summary: string, preserveSelection: boolean, record?: OperationRecord, references?: DeclaredReferences) => void
   onUndo: () => void
   onRedo: () => void
   canUndo: boolean
@@ -87,6 +91,18 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
   const [smoothCoords, setSmoothCoords] = useState(false)
   const [smoothEle, setSmoothEle] = useState(true)
   const [timeShift, setTimeShift] = useState(0)
+  const [declaredAltitude, setDeclaredAltitude] = useState<AltitudeReference>(dataset.metadata?.altitudeReference ?? 'UNKNOWN')
+  const [declaredTime, setDeclaredTime] = useState<TimeReference>(dataset.metadata?.timeReference ?? 'UNKNOWN')
+  // Re-seed the pickers when the active dataset or its declared references
+  // change (switching tracks, undo), adjusting state during render rather than
+  // in an effect -- the same pattern TimeSeriesChart uses.
+  const referencesKey = `${dataset.id}|${dataset.metadata?.altitudeReference}|${dataset.metadata?.timeReference}`
+  const [seededReferencesKey, setSeededReferencesKey] = useState(referencesKey)
+  if (seededReferencesKey !== referencesKey) {
+    setSeededReferencesKey(referencesKey)
+    setDeclaredAltitude(dataset.metadata?.altitudeReference ?? 'UNKNOWN')
+    setDeclaredTime(dataset.metadata?.timeReference ?? 'UNKNOWN')
+  }
   const [eleOffset, setEleOffset] = useState(0)
   const [elevationFilterMode, setElevationFilterMode] = useState<ElevationFilterMode>('median')
   const [medianWindow, setMedianWindow] = useState(5)
@@ -218,7 +234,13 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
           return
         }
       }
-      commitRepair(execution.dataset.points, execution.record.summary, execution.record.warnings, preserveSelection, execution.record)
+      // Points are all most operations change; a reference declaration changes
+      // metadata only, which the points-based apply path would otherwise drop.
+      const nextMeta = execution.dataset.metadata
+      const references = nextMeta && (nextMeta.altitudeReference !== dataset.metadata?.altitudeReference || nextMeta.timeReference !== dataset.metadata?.timeReference)
+        ? { altitudeReference: nextMeta.altitudeReference, timeReference: nextMeta.timeReference }
+        : undefined
+      commitRepair(execution.dataset.points, execution.record.summary, execution.record.warnings, preserveSelection, execution.record, references)
     } catch (error) {
       logger.error('transform', `Transform failed: ${errorMessage(error)}`)
       onNotify(`${getOperation(operationId)?.label ?? operationId} failed: ${errorMessage(error)}`, 'error')
@@ -266,13 +288,13 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
 
   // Logging lives here rather than at compute time: a repair that is previewed
   // and reverted never ran, and the log must not claim otherwise.
-  const commitRepair = (points: TrackPoint[], summary: string, warnings: string[], preserveSelection: boolean, record?: OperationRecord) => {
+  const commitRepair = (points: TrackPoint[], summary: string, warnings: string[], preserveSelection: boolean, record?: OperationRecord, references?: DeclaredReferences) => {
     logger.info('transform', summary)
     for (const warning of warnings) logger.warn('transform', warning)
     // The applied-summary toast is raised by App.applyTransform, which is the
     // single place every apply path funnels through — including undo/redo and
     // replay. Raising one here as well produced two identical toasts.
-    onApply(points, summary, preserveSelection, record)
+    onApply(points, summary, preserveSelection, record, references)
   }
 
   const acceptPendingRepair = () => {
@@ -485,6 +507,11 @@ export function TransformPanel({ dataset, onApply, onUndo, onRedo, canUndo, canR
         <Op title="Derive kinematics" desc="Compute distance, ground/vertical speed, heading, turn rate, acceleration, and sample timing. Full dataset only."><button type="button" onClick={() => void runReplayable('standard-kinematics', {})}>Apply</button></Op>
         <Op title="Shift time" desc="Add a fixed offset to timestamps."><NumField label="seconds" value={timeShift} onChange={setTimeShift} step={1} /><button type="button" onClick={() => void runReplayable('shift-time', { seconds: timeShift })}>Apply</button></Op>
         <Op title="Offset elevation" desc="Datum correction."><NumField label="meters" value={eleOffset} onChange={setEleOffset} step={1} /><button type="button" onClick={() => void runReplayable('offset-elevation', { meters: eleOffset })}>Apply</button></Op>
+        <Op title="Declare references" desc={`What this track's altitudes and times are measured against — currently altitude ${dataset.metadata?.altitudeReference ?? 'UNKNOWN'}, time ${dataset.metadata?.timeReference ?? 'UNKNOWN'}. Compare, 3D and Fusion treat an unknown reference as not comparable. This relabels only; no value is converted.`}>
+          <label className="num-field"><span>altitude reference</span><select value={declaredAltitude} onChange={(event) => setDeclaredAltitude(event.target.value as AltitudeReference)}>{ALTITUDE_REFERENCES.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+          <label className="num-field"><span>time reference</span><select value={declaredTime} onChange={(event) => setDeclaredTime(event.target.value as TimeReference)}>{TIME_REFERENCES.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+          <button type="button" disabled={declaredAltitude === (dataset.metadata?.altitudeReference ?? 'UNKNOWN') && declaredTime === (dataset.metadata?.timeReference ?? 'UNKNOWN')} onClick={() => void runReplayable('declare-references', { altitudeReference: declaredAltitude, timeReference: declaredTime }, { preserveSelection: true })}>Apply</button>
+        </Op>
       </OpGroup>
 
       {pendingRepair && <RepairPreviewDialog request={pendingRepair.request} onAccept={acceptPendingRepair} onRevert={revertPendingRepair} />}

@@ -10,6 +10,7 @@ import { elevationFilterOperation, smoothOperation } from './filters'
 import { reducePointsOperation } from './reduce'
 import { fixedRateResampleOperation } from './resample'
 import { roundPrecisionOperation } from './round-precision'
+import { declareReferencesOperation } from './references'
 import {
   clipTimeRangeOperation, dejitterTimestampsOperation, dropInvalidOperation, sortByTimeOperation, swapLatLonOperation,
 } from './structure'
@@ -82,6 +83,7 @@ const BUILTIN_OPERATIONS: OperationDefinition<never>[] = [
   dropInvalidOperation,
   dejitterTimestampsOperation,
   clipTimeRangeOperation,
+  declareReferencesOperation,
   // Outliers & smoothing
   dropOutliersOperation,
   editPointOperation,

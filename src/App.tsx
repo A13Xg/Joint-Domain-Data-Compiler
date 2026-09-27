@@ -22,6 +22,7 @@ import { restoreWorkspaceDisplay, syncWorkspaceDisplay, type WorkspaceDisplay } 
 import type { EditPointFields } from './core/operations/edit-point'
 import { useWindowFileDrop } from './ui/useWindowFileDrop'
 import { matchShortcut, shortcutsSuppressed } from './ui/shortcuts'
+import type { DeclaredReferences } from './ui/TransformPanel'
 import { ImportView } from './ui/ImportView'
 import { getSelectedPointIndex, getSelectedRange, restorePointSelection } from './state/pointSelection'
 import type { ProjectArchive, ProjectDatasetHistory } from './persistence/project/archive'
@@ -651,9 +652,10 @@ export default function App() {
   }, [ingestFile, flashToast])
   useWindowFileDrop(onFiles, setDragActive)
 
-  const applyTransform = useCallback((points: TrackPoint[], summary: string, preserveSelection: boolean, suppliedRecord?: OperationRecord) => {
+  const applyTransform = useCallback((points: TrackPoint[], summary: string, preserveSelection: boolean, suppliedRecord?: OperationRecord, references?: DeclaredReferences) => {
     if (!active) return
-    const next = withPoints(active, points)
+    const rebuilt = withPoints(active, points)
+    const next = references && rebuilt.metadata ? { ...rebuilt, metadata: { ...rebuilt.metadata, ...references } } : rebuilt
     const selectedPointIndex = getSelectedPointIndex(active.points)
     const selectedRange = getSelectedRange(active.points)
     // Every TransformPanel card supplies a record now that all its operations
