@@ -90,3 +90,6 @@ table.sources-table input[type='number'] { width: 8ch; }
    cell rather than a faint one — a barely-visible gap defeats the purpose. */
 .p5-coverage-bar { display: flex; gap: 1px; height: 18px; border: 1px solid var(--border); border-radius: 3px; overflow: hidden; background: var(--bg-2); }
 .p5-coverage-cell { flex: 1 1 0; min-width: 0; }
+.analysis-summary.scene-optin { display: flex; flex-direction: column; gap: 4px; }
+.analysis-summary.scene-companions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.scene-companion { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12px; }

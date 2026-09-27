@@ -6,7 +6,7 @@ import { buildSharedTrajectory3dGeometry, playbackTimeRange, playbackVertexIndex
 import { DEFAULT_SCENE_CAMERA, SIDE_SCENE_CAMERA, TOP_SCENE_CAMERA, axisScreenDirections, cameraForKey, orbitCamera, projectEnu, sceneFrame, type SceneCamera, type SceneFrame, type SceneProjection } from '../visualization/scene3d/camera'
 import type { WorkspaceDisplay } from '../state/workspaceDisplay'
 import { epochMsToIso } from '../core/format'
-import { assessDatasetCompatibility } from '../core/metadataCompatibility'
+import { planSceneCompanions } from '../visualization/scene3d/companions'
 import { usePointSelection } from '../state/pointSelection'
 import { useAppSettings } from '../state/settings'
 import { SelectionChip } from './SelectionChip'
@@ -36,11 +36,18 @@ export function Trajectory3dPanel({ dataset, datasets, display, workspace, onWor
   const dragRef = useRef<{ x: number; y: number; pan: boolean; moved: boolean } | null>(null)
   const { pointIndex, hoverIndex, indexRange, selectPoint, setHoverIndex, clearPointSelection, clearRangeSelection, clearHover } = usePointSelection(dataset.points)
   const { scenePointBudget } = useAppSettings()
-  const shared3d = useMemo(() => {
-    // Companions follow the Sources tab's visibility, like the map's other tracks.
-    const compatible = datasets.filter((candidate) => candidate.id !== dataset.id && display?.[candidate.id]?.visible !== false && assessDatasetCompatibility(dataset, candidate).level === 'compatible')
-    return buildSharedTrajectory3dGeometry([dataset, ...compatible].map((candidate) => ({ id: candidate.id, points: candidate.points })), { altitudeExaggeration, maxPoints: scenePointBudget, colorChannelId: colorChannelId || undefined })
-  }, [dataset, datasets, display, altitudeExaggeration, colorChannelId, scenePointBudget])
+  const [includeUnknownReferences, setIncludeUnknownReferences] = useState(false)
+  // Companions follow the Sources tab's visibility, like the map's other tracks.
+  // Every other dataset lands in exactly one bucket of the plan, and each bucket
+  // that is not drawn is counted on screen: a track must never just be absent.
+  const companionPlan = useMemo(
+    () => planSceneCompanions(dataset, datasets.filter((candidate) => display?.[candidate.id]?.visible !== false), includeUnknownReferences),
+    [dataset, datasets, display, includeUnknownReferences],
+  )
+  const shared3d = useMemo(
+    () => buildSharedTrajectory3dGeometry([dataset, ...companionPlan.included].map((candidate) => ({ id: candidate.id, points: candidate.points })), { altitudeExaggeration, maxPoints: scenePointBudget, colorChannelId: colorChannelId || undefined }),
+    [dataset, companionPlan, altitudeExaggeration, colorChannelId, scenePointBudget],
+  )
   const geometry = shared3d.tracks[0]!.geometry
   // Each companion in its own Sources-tab colour: a P5 sortie puts every
   // instrumented aircraft in this scene, and one shared purple made them
@@ -49,10 +56,12 @@ export function Trajectory3dPanel({ dataset, datasets, display, workspace, onWor
     id: track.id,
     name: datasets.find((candidate) => candidate.id === track.id)?.name ?? track.id,
     color: display?.[track.id]?.color ?? COMPANION_FALLBACK_COLOR,
+    unknownReference: companionPlan.includedWithUnknownReference.some((candidate) => candidate.id === track.id),
     geometry: track.geometry,
-  })), [shared3d, datasets, display])
+  })), [shared3d, datasets, display, companionPlan])
   const frame = useMemo(() => sceneFrame(shared3d.tracks.map((track) => track.geometry.vertices)), [shared3d])
-  const incompatibleCount = datasets.filter((candidate) => candidate.id !== dataset.id && assessDatasetCompatibility(dataset, candidate).level === 'blocked').length
+  const incompatibleCount = companionPlan.blocked.length
+  const hiddenBySources = datasets.filter((candidate) => candidate.id !== dataset.id && display?.[candidate.id]?.visible === false).length
   const qualityEvents = useMemo(() => detectQualityEvents(dataset.points, { ...DEFAULT_QUALITY_EVENT_CONFIG, gapMs: Math.max(1, gapThresholdSeconds * 1_000) }), [dataset.points, gapThresholdSeconds])
   const pathBreakIndices = useMemo(() => new Set(qualityEvents.filter((event) => event.kind === 'gap' || event.kind === 'coordinate-jump').map((event) => event.endIndex)), [qualityEvents])
   const jumpIndices = useMemo(() => new Set(qualityEvents.filter((event) => event.kind === 'coordinate-jump').map((event) => event.endIndex)), [qualityEvents])
@@ -138,8 +147,18 @@ export function Trajectory3dPanel({ dataset, datasets, display, workspace, onWor
     <canvas ref={canvasRef} className="trajectory-three-canvas" tabIndex={0} onKeyDown={onCanvasKey} aria-label="Interactive local ENU trajectory scene. Arrow keys orbit, Shift+arrows pan, plus and minus zoom, Home resets the camera." onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); dragRef.current = { x: event.clientX, y: event.clientY, pan: event.button === 2 || event.shiftKey, moved: false } }} onPointerMove={pointerMove} onPointerUp={(event) => { const drag = dragRef.current; dragRef.current = null; if (!drag?.moved) { const nearest = nearestPointer(event); if (nearest && nearest.distance < 18) selectPoint(nearest.sourceIndex) } }} onPointerLeave={() => { dragRef.current = null; clearHover() }} onWheel={(event) => { event.preventDefault(); setCamera((current) => ({ ...current, zoom: clamp(current.zoom * Math.exp(-event.deltaY * 0.001), 0.15, 12) })) }} />
     <div className="trajectory-playback"><button type="button" onClick={() => setPlaying((value) => !value)}>{playing ? 'Pause' : 'Play'}</button><button type="button" onClick={() => scrub(0)}>Restart</button><input aria-label="Playback position" type="range" min={0} max={1} step={0.001} value={playback} onChange={(event) => scrub(Number(event.target.value))} /><label>speed<select value={speed} onChange={(event) => setSpeed(Number(event.target.value))}><option value={0.25}>0.25×</option><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={2}>2×</option><option value={4}>4×</option></select></label><span className="mono small" title={playbackRange ? 'Playback advances in proportion to recorded time' : 'No usable timestamps: playback advances by sample order'}>{playbackReadout}</span></div>
     {(dataset.metadata?.altitudeReference === 'UNKNOWN' || dataset.metadata?.timeReference === 'UNKNOWN') && <div className="warn-line">Reference metadata is incomplete: 3D geometry is local visualization only and must not be used for cross-source altitude/time comparison.</div>}
-    {companions.length > 0 && <div className="analysis-summary scene-companions">Shared ENU frame with {companions.length} compatible companion track{companions.length === 1 ? '' : 's'}:{companions.map((companion) => <span key={companion.id} className="scene-companion"><span className="chip-dot" style={{ background: companion.color }} />{companion.name}</span>)}<span className="muted small">Colours and visibility follow the Sources tab.</span></div>}
-    {incompatibleCount > 0 && <div className="warn-line">{incompatibleCount} dataset{incompatibleCount === 1 ? ' is' : 's are'} excluded from shared 3D because their metadata references are incompatible.</div>}
+    {companions.length > 0 && <div className="analysis-summary scene-companions">Shared ENU frame with {companions.length} companion track{companions.length === 1 ? '' : 's'}:{companions.map((companion) => <span key={companion.id} className="scene-companion" title={companion.unknownReference ? 'Reference unknown: heights may not be comparable with this track' : undefined}><span className="chip-dot" style={{ background: companion.color }} />{companion.name}{companion.unknownReference && <span className="muted"> (ref. unknown)</span>}</span>)}<span className="muted small">Colours and visibility follow the Sources tab.</span></div>}
+    {incompatibleCount > 0 && <div className="warn-line">{incompatibleCount} dataset{incompatibleCount === 1 ? ' is' : 's are'} excluded from shared 3D because their declared altitude or time references differ from this track's.</div>}
+    {(companionPlan.heldBack.length > 0 || companionPlan.includedWithUnknownReference.length > 0) && (
+      <div className="analysis-summary scene-optin">
+        <label className="chk">
+          <input type="checkbox" checked={includeUnknownReferences} onChange={(event) => setIncludeUnknownReferences(event.target.checked)} />
+          also show {companionPlan.heldBack.length + companionPlan.includedWithUnknownReference.length} track{companionPlan.heldBack.length + companionPlan.includedWithUnknownReference.length === 1 ? '' : 's'} whose altitude or time reference is unknown
+        </label>
+        <span className="muted small">Their shapes and positions are comparable; a height difference between them may be a datum difference rather than a real one.</span>
+      </div>
+    )}
+    {hiddenBySources > 0 && <div className="muted small">{hiddenBySources} dataset{hiddenBySources === 1 ? ' is' : 's are'} hidden in the Sources tab and not drawn here.</div>}
     <div className="metric-grid"><Metric label="source points" value={geometry.sourcePointCount.toLocaleString()} /><Metric label="valid coordinates" value={geometry.validPointCount.toLocaleString()} /><Metric label="rendered vertices" value={geometry.renderedPointCount.toLocaleString()} /><Metric label="east span" value={`${format(geometry.bounds.maxEastM - geometry.bounds.minEastM)} m`} /><Metric label="north span" value={`${format(geometry.bounds.maxNorthM - geometry.bounds.minNorthM)} m`} /><Metric label="up span" value={`${format(geometry.bounds.maxUpM - geometry.bounds.minUpM)} m`} /></div>
     <div className="muted small">Drag to orbit (dragging down raises the camera), Shift/right-drag to pan, and use the wheel to zoom — or focus the scene and use the arrow keys, Shift+arrows, +/− and Home. The axes in the corner show east (E), north (N) and up (U). Playback moves in proportion to recorded time. Hover or playback updates the synchronized data cursor; click selects a persistent point.</div>
   </div>
