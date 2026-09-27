@@ -14,7 +14,7 @@ async function importCsvDataset(page: import('@playwright/test').Page, file: str
 /** Export an HTML report with the cross-dataset comparison section enabled, and return its markup. */
 async function exportReportHtml(page: import('@playwright/test').Page): Promise<string> {
   await page.getByRole('button', { name: 'Project', exact: true }).click()
-  await page.getByRole('button', { name: 'Export HTML report', exact: true }).click()
+  await page.getByRole('button', { name: 'Export report (HTML / PDF)', exact: true }).click()
   // The evidence-section checkboxes live inside a <details>; expand it the way
   // a user would rather than reaching into closed markup.
   const checklist = page.locator('details.dialog-checklist')
@@ -24,7 +24,7 @@ async function exportReportHtml(page: import('@playwright/test').Page): Promise<
   // Off by default, so the section is absent unless the user opts in.
   await page.getByLabel('Cross-dataset comparison analytics').check()
   const download = page.waitForEvent('download')
-  await page.getByRole('button', { name: 'Generate report', exact: true }).click()
+  await page.getByRole('button', { name: 'Save HTML', exact: true }).click()
   const path = await (await download).path()
   expect(path).not.toBeNull()
   return readFile(path!, 'utf8')

@@ -3,6 +3,9 @@ const path = require('path')
 const DEV_ORIGIN = 'http://localhost:5173'
 const MAX_KML_LIBRARY_BYTES = 50 * 1024 * 1024
 const MAX_DIAGNOSTIC_BUNDLE_BYTES = 5 * 1024 * 1024
+// A report is text the renderer generated, but it still crosses a process
+// boundary, so it is size-capped like every other IPC payload.
+const MAX_REPORT_HTML_BYTES = 64 * 1024 * 1024
 // A shadow copy of an import/export can legitimately be as large as the
 // biggest format budget in src/core/parsers/limits.ts (CSV, 500 MB); this cap
 // only needs to sit above that so a large-but-legitimate file isn't silently
@@ -24,6 +27,7 @@ const IPC_CHANNELS = Object.freeze({
   revealArchive: 'file-archive:reveal',
   openUserGuide: 'user-guide:open',
   saveDiagnostics: 'diagnostics:save',
+  saveReportPdf: 'report:save-pdf',
   setUnsavedChanges: 'window:set-unsaved-changes',
 })
 
@@ -92,6 +96,20 @@ function diagnosticBundleText(value) {
   return value
 }
 
+function reportHtmlText(value) {
+  if (typeof value !== 'string') throw new Error('Report must be HTML text')
+  if (Buffer.byteLength(value, 'utf8') > MAX_REPORT_HTML_BYTES) throw new Error('Report exceeds safety limit')
+  if (!/^\s*<!doctype html>/i.test(value)) throw new Error('Report must be a complete HTML document')
+  return value
+}
+
+/** A save-dialog default name: a bare, sanitized basename ending in .pdf. */
+function safePdfName(value) {
+  const base = typeof value === 'string' ? path.basename(value).replace(/[^a-z0-9._ -]+/gi, '_').trim() : ''
+  const stem = base.replace(/\.(pdf|html?)$/i, '') || 'report'
+  return `${stem}.pdf`
+}
+
 module.exports = {
   ARCHIVE_DIRECTIONS,
   DEV_ORIGIN,
@@ -100,7 +118,10 @@ module.exports = {
   MAX_ARCHIVE_TOTAL_BYTES,
   MAX_DIAGNOSTIC_BUNDLE_BYTES,
   MAX_KML_LIBRARY_BYTES,
+  MAX_REPORT_HTML_BYTES,
   diagnosticBundleText,
+  reportHtmlText,
+  safePdfName,
   ipcBytes,
   isAllowedAppUrl,
   resolveChildPath,

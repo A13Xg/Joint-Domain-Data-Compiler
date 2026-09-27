@@ -82,7 +82,7 @@ const run = spawnSync(command, args, {
   timeout: 90_000,
   // JDDC_SMOKE_OPEN_GUIDE: open the user guide before exiting, so its window is
   // observed too. JDDC_NO_DEVTOOLS: a detached DevTools is a window of its own.
-  env: { ...process.env, JDDC_STARTUP_TRACE: '1', JDDC_EXIT_AFTER_STARTUP: '1', JDDC_SMOKE_OPEN_GUIDE: '1', JDDC_NO_DEVTOOLS: '1' },
+  env: { ...process.env, JDDC_STARTUP_TRACE: '1', JDDC_EXIT_AFTER_STARTUP: '1', JDDC_SMOKE_OPEN_GUIDE: '1', JDDC_SMOKE_REPORT_PDF: '1', JDDC_NO_DEVTOOLS: '1' },
 })
 
 stopPreview()
@@ -123,12 +123,13 @@ check('the workbench reported itself mounted', workbenchMounted !== undefined)
 check('the splash was dismissed rather than left on screen', phaseAt('splash dismissed') !== undefined)
 // Every window the process creates, and how often each is shown. "Ghost windows
 // that open and close" at launch were reported; this pins what ours are: one
-// splash, one workbench, and (here, because the harness asks for it) the user
-// guide -- each created once and shown at most once. Anything more is a flash.
+// splash, one workbench, and (here, because the harness asks for them) the user
+// guide and the hidden report-PDF renderer -- each created once and shown at
+// most once. Anything more is a flash.
 const created = [...phases.keys()].filter((name) => /^window #\d+ created$/.test(name))
 const labelled = [...phases.keys()].map((name) => /^window #(\d+) is the (.+)$/.exec(name)).filter((m): m is RegExpExecArray => m !== null)
 const labels = labelled.map((m) => m[2]!).sort()
-check('exactly three windows are created: splash, workbench, user guide', created.length === 3 && labels.join(',') === 'splash,user guide,workbench', `${created.length} created: ${labels.join(', ')}`)
+check('exactly the expected windows are created: splash, workbench, user guide, hidden PDF renderer', created.length === 4 && labels.join(',') === 'report PDF renderer (hidden),splash,user guide,workbench', `${created.length} created: ${labels.join(', ')}`)
 const showCounts = new Map<string, number>()
 for (const line of output.split(/\r?\n/)) {
   const shown = /\]\s+\d+ms\s+(.+ window #\d+) shown$/.exec(line.trim())
@@ -136,6 +137,8 @@ for (const line of output.split(/\r?\n/)) {
 }
 check('no window is shown more than once', [...showCounts.values()].every((count) => count === 1), JSON.stringify(Object.fromEntries(showCounts)))
 check('no unlabelled window appears', ![...phases.keys()].some((name) => name.startsWith('unlabelled')))
+check('the hidden PDF renderer is never shown', ![...showCounts.keys()].some((name) => name.startsWith('report PDF renderer')))
+check('an HTML report renders to a real PDF', [...phases.keys()].some((name) => /^report PDF rendered \(\d+ bytes, %PDF-\)$/.test(name)))
 check('the user guide renders inside the app', [...phases.keys()].some((name) => /^user guide loaded \(.*User Guide\)$/.test(name)))
 
 // Which of the three routes won is platform-dependent and not the contract; that

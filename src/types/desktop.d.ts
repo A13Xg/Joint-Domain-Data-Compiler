@@ -29,8 +29,10 @@ export interface JointDomainCompilerDesktopApi {
     save: (direction: 'inputs' | 'outputs', name: string, bytes: ArrayBuffer) => Promise<{ path: string; bytes: number }>
     reveal: () => Promise<string>
   }
-  /** Opens the packaged user guide in the OS default browser; resolves with the path opened. */
+  /** Opens the packaged user guide in an app window; resolves with the URL loaded. */
   openUserGuide?: () => Promise<string>
+  /** Renders a generated HTML report to PDF and asks where to save it; null when cancelled. */
+  saveReportPdf?: (html: string, suggestedName: string) => Promise<string | null>
   /** Hands the unsaved-changes flag to the main process, which owns the close prompt. */
   setUnsavedChanges?: (dirty: boolean) => void
   /** Reports that the workbench has mounted, retiring the launch splash. */

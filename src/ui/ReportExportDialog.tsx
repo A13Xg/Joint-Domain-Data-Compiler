@@ -8,6 +8,8 @@ import {
 } from '../core/reports/options'
 import { sanitizeFilename } from '../core/reports/exportNaming'
 
+export type ReportFormat = 'html' | 'pdf'
+
 interface Props {
   /** Suggested title, e.g. derived from the project/dataset name and today's date. */
   suggestedTitle: string
@@ -22,7 +24,7 @@ interface Props {
    */
   persistedOptions?: ReportOptions
   onCancel: () => void
-  onConfirm: (result: { options: ReportOptions; filename: string; remember: boolean }) => void
+  onConfirm: (result: { options: ReportOptions; filename: string; remember: boolean; format: ReportFormat }) => void
 }
 
 /**
@@ -90,12 +92,12 @@ export function ReportExportDialog({ suggestedTitle, suggestedFilename, persiste
     setSections((current) => ({ ...current, [key]: !current[key] }))
   }
 
-  const confirm = () => {
+  const confirm = (format: ReportFormat) => {
     const options = createReportOptions({
       title: title.trim() || suggestedTitle,
       ...(sections as unknown as Partial<ReportOptions>),
     })
-    onConfirm({ options, filename: sanitizedFilename, remember })
+    onConfirm({ options, filename: sanitizedFilename, remember, format })
   }
 
   return (
@@ -108,7 +110,7 @@ export function ReportExportDialog({ suggestedTitle, suggestedFilename, persiste
         aria-labelledby={headingId}
         aria-describedby={descriptionId}
       >
-        <h2 id={headingId}>Export HTML report</h2>
+        <h2 id={headingId}>Export report</h2>
         <p id={descriptionId} className="muted small">
           Choose what this report includes before it is generated. Nothing downloads until you confirm.
         </p>
@@ -123,7 +125,7 @@ export function ReportExportDialog({ suggestedTitle, suggestedFilename, persiste
             <input type="text" value={filename} onChange={(event) => setFilename(event.target.value)} />
           </label>
         </div>
-        <p className="muted small">Will save as <code>{sanitizedFilename}.html</code>. Filename characters are sanitized independently from the visible title.</p>
+        <p className="muted small">Will save as <code>{sanitizedFilename}.html</code> or <code>{sanitizedFilename}.pdf</code>. Filename characters are sanitized independently from the visible title. {window.jointDomainCompiler?.saveReportPdf ? 'PDF is rendered by the app and saved where you choose.' : 'In a browser, PDF opens the report with the print dialog up — choose “Save as PDF” there.'}</p>
 
         <details className="dialog-checklist" open={checklistOpen} onToggle={(event) => setChecklistOpen(event.currentTarget.open)}>
           <summary>Evidence sections ({includedCount}/{REPORT_SECTIONS.length} included)</summary>
@@ -160,7 +162,8 @@ export function ReportExportDialog({ suggestedTitle, suggestedFilename, persiste
           <button type="button" onClick={resetToDefaults}>Reset to defaults</button>
           <div className="dialog-actions-primary">
             <button type="button" onClick={onCancel}>Cancel</button>
-            <button type="button" className="export-btn" onClick={confirm}>Generate report</button>
+            <button type="button" onClick={() => confirm('pdf')}>Save PDF</button>
+            <button type="button" className="export-btn" onClick={() => confirm('html')}>Save HTML</button>
           </div>
         </div>
       </div>

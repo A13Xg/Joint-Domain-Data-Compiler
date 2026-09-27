@@ -26,7 +26,7 @@ function rejects(fn: () => unknown): boolean {
 }
 
 check('IPC channel names are unique', new Set(Object.values(IPC_CHANNELS)).size === Object.keys(IPC_CHANNELS).length)
-check('IPC surface exposes only the expected twelve operations', Object.keys(IPC_CHANNELS).sort().join(',') === 'archiveFile,list,openUserGuide,readText,remove,rendererReady,reseed,reveal,revealArchive,save,saveDiagnostics,setUnsavedChanges')
+check('IPC surface exposes only the expected thirteen operations', Object.keys(IPC_CHANNELS).sort().join(',') === 'archiveFile,list,openUserGuide,readText,remove,rendererReady,reseed,reveal,revealArchive,save,saveDiagnostics,saveReportPdf,setUnsavedChanges')
 check('Exact development origin is allowed', isAllowedAppUrl(DEV_ORIGIN, true))
 check('Development origin paths are allowed', isAllowedAppUrl(`${DEV_ORIGIN}/index.html`, true))
 check('Lookalike development origins are blocked', !isAllowedAppUrl(`${DEV_ORIGIN}.attacker.invalid`, true))
@@ -164,6 +164,20 @@ check('Oversized diagnostic bundle is rejected', rejects(() => diagnosticBundleT
   const guideHandler = mainSource.slice(mainSource.indexOf('function registerUserGuideIpc'), mainSource.indexOf('function registerFileArchiveIpc'))
   check('User guide is not handed to the OS to open', guideHandler.length > 0 && !guideHandler.includes('shell.openPath'))
   check('User guide opens in an app window', guideHandler.includes('openUserGuideWindow()'))
+}
+
+// Report -> PDF payload validation. The HTML crosses a process boundary, so it
+// is typed, size-capped and must be a whole document; the save name is reduced
+// to a bare basename so the renderer cannot aim the dialog at another folder.
+{
+  const { reportHtmlText, safePdfName, MAX_REPORT_HTML_BYTES } = createRequire(import.meta.url)(resolve(process.cwd(), 'electron/security.cjs')) as { reportHtmlText: (v: unknown) => string; safePdfName: (v: unknown) => string; MAX_REPORT_HTML_BYTES: number }
+  const rejects = (value: unknown) => { try { reportHtmlText(value); return false } catch { return true } }
+  check('Report PDF accepts a complete HTML document', reportHtmlText('<!doctype html><html></html>').length > 0)
+  check('Report PDF rejects non-text payloads', rejects(42) && rejects(null) && rejects(new Uint8Array(4)))
+  check('Report PDF rejects a fragment that is not a document', rejects('<p>hi</p>'))
+  check('Report PDF rejects an oversized payload', rejects(`<!doctype html>${'x'.repeat(MAX_REPORT_HTML_BYTES)}`))
+  check('PDF save name is a bare basename ending in .pdf', safePdfName('../../etc/evil.html') === 'evil.pdf' && safePdfName('My report') === 'My report.pdf')
+  check('PDF save name falls back when empty or not text', safePdfName('') === 'report.pdf' && safePdfName(undefined) === 'report.pdf')
 }
 
 console.log(`\n${failures === 0 ? 'ALL ELECTRON INTEGRATION CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`)

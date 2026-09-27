@@ -208,8 +208,8 @@ test('primary local-first workflow: import, inspect, transform, save/open, and e
   await expect(page.getByText(/Restored 1 dataset/)).toBeVisible()
 
   await page.getByRole('button', { name: 'Project', exact: true }).click()
-  await page.getByRole('button', { name: 'Export HTML report' }).click()
-  const reportDialog = page.getByRole('dialog', { name: 'Export HTML report' })
+  await page.getByRole('button', { name: 'Export report (HTML / PDF)' }).click()
+  const reportDialog = page.getByRole('dialog', { name: 'Export report' })
   await expect(reportDialog).toBeVisible()
   await expect(reportDialog.getByLabel('Report title')).toHaveValue(/browser-smoke.*\d{4}-\d{2}-\d{2}/)
   await expect(reportDialog.getByLabel('Download filename')).toHaveValue(/browser-smoke-report/)
@@ -230,10 +230,10 @@ test('primary local-first workflow: import, inspect, transform, save/open, and e
 
   // Closing the dialog restores focus to the button that opened it, rather
   // than dropping focus to <body>.
-  await expect(page.getByRole('button', { name: 'Export HTML report' })).toBeFocused()
+  await expect(page.getByRole('button', { name: 'Export report (HTML / PDF)' })).toBeFocused()
 
-  await page.getByRole('button', { name: 'Export HTML report' }).click()
-  const reopenedDialog = page.getByRole('dialog', { name: 'Export HTML report' })
+  await page.getByRole('button', { name: 'Export report (HTML / PDF)' }).click()
+  const reopenedDialog = page.getByRole('dialog', { name: 'Export report' })
   await reopenedDialog.locator('.dialog-checklist summary').click()
   await reopenedDialog.getByLabel('Report title').fill('Browser evidence report')
   await reopenedDialog.getByLabel('Download filename').fill('browser-evidence')
@@ -243,7 +243,7 @@ test('primary local-first workflow: import, inspect, transform, save/open, and e
   // unchecked must not persist this session's checklist choice.
   await expect(reopenedDialog.getByLabel('Remember these settings for this project')).not.toBeChecked()
   const reportDownload = page.waitForEvent('download')
-  await reopenedDialog.getByRole('button', { name: 'Generate report' }).click()
+  await reopenedDialog.getByRole('button', { name: 'Save HTML' }).click()
   const report = await reportDownload
   expect(report.suggestedFilename()).toBe('browser-evidence.html')
   const reportPath = await report.path()
@@ -261,8 +261,8 @@ test('primary local-first workflow: import, inspect, transform, save/open, and e
   // Reopening after an unchecked "remember" export must prefill from
   // DEFAULT_REPORT_OPTIONS as before (Import/parser warnings back on) —
   // this session's unchecked-box choice was not carried over.
-  await page.getByRole('button', { name: 'Export HTML report' }).click()
-  const thirdDialog = page.getByRole('dialog', { name: 'Export HTML report' })
+  await page.getByRole('button', { name: 'Export report (HTML / PDF)' }).click()
+  const thirdDialog = page.getByRole('dialog', { name: 'Export report' })
   await thirdDialog.locator('.dialog-checklist summary').click()
   await expect(thirdDialog.getByLabel('Import/parser warnings')).toBeChecked()
 
@@ -270,15 +270,15 @@ test('primary local-first workflow: import, inspect, transform, save/open, and e
   await thirdDialog.getByLabel('Import/parser warnings').uncheck()
   await thirdDialog.getByLabel('Remember these settings for this project').check()
   const rememberedDownload = page.waitForEvent('download')
-  await thirdDialog.getByRole('button', { name: 'Generate report' }).click()
+  await thirdDialog.getByRole('button', { name: 'Save HTML' }).click()
   await rememberedDownload
 
   // The next dialog open must prefill the checklist from the remembered
   // preferences (Import/parser warnings now off by default), not
   // DEFAULT_REPORT_OPTIONS, and the remember checkbox itself resets to
   // unchecked rather than staying sticky.
-  await page.getByRole('button', { name: 'Export HTML report' }).click()
-  const fourthDialog = page.getByRole('dialog', { name: 'Export HTML report' })
+  await page.getByRole('button', { name: 'Export report (HTML / PDF)' }).click()
+  const fourthDialog = page.getByRole('dialog', { name: 'Export report' })
   await fourthDialog.locator('.dialog-checklist summary').click()
   await expect(fourthDialog.getByLabel('Import/parser warnings')).not.toBeChecked()
   await expect(fourthDialog.getByLabel('Remember these settings for this project')).not.toBeChecked()

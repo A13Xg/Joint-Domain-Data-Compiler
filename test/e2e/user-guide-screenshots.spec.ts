@@ -125,7 +125,7 @@ test('capture user guide screenshots', async ({ page }) => {
   // --- project and the report dialog -----------------------------------------
   await openTab(page, 'Project')
   await shoot(page, '14-project')
-  await page.getByRole('button', { name: 'Export HTML report', exact: true }).click()
+  await page.getByRole('button', { name: 'Export report (HTML / PDF)', exact: true }).click()
   const checklist = page.locator('details.dialog-checklist')
   if (!(await checklist.evaluate((element: HTMLDetailsElement) => element.open))) {
     await checklist.locator('summary').click()

@@ -19,6 +19,7 @@ const IPC_CHANNELS = Object.freeze({
   revealArchive: 'file-archive:reveal',
   openUserGuide: 'user-guide:open',
   saveDiagnostics: 'diagnostics:save',
+  saveReportPdf: 'report:save-pdf',
   setUnsavedChanges: 'window:set-unsaved-changes',
 })
 
@@ -36,6 +37,9 @@ contextBridge.exposeInMainWorld('jointDomainCompiler', {
   diagnostics: {
     save: (text) => ipcRenderer.invoke(IPC_CHANNELS.saveDiagnostics, text),
   },
+  // Renders a generated HTML report to PDF in the main process and asks where
+  // to save it. Resolves with the saved path, or null if the user cancelled.
+  saveReportPdf: (html, suggestedName) => ipcRenderer.invoke(IPC_CHANNELS.saveReportPdf, html, suggestedName),
   // Opens the packaged user guide in an app window. Takes no argument
   // on purpose: the path is resolved in the main process, so the renderer can
   // never ask it to open an arbitrary file.

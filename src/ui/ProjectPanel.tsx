@@ -12,7 +12,8 @@ import { logger } from '../core/logger'
 import { buildHtmlAnalysisReport } from '../core/reports/htmlReport'
 import type { ReportOptions } from '../core/reports/options'
 import { deriveDefaultReportTitle, sanitizeFilename } from '../core/reports/exportNaming'
-import { ReportExportDialog } from './ReportExportDialog'
+import { ReportExportDialog, type ReportFormat } from './ReportExportDialog'
+import { saveReportAsPdf } from './reportPdf'
 import type { OperationRecord, Recipe } from '../core/recipes/model'
 import type { FusionArtifact } from '../core/fusion/artifact'
 import {
@@ -106,7 +107,7 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
   const defaultReportTitle = deriveDefaultReportTitle(manifest.name)
   const defaultReportFilename = safeName(`${manifest.name}-report`)
 
-  const confirmExportReport = ({ options, filename, remember }: { options: ReportOptions; filename: string; remember: boolean }) => {
+  const confirmExportReport = ({ options, filename, remember, format }: { options: ReportOptions; filename: string; remember: boolean; format: ReportFormat }) => {
     // Only the most recently created fusion artifact's already-built report
     // is surfaced (buildFusionSection renders a single report, not a
     // multi-run aggregate). If the user has run fusion more than once, only
@@ -133,7 +134,18 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
       comparison,
       options,
     })
-    downloadBlob(new Blob([html], { type: 'text/html' }), `${sanitizeFilename(filename)}.html`)
+    if (format === 'pdf') {
+      setError(null)
+      setBusy(true)
+      void saveReportAsPdf(html, sanitizeFilename(filename))
+        .catch((cause: unknown) => {
+          setError(`PDF report failed: ${errorMessage(cause)}`)
+          logger.error('export', `PDF report failed: ${errorMessage(cause)}`)
+        })
+        .finally(() => setBusy(false))
+    } else {
+      downloadBlob(new Blob([html], { type: 'text/html' }), `${sanitizeFilename(filename)}.html`)
+    }
     // Task 3.3: only persist the chosen report options when the user
     // explicitly checked "Remember these settings for this project" in the
     // dialog. `createReportOptions` re-normalizes so only the narrow
@@ -207,7 +219,7 @@ export function ProjectPanel({ datasets, histories, activeId, activeTab, workspa
         <button type="button" className="export-btn" disabled={datasets.length === 0 || busy} onClick={() => void saveProject()}>{busy ? 'Working…' : 'Save complete project'}</button>
         <button type="button" disabled={busy} onClick={() => inputRef.current?.click()}>Open project</button>
         <button type="button" disabled={datasets.length === 0 || busy} onClick={exportManifest}>Export manifest only</button>
-        <button type="button" disabled={datasets.length === 0 || busy} onClick={() => setReportDialogOpen(true)}>Export HTML report</button>
+        <button type="button" disabled={datasets.length === 0 || busy} onClick={() => setReportDialogOpen(true)}>Export report (HTML / PDF)</button>
         <input ref={inputRef} className="hidden-input" type="file" aria-label="Choose a project file to open" accept=".jddc-project,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void openProject(file); event.target.value = '' }} />
       </div>
       <p className="muted small">A <code>.jddc-project</code> file is a self-contained, gzip-compressed workspace archive. It embeds current datasets, semantic metadata, undo/redo snapshots, the active dataset and tab, and point/range selection. The manifest remains versioned and fingerprint-verified during restore.</p>

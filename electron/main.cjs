@@ -2,6 +2,7 @@ const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require('electron')
 const crypto = require('crypto')
 const fs = require('fs')
 const path = require('path')
+const os = require('os')
 const { pathToFileURL } = require('url')
 const zlib = require('zlib')
 const { seedKmlLibrary, seedKmlLibraryAsync, fetchKmlFromRemote } = require('./kml-seed.cjs')
@@ -16,8 +17,10 @@ const {
   ipcBytes,
   isAllowedAppUrl,
   resolveChildPath,
+  reportHtmlText,
   resolveLibraryPath,
   safeArchiveName,
+  safePdfName,
 } = require('./security.cjs')
 
 // Startup phase trace, off unless JDDC_STARTUP_TRACE is set.
@@ -479,10 +482,18 @@ function exitAfterStartupIfAsked() {
     tracePhase('exiting after startup (JDDC_EXIT_AFTER_STARTUP)')
     app.quit()
   }
-  if (!process.env.JDDC_SMOKE_OPEN_GUIDE) return quit()
+  // JDDC_SMOKE_REPORT_PDF: render a small report through the same function the
+  // "Save PDF" IPC uses, and trace the result. The save dialog is the only part
+  // left out, since nothing can click it.
+  const pdfCheck = process.env.JDDC_SMOKE_REPORT_PDF
+    ? renderReportPdf('<!doctype html><html><head><meta charset="utf-8"><title>smoke</title></head><body><h1>JDDC report PDF smoke</h1></body></html>')
+      .then((pdf) => tracePhase(`report PDF rendered (${pdf.length} bytes, ${pdf.subarray(0, 5).toString('latin1')})`))
+      .catch((error) => tracePhase(`report PDF failed (${error instanceof Error ? error.message : String(error)})`))
+    : Promise.resolve()
+  if (!process.env.JDDC_SMOKE_OPEN_GUIDE) return void pdfCheck.then(quit)
   const guide = openUserGuideWindow()
   const timer = setTimeout(quit, 10_000)
-  guide.webContents.once('did-finish-load', () => { clearTimeout(timer); setTimeout(quit, 200) })
+  guide.webContents.once('did-finish-load', () => { clearTimeout(timer); void pdfCheck.then(() => setTimeout(quit, 200)) })
   guide.webContents.once('did-fail-load', (_event, code, description) => {
     tracePhase(`user guide failed to load (${code} ${description})`)
     clearTimeout(timer)
@@ -891,6 +902,48 @@ function registerDiagnosticIpc() {
   })
 }
 
+// HTML report -> PDF. The report is loaded from a temp FILE rather than a data:
+// URL (Chromium caps URLs at 2 MB, and a report with several datasets passes
+// that), in a window that is never shown and runs no script: the report has
+// none, and a generated document has no business executing any. The temp file
+// is removed whatever happens.
+async function renderReportPdf(html) {
+  const text = reportHtmlText(html)
+  const tempPath = path.join(os.tmpdir(), `jddc-report-${crypto.randomUUID()}.html`)
+  fs.writeFileSync(tempPath, text, 'utf8')
+  const renderer = new BrowserWindow({
+    show: false,
+    width: 1100,
+    height: 1400,
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, javascript: false },
+  })
+  labelWindow(renderer, 'report PDF renderer (hidden)')
+  renderer.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  renderer.webContents.on('will-navigate', (navigation) => navigation.preventDefault())
+  try {
+    await renderer.loadFile(tempPath)
+    return await renderer.webContents.printToPDF({ printBackground: true, pageSize: 'A4', preferCSSPageSize: true })
+  } finally {
+    if (!renderer.isDestroyed()) renderer.destroy()
+    fs.rmSync(tempPath, { force: true })
+  }
+}
+
+function registerReportPdfIpc() {
+  ipcMain.handle(IPC_CHANNELS.saveReportPdf, async (event, html, suggestedName) => {
+    const pdf = await renderReportPdf(html)
+    const owner = BrowserWindow.fromWebContents(event.sender) ?? undefined
+    const result = await dialog.showSaveDialog(owner, {
+      title: 'Save report as PDF',
+      defaultPath: safePdfName(suggestedName),
+      filters: [{ name: 'PDF document', extensions: ['pdf'] }],
+    })
+    if (result.canceled || !result.filePath) return null
+    fs.writeFileSync(result.filePath, pdf)
+    return result.filePath
+  })
+}
+
 // A throw anywhere in startup used to surface only as an unhandled rejection on
 // a console no packaged user ever sees, leaving a process running with no
 // window. Show it and exit non-zero instead.
@@ -930,6 +983,7 @@ app.whenReady().then(async () => {
   registerDiagnosticIpc()
   registerWindowStateIpc()
   registerUserGuideIpc()
+  registerReportPdfIpc()
 
   tracePhase('startup services registered')
   createWindow()
