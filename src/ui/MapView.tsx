@@ -19,6 +19,10 @@ import type { MapOverlayState } from '../state/mapOverlays'
 import type { KmlLibraryEntry } from '../types/desktop'
 import { MapOverlayPanel } from './MapOverlayPanel'
 import { SelectionChip } from './SelectionChip'
+import { MapScaleBar, MeasureLayer, OfflineGraticule } from './MapAids'
+import { measureLegs } from '../visualization/map/mapAids'
+import { formatDistance } from '../core/units'
+import L from 'leaflet'
 
 type DisplayMode = 'both' | 'path' | 'points'
 /** What a pending jump should frame: one badge's own samples, or whatever is selected. */
@@ -151,6 +155,10 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
   const [fitRequest, setFitRequest] = useState(0)
   const [fitSelection, setFitSelection] = useState(false)
   const [basemapStatus, setBasemapStatus] = useState<BasemapStatus>('unknown')
+  const [measuring, setMeasuring] = useState(false)
+  const [measureVertices, setMeasureVertices] = useState<Array<{ lat: number; lon: number }>>([])
+  const measured = useMemo(() => measureLegs(measureVertices), [measureVertices])
+  const addMeasureVertex = useCallback((vertex: { lat: number; lon: number }) => setMeasureVertices((current) => [...current, vertex]), [])
   // Reset the status during render when the basemap choice changes, rather
   // than in an effect — the officially-recommended pattern for resetting
   // state in response to a prop/derived-value change (react.dev: "Resetting
@@ -271,6 +279,7 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
         <button type="button" onClick={() => { setFitSelection(false); setFitVisible(false); setFitRequest((value) => value + 1) }}>Fit active</button>
         {otherTrackLayers.length > 0 && <button type="button" onClick={() => { setFitSelection(false); setFitVisible(true); setFitRequest((value) => value + 1) }}>Fit visible ({otherTrackLayers.length + 1})</button>}
         <button type="button" disabled={!indexRange || selectionPositions.length === 0} onClick={() => { setFitSelection(true); setFitVisible(false); setFitRequest((value) => value + 1) }}>Fit range</button>
+        <button type="button" aria-pressed={measuring} className={measuring ? 'toggle-on' : undefined} onClick={() => setMeasuring((value) => !value)} title="Click the map (or a sample, to snap to it) to measure distance and bearing">Measure</button>
         <span className="map-meta">{valid.length.toLocaleString()} valid pts{rendered.length < valid.length && ` · ${rendered.length.toLocaleString()} drawn`}</span>
         {pointIndex !== null && <SelectionChip label={`selected #${pointIndex}`} onJump={() => setJumpPending('point')} jumpTitle="Centre the map on this point" onClear={clearPointSelection} clearLabel="Clear point selection" />}
         {indexRange && <SelectionChip label={`range ${indexRange.start}–${indexRange.end}`} tone="range" onJump={() => setJumpPending('range')} jumpTitle="Fit the map to this range" onClear={clearRangeSelection} clearLabel="Clear range selection" />}
@@ -279,8 +288,22 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
         {basemap !== 'none' && basemapStatus === 'unknown' && <span className="map-basemap-status muted small">Basemap requires network access; local track data does not.</span>}
         {otherTrackLayers.length > 0 && <span className="map-legend map-other-tracks">other visible:{otherTrackLayers.map((track) => <span key={track.id} className="map-other-track-chip"><span className="chip-dot" style={{ background: track.color }} />{track.name}</span>)}</span>}
       </div>
+      {measuring && (
+        <div className="map-measure-panel" role="region" aria-label="Measurement">
+          <strong>Measure</strong>
+          {measureVertices.length < 2
+            ? <span className="muted small">Click the map to place points; click a sample to snap to its exact position.</span>
+            : <>
+                <span className="mono">total {formatDistance(measured[measured.length - 1]!.cumulativeM, unitSystem)}</span>
+                <span className="map-measure-legs mono small">{measured.map((leg, index) => <span key={index}>{String.fromCharCode(65 + Math.min(index, 25))}→{String.fromCharCode(65 + Math.min(index + 1, 25))} {formatDistance(leg.distanceM, unitSystem)} · {leg.bearingDeg.toFixed(1)}°T</span>)}</span>
+              </>}
+          <button type="button" disabled={measureVertices.length === 0} onClick={() => setMeasureVertices((current) => current.slice(0, -1))}>Undo point</button>
+          <button type="button" disabled={measureVertices.length === 0} onClick={() => setMeasureVertices([])}>Clear</button>
+          <span className="muted small" title="Haversine on a sphere of radius 6,371,008.8 m; differs from the WGS-84 ellipsoid by up to about 0.5%">Great-circle, spherical Earth; bearings are initial true bearings.</span>
+        </div>
+      )}
       <div
-        className="map-canvas-wrap"
+        className={`map-canvas-wrap${measuring ? ' measuring' : ''}`}
         role="region"
         aria-label={`Map showing ${valid.length.toLocaleString()} valid point${valid.length === 1 ? '' : 's'}${otherTrackLayers.length > 0 ? ` plus ${otherTrackLayers.length} other visible track${otherTrackLayers.length === 1 ? '' : 's'}` : ''}`}
       >
@@ -308,7 +331,7 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
                 center={[point.lat, point.lon]}
                 radius={selected ? 7 : hovered ? 6 : inRange ? 4.2 : notional ? 3.2 : 2.8}
                 pathOptions={{ color, fillColor: color, fillOpacity: selected || hovered || inRange ? 1 : notional ? 0.5 : 0.75, weight: selected ? 2 : hovered ? 2 : inRange ? 1 : notional ? 1.5 : 0, dashArray: notional ? '2 2' : undefined }}
-                eventHandlers={{ click: () => selectPoint(selected ? null : index), mouseover: () => setHoverIndex(index), mouseout: clearHover }}
+                eventHandlers={{ click: (event) => { if (measuring) { L.DomEvent.stopPropagation(event); addMeasureVertex({ lat: point.lat, lon: point.lon }); return } selectPoint(selected ? null : index) }, mouseover: () => setHoverIndex(index), mouseout: clearHover }}
               >
                 <Tooltip>
                   <div className="map-tip mono"><div>#{index} · {point.lat.toFixed(6)}, {point.lon.toFixed(6)}</div>{notional && <div>⚠ notional (interpolated, not observed)</div>}{inRange && <div>selected range</div>}{point.ele !== undefined && <div>ele {formatAltitude(point.ele, unitSystem, 1)}</div>}{point.time !== undefined && <div>{epochMsToIso(point.time)}</div>}{point.name && <div>{point.name}</div>}{colorBy !== 'none' && channelValue(point, colorBy) !== null && <div>{colorBy}: {fmt(channelValue(point, colorBy)!)}</div>}</div>
@@ -323,6 +346,9 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
           {jumpPending && <JumpToSelection positions={jumpTargetPositions} onHandled={handleJumpHandled} />}
           {workspace.showDensity && <DensityLayer points={points} cellMeters={workspace.densityCellMeters} />}
           <InvalidateSizeOnResize />
+          {basemap === 'none' && <OfflineGraticule />}
+          <MapScaleBar unitSystem={unitSystem} />
+          {measuring && <MeasureLayer vertices={measureVertices} onAdd={addMeasureVertex} />}
         </MapContainer>
       </div>
     </div>
