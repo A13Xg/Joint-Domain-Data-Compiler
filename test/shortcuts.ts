@@ -1,4 +1,4 @@
-import { matchShortcut, shortcutsSuppressed, type ShortcutKey } from '../src/ui/shortcuts.ts'
+import { matchShortcut, shortcutBlocksBrowserDefault, shortcutSuppressed, type ShortcutKey } from '../src/ui/shortcuts.ts'
 
 let failures = 0
 function check(name: string, condition: boolean): void {
@@ -24,13 +24,17 @@ check('? alone is never a shortcut (it is typed)', matchShortcut(key('?', { shif
 const noModal = { querySelector: () => null }
 const withModal = { querySelector: (selector: string) => (selector === '[aria-modal="true"]' ? ({} as Element) : null) }
 const el = (tagName: string, extra: Record<string, unknown> = {}) => ({ tagName, isContentEditable: false, ...extra }) as unknown as EventTarget
-check('a text field keeps its own undo', shortcutsSuppressed(el('INPUT', { type: 'text' }), noModal))
-check('a number field keeps its own undo', shortcutsSuppressed(el('INPUT', { type: 'number' }), noModal))
-check('a textarea keeps its own undo', shortcutsSuppressed(el('TEXTAREA'), noModal))
-check('a checkbox with focus does not block shortcuts', !shortcutsSuppressed(el('INPUT', { type: 'checkbox' }), noModal))
-check('a focused button does not block shortcuts', !shortcutsSuppressed(el('BUTTON'), noModal))
-check('an open modal blocks every shortcut', shortcutsSuppressed(el('BUTTON'), withModal))
-check('no target is fine', !shortcutsSuppressed(null, noModal))
+check('a text field keeps its own undo', shortcutSuppressed('undo', el('INPUT', { type: 'text' }), noModal))
+check('a number field keeps its own redo', shortcutSuppressed('redo', el('INPUT', { type: 'number' }), noModal))
+check('a textarea keeps its own undo', shortcutSuppressed('undo', el('TEXTAREA'), noModal))
+check('save still works while typing in a field (notes, then Ctrl+S)', !shortcutSuppressed('save', el('TEXTAREA'), noModal))
+check('open and help still work while typing in a field', !shortcutSuppressed('open', el('INPUT', { type: 'text' }), noModal) && !shortcutSuppressed('guide', el('INPUT', { type: 'text' }), noModal))
+check('a checkbox with focus does not block undo', !shortcutSuppressed('undo', el('INPUT', { type: 'checkbox' }), noModal))
+check('a focused button does not block undo', !shortcutSuppressed('undo', el('BUTTON'), noModal))
+check('an open modal blocks every action', (['save', 'open', 'undo', 'redo', 'guide'] as const).every((action) => shortcutSuppressed(action, el('BUTTON'), withModal)))
+check('no target is fine', !shortcutSuppressed('undo', null, noModal))
+check("the browser's Save Page / Open File / Help never run", shortcutBlocksBrowserDefault('save') && shortcutBlocksBrowserDefault('open') && shortcutBlocksBrowserDefault('guide'))
+check("the browser's own undo in a field is left alone", !shortcutBlocksBrowserDefault('undo') && !shortcutBlocksBrowserDefault('redo'))
 
 console.log(`\n${failures === 0 ? 'ALL SHORTCUT CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)

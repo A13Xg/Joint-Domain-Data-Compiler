@@ -21,7 +21,7 @@ import type { OtherTrack } from './ui/MapView'
 import { restoreWorkspaceDisplay, syncWorkspaceDisplay, type WorkspaceDisplay } from './state/workspaceDisplay'
 import type { EditPointFields } from './core/operations/edit-point'
 import { useWindowFileDrop } from './ui/useWindowFileDrop'
-import { matchShortcut, shortcutsSuppressed } from './ui/shortcuts'
+import { matchShortcut, shortcutBlocksBrowserDefault, shortcutSuppressed } from './ui/shortcuts'
 import type { DeclaredReferences } from './ui/TransformPanel'
 import { ImportView } from './ui/ImportView'
 import { getSelectedPointIndex, getSelectedRange, restorePointSelection } from './state/pointSelection'
@@ -868,7 +868,9 @@ export default function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const action = matchShortcut(event)
-      if (!action || shortcutsSuppressed(event.target, document)) return
+      if (!action) return
+      if (shortcutBlocksBrowserDefault(action)) event.preventDefault()
+      if (shortcutSuppressed(action, event.target, document)) return
       event.preventDefault()
       if (action === 'guide') openUserGuide()
       else if (action === 'open') fileInputRef.current?.click()

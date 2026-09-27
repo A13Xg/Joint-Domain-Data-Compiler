@@ -339,7 +339,11 @@ export function MapView({ points, channels, workspace, onWorkspaceChange, otherT
               </CircleMarker>
             )
           })}
-          {hoveredPosition && <CircleMarker center={hoveredPosition} radius={7} pathOptions={{ color: '#ffffff', fillColor: '#38bdf8', fillOpacity: 0.95, weight: 2 }}><Tooltip>cursor #{hoverIndex}</Tooltip></CircleMarker>}
+          {/* Non-interactive on purpose. It is drawn on top of the very sample
+              being hovered, so as an interactive layer it took the press: a
+              click on a sample landed on this marker instead, and selecting a
+              point on the map (or snapping a measurement to it) never worked. */}
+          {hoveredPosition && <CircleMarker center={hoveredPosition} radius={7} interactive={false} pathOptions={{ color: '#ffffff', fillColor: '#38bdf8', fillOpacity: 0.95, weight: 2 }} />}
           {positions.length > 0 && <CircleMarker center={positions[0]!} radius={6} pathOptions={{ color: '#16a34a', fillColor: '#16a34a', fillOpacity: 0.9, weight: 1 }}><Tooltip>start</Tooltip></CircleMarker>}
           {positions.length > 0 && <CircleMarker center={positions[positions.length - 1]!} radius={6} pathOptions={{ color: '#dc2626', fillColor: '#dc2626', fillOpacity: 0.9, weight: 1 }}><Tooltip>end</Tooltip></CircleMarker>}
           <FitBounds positions={fitPositions} request={fitRequest} />

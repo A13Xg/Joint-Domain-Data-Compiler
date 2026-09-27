@@ -29,12 +29,27 @@ export function matchShortcut(event: ShortcutKey): ShortcutAction | null {
 }
 
 /**
- * Where a shortcut must NOT fire: while typing (a text field's own Ctrl+Z is
- * the user's undo, not the dataset's), and while a modal is open (an undo
- * landing behind a repair preview would change the track the preview is about).
+ * Where a shortcut must NOT act.
+ *
+ * - Any open modal blocks them all: an undo landing behind a repair preview
+ *   would change the track the preview is about.
+ * - Only undo and redo defer to a text field, whose own Ctrl+Z is the user's
+ *   undo. Save, open and help must still work there -- project notes is exactly
+ *   where someone types and then saves, and in a browser an unhandled Ctrl+S,
+ *   Ctrl+O or F1 opens the browser's own Save Page / Open File / Help instead.
  */
-export function shortcutsSuppressed(target: EventTarget | null, doc: Pick<Document, 'querySelector'>): boolean {
+export function shortcutSuppressed(action: ShortcutAction, target: EventTarget | null, doc: Pick<Document, 'querySelector'>): boolean {
   if (doc.querySelector('[aria-modal="true"]')) return true
+  if (action !== 'undo' && action !== 'redo') return false
+  return isTextEntryTarget(target)
+}
+
+/** The browser's own action for these must never run in the workbench, even when ours does not. */
+export function shortcutBlocksBrowserDefault(action: ShortcutAction): boolean {
+  return action === 'save' || action === 'open' || action === 'guide'
+}
+
+function isTextEntryTarget(target: EventTarget | null): boolean {
   if (!target || typeof (target as HTMLElement).tagName !== 'string') return false
   const element = target as HTMLElement
   if (element.isContentEditable) return true

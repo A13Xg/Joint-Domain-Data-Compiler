@@ -53,3 +53,15 @@ test('F1 opens the user guide', async ({ page, context }) => {
   await guide.waitForLoadState('domcontentloaded')
   expect(guide.url()).toContain('user-guide.html')
 })
+
+test('Ctrl/⌘+S saves even while typing in the project notes', async ({ page }) => {
+  await page.goto('/')
+  await importCsv(page)
+  await page.getByRole('button', { name: 'Project', exact: true }).click()
+  const notes = page.getByPlaceholder('Purpose, assumptions, provenance, or handoff notes.')
+  await notes.fill('checked the second racetrack')
+  const download = page.waitForEvent('download')
+  await notes.press(`${mod}+s`)
+  expect((await download).suggestedFilename()).toMatch(/\.jddc-project$/)
+  await expect(notes).toHaveValue('checked the second racetrack')
+})
