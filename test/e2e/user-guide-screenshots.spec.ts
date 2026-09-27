@@ -62,6 +62,10 @@ test('capture user guide screenshots', async ({ page }) => {
   mkdirSync(OUTPUT_DIR, { recursive: true })
 
   await page.goto('/')
+  // The workbench is lazy-loaded behind a skeleton; shooting before it has
+  // mounted captured a half-faded drop zone.
+  await page.locator('.dropzone').waitFor()
+  await page.waitForTimeout(800)
   await shoot(page, '01-app-shell')
 
   // --- import and CSV mapping ------------------------------------------------

@@ -82,7 +82,8 @@ All supported inputs normalize into a shared dataset model with source metadata,
   scroll, or camera pan depending on the view — and discards the selection only through its ×.
 - Index-range, time-range and segment selection.
 - Selection-scoped statistics and supported transforms.
-- Keyboard navigation for selection and cursor movement.
+- Keyboard navigation for selection and cursor movement, plus application shortcuts (Ctrl/⌘+O, Ctrl/⌘+S, undo/redo, F1 for the guide).
+- Files can be dropped onto any tab to import them.
 
 ## Repairs
 
@@ -103,6 +104,7 @@ the Transform toolbar turns the gate off for batch work.
 - Built-in presets and extrema-preserving source-index-aware downsampling.
 - Linked cursor, point selection, range brushing and selected-range statistics.
 - Zoom, pan and range reset, plus accessible patterned quality-event overlays.
+- Labelled gridlines for the first two series and intermediate time ticks.
 
 Multi-pane layouts, explicit per-series scales, statistical plots and image export remain roadmap work.
 
@@ -111,7 +113,8 @@ Multi-pane layouts, explicit per-series scales, statistical plots and image expo
 - Leaflet path and bounded point rendering.
 - Channel-based coloring, linked cursor/selection/range emphasis and fit-to-range.
 - Simultaneous, individually styled multi-source tracks.
-- Default OpenStreetMap tiles are online; an offline/no-basemap mode is available for local work.
+- Default OpenStreetMap tiles are online; an offline mode draws a zoom-adaptive lat/lon grid instead.
+- Scale bar in the display units, and a Measure tool for great-circle distance and bearing between clicked points or samples.
 
 ### 3D
 
@@ -142,6 +145,8 @@ roadmap work.
 - Decimate and simplify.
 - Moving-average smoothing.
 - Shift timestamps and elevation.
+- Declare a track's altitude and time references (relabel only; recorded and undoable), which is
+  what makes tracks with undeclared datums comparable.
 - Remove local elevation outliers.
 - Fixed-rate linear or step resampling with gap protection in a Worker.
 - Selection-scoped safe transforms.

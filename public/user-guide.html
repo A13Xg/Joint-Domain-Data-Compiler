@@ -169,7 +169,7 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
   </figure>
 
   <ol class="steps">
-    <li>Press <strong>+ Load data</strong> (or drag files onto the Import tab).</li>
+    <li>Press <strong>+ Load data</strong> (or <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>O</kbd>), or drag files onto the window — any tab accepts a drop.</li>
     <li>A CSV takes you to <strong>CSV Mapping</strong> to confirm which columns are latitude, longitude, altitude, and time. Every other format loads straight through.</li>
     <li>Work through the tabs: <strong>Overview</strong> for a health scan, <strong>Map</strong>/<strong>Charts</strong>/<strong>3D</strong> to look at it, <strong>Transform</strong> to fix it, <strong>Export</strong> to write it back out.</li>
   </ol>
@@ -309,12 +309,14 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
     <thead><tr><th>Control</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td>display</td><td>Path + Points, Path only, or Points only. Points only is the one to use when you care about sample spacing rather than the route.</td></tr>
-      <tr><td>basemap</td><td>OpenStreetMap, OSM Dark, OSM Humanitarian, OpenTopoMap, or an offline grid. The offline grid needs no network at all.</td></tr>
+      <tr><td>basemap</td><td>OpenStreetMap, OSM Dark, OSM Humanitarian, OpenTopoMap, or an offline grid. The offline grid needs no network at all: it draws latitude/longitude lines that adapt to the zoom, labelled along the bottom and right edges.</td></tr>
       <tr><td>color by</td><td>Shade points by elevation or by any numeric channel. A legend appears with the value range.</td></tr>
       <tr><td>split gaps</td><td>Break the drawn path where the time gap exceeds this many minutes, so a pause does not become a straight line across the map.</td></tr>
       <tr><td>density</td><td>A binned heat view for spotting where samples cluster. The cell size is in metres.</td></tr>
       <tr><td>Fit active / visible / range</td><td>Zoom to the active track, to everything visible, or to the current selection.</td></tr>
       <tr><td>Quality markers</td><td>Gaps and jumps are marked in place, so a problem is visible where it happened.</td></tr>
+      <tr><td>Scale bar</td><td>Lower-left, in your display units (metres/kilometres, or feet/nautical miles). Measured at the middle of the view, since map scale changes with latitude.</td></tr>
+      <tr><td>Measure</td><td>Toggle it, then click the map to place points A, B, C…; click a sample to snap to its exact position (it is not selected). The panel lists each leg's distance and initial true bearing and the total. <em>Undo point</em> and <em>Clear</em> edit the line. Distances are great-circle on a spherical Earth, within about 0.5% of the WGS-84 ellipsoid.</td></tr>
     </tbody>
   </table></div>
 
@@ -343,6 +345,7 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
       <tr><td>x-axis</td><td>Time, sample index, cumulative distance, or (scatter only) any numeric channel.</td></tr>
       <tr><td>Export SVG / PNG</td><td>Writes the current chart to a file, at the resolution you see.</td></tr>
       <tr><td>Reset zoom</td><td>Clears both axes back to the full extent.</td></tr>
+      <tr><td>Axis values</td><td>Each series' minimum and maximum are printed at the top and bottom; the three interior gridlines carry the values of the first two series (left edge and right edge, in their own colours), and the time axis has intermediate ticks.</td></tr>
       <tr><td>Legend</td><td>Below the plot: one entry per plotted series, in the colour it is drawn with. <em>Hide</em> removes that series from the chart, exactly like clicking its chip; click the chip again to bring it back.</td></tr>
     </tbody>
   </table></div>
@@ -380,7 +383,8 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
       <tr><td>quality events only</td><td>Narrows to rows the quality detector flagged.</td></tr>
       <tr><td>selected range only</td><td>Narrows to the current selection from any other view.</td></tr>
       <tr><td>Column headers</td><td>Click to sort ascending, again for descending, again to return to file order.</td></tr>
-      <tr><td>Export visible CSV</td><td>Writes exactly what the filters and sort are showing, not the whole dataset.</td></tr>
+      <tr><td>Export visible CSV</td><td>Writes exactly the rows the filters and sort are showing, not the whole dataset — with every value at the precision it was read, not the grid's display rounding.</td></tr>
+      <tr><td>Layout</td><td>The grid fills the tab. Coordinates always show six decimals (about 0.1 m); the time column is wide enough for the whole UTC instant.</td></tr>
       <tr><td>Delete set</td><td>Removes the multi-selected rows as one undoable operation.</td></tr>
     </tbody>
   </table></div>
@@ -477,7 +481,7 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
       <tr><td>Reset / Top / Side / Fit</td><td>Preset camera positions. <em>Top</em> looks straight down with north up the screen, like the map. <em>Side</em> looks along the horizon towards north. <em>Fit</em> resets zoom and pan but keeps your orbit.</td></tr>
       <tr><td>Orientation axes</td><td>E (east), N (north) and U (up) in the lower-left corner, turned with the scene, so a view from above can never be mistaken for one from below. An axis pointing straight at you shrinks to its label.</td></tr>
       <tr><td>Playback</td><td>Play, pause, restart, scrub, and 0.25×–4× speed. The marker moves in proportion to <em>recorded time</em>, so it jumps across a gap and crawls through densely sampled stretches, and the readout shows the sample's UTC time and elapsed <code>T+</code> time. A track without usable timestamps plays by sample order and says so. The cursor stays linked to the other views as it moves.</td></tr>
-      <tr><td>Companion tracks</td><td>Other loaded datasets with compatible reference metadata share the scene, each in its Sources-tab colour and named in the legend under the scene. Hide one in the Sources tab to take it out of the 3D view as well as the map.</td></tr>
+      <tr><td>Companion tracks</td><td>Other loaded datasets share the scene, each in its Sources-tab colour and named under the scene, when their altitude and time references match this track's — and tracks from the same P5 recording always do, since they share one georeference. Tracks whose reference is unknown are counted, with a checkbox to draw them anyway (marked <em>ref. unknown</em>, because a height difference may be a datum difference); declaring their references under Transform makes them compatible outright. Tracks with a conflicting declared reference are counted as excluded. Hide one in the Sources tab to take it out of the 3D view as well as the map.</td></tr>
     </tbody>
   </table></div>
 
@@ -525,6 +529,7 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
       <tr><td>Fill gaps</td><td>Synthesises samples across time gaps above a threshold, gated by a motion profile so the fit stays physically plausible.</td></tr>
       <tr><td>Derive kinematics</td><td>Computes distance, speed, heading, turn rate, and acceleration channels from position and time.</td></tr>
       <tr><td>Shift time / Offset elevation</td><td>Applies a constant offset to every sample.</td></tr>
+      <tr><td>Declare references</td><td>Records what the track's altitudes (MSL, HAE, AGL, pressure) and times (UTC, GPS, TAI, local) are measured against. Most files never say, and Compare, 3D and Fusion treat an unknown reference as not comparable with anything; declaring it fixes that. It is recorded in the operation history and report and can be undone. It relabels only — no value is converted — and changing an already-declared reference warns you so.</td></tr>
     </tbody>
   </table></div>
 
@@ -832,6 +837,20 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
       <tr><td><kbd>Esc</kbd></td><td>Clear the selection. Inside a dialog, closes it without applying.</td></tr>
       <tr><td><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + click</td><td>Add or remove one item from a multi-selection</td></tr>
       <tr><td><kbd>Shift</kbd> + click</td><td>Extend a multi-selection to the clicked item</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Application shortcuts</h3>
+  <p>These work from any tab. They do nothing while you are typing in a field — there, <kbd>Ctrl</kbd>+<kbd>Z</kbd>
+  undoes your typing — or while a dialog is open.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Key</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>O</kbd></td><td>Load data (the file picker)</td></tr>
+      <tr><td><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>S</kbd></td><td>Save the complete project (switches to the Project tab)</td></tr>
+      <tr><td><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Z</kbd></td><td>Undo the last transform on the active dataset</td></tr>
+      <tr><td><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd>, or <kbd>Ctrl</kbd> + <kbd>Y</kbd></td><td>Redo</td></tr>
+      <tr><td><kbd>F1</kbd></td><td>Open this guide</td></tr>
     </tbody>
   </table></div>
   <p>Chart and table gestures are listed under <a href="#charts">Charts</a> and <a href="#table">Table</a>.</p>

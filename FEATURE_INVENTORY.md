@@ -69,6 +69,20 @@ Always present; tabs enabled/disabled by state:
 ### Global Escape Key
 - Clears all point/range selection app-wide unless modal (RepairPreviewDialog, ConfirmDialog) intercepts with `stopPropagation()`
 
+### Application Shortcuts (`src/ui/shortcuts.ts`)
+- **Ctrl/⌘+O** — opens the load-data picker
+- **Ctrl/⌘+S** — saves the complete project from any tab (switches to Project; ProjectPanel runs its own save via a `pendingSave` request, acknowledged in the same timer callback so it cannot run twice); with no datasets, a toast says there is nothing to save
+- **Ctrl/⌘+Z** — undo; **Ctrl/⌘+Shift+Z** or **Ctrl+Y** — redo (same handlers as the Transform buttons)
+- **F1** — opens the user guide
+- Suppressed while focus is in a text-like field (its own undo wins) and while any `aria-modal="true"` dialog is open
+- Hints on the Load data, Save complete project, Undo and Redo buttons
+
+### Window-wide File Drop (`src/ui/useWindowFileDrop.ts`)
+- Files dropped on **any** tab import; only drags carrying files are handled (text/link drags untouched)
+- `dragover`/`drop` are preventDefault-ed, so a browser never navigates to a dropped file and loses the session
+- The whole FileList goes to `onFiles` in one call, keeping `.msnP5`/`.rpt`/`.teq` pairing
+- Enter/leave depth counter; a "Drop to import" overlay shows over every tab but Import
+
 ### Unsaved Changes Guard
 - Browser: `beforeunload` prompt when `projectDirty`
 - Electron: native close-confirmation dialog (text: "This project has unsaved changes. Closing now discards every change made since the last save."); buttons: "Close without saving" (closes) / "Cancel" (default, aborts close)
@@ -78,7 +92,7 @@ Always present; tabs enabled/disabled by state:
 ## Part 2: Import & Data Loading
 
 ### ImportView Tab
-- **Dropzone** — "Drop TSPI data here" / "or click to browse"; drag-over toggles `.drag` class
+- **Dropzone** — "Drop TSPI data here" / "or click to browse"; reflects the window-wide drag state (`.drag`); the drop itself is handled window-wide so a drop here imports once; keyboard operable (`role="button"`, Enter/Space browses)
 - **Format pills** — one per INPUT_FORMATS (CSV/TSV, GPX, GeoJSON, KML/KMZ, NMEA 0183, GPB, EAG, P5 CTS mission); informational
 - **Conversion matrix note** — explains unified point model, export targets, auto-detection (DMS/comma decimals, epoch/Excel/ISO times)
 
@@ -193,7 +207,7 @@ Always present; tabs enabled/disabled by state:
 1. **Derive kinematics** — Apply button; computes distance, speed, heading, turn rate, accel, sample timing (full dataset only)
 2. **Shift time** — seconds field; Apply button
 3. **Offset elevation** — meters field; Apply button
-
+4. **Declare references** — altitude reference (MSL/HAE/AGL/PRESSURE/UNKNOWN) and time reference (UTC/GPS/TAI/LOCAL/UNKNOWN) selects, seeded from the dataset and re-seeded when it changes; Apply disabled until something differs. Registered operation `declare-references`: recorded, undoable, replayable, fuzz-covered params. Relabels only — never converts values; relabelling an already-declared reference warns that nothing was converted. Unblocks Compare/3D/Fusion compatibility
 ### Repair Gate Logic
 - With "preview repairs" on + visualizable diff → RepairPreviewDialog, destructive ConfirmDialog never shown for that run
 - With "preview repairs" off (or no visualizable diff) → destructive ConfirmDialog used instead
@@ -269,6 +283,9 @@ All read-only by default; editable text inputs when unlocked:
 - **Split-gaps input** — sets `maxGapMinutes`; gaps beyond threshold break polyline, mark quality events
 - **Density toggle** — show/hide spatial density heatmap
 - **Density cell size input** — meters (min 1, step 50); only shown when density checked
+- **Offline grid basemap** — draws a zoom-adaptive lat/lon graticule (`graticuleStep`/`graticuleLines`); latitude labels on the right edge, longitude labels along the bottom (skipped under the scale bar), wrapped into ±180
+- **Scale bar** — lower-left, 1/2/5×10ⁿ in display units (m/km or ft/NM), measured at the view's vertical centre
+- **Measure toggle** (`aria-pressed`) — click map to add vertices A, B, C…; clicking a sample snaps to it without selecting; panel ("Measurement" region) lists each leg's distance and initial true bearing, and the total; **Undo point** / **Clear**; method stated: great-circle on a spherical Earth (R = 6,371,008.8 m); crosshair cursor while active
 
 ### Navigation & Fit
 - **Fit active button** — fits map to active track's rendered points
@@ -380,6 +397,8 @@ All read-only by default; editable text inputs when unlocked:
 - **Time/x-range summary** — "{axis} range" / "start {..}" / "end {..}" / "(zoomed view shown above)" when zoomed
 - **Range statistics readout** — "{n} pts", distance (m), duration (s), per-channel "μ {mean} · {min}–{max}"; only when range selected
 - **Quality event count line** — "⚠ {n} quality event(s) detected…"; only when events exist
+- **Gridline values** — the 25/50/75% gridlines carry the values of the first two plotted series (left and right edges, in series colours); min/max still printed per series
+- **Interior x ticks** — three, between the full start/end labels; time of day (`HH:MM:SS.sZ`) on a time axis
 - **Usage hint text** — documents gestures; conditional sentence: "Ctrl/⌘+click or +drag adds to delete set…" OR "Zoom in to build delete set…"; note about downsampling budget (Settings)
 
 ### Chart Legend
@@ -404,7 +423,9 @@ All read-only by default; editable text inputs when unlocked:
 ### Filtering & Control
 - **Filter input** — placeholder "filter rows…"; free-text substring filter across all values
 - **Row count readout** — "{shown} / {total} rows"
-- **Export visible CSV button** — downloads/archives currently filtered+sorted rows; disabled when zero rows
+- **Export visible CSV button** — downloads/archives currently filtered+sorted rows **at full precision** (raw values, never the grid's display rounding — fixed in 0.8); disabled when zero rows
+- **Grid height** — fills the tab (ResizeObserver; min 260 px); was a fixed 460 px
+- **Column widths** — per-column minimums: time fits a whole ISO instant, channel columns fit their names; coordinates display with six decimals
 - **Quality-events-only checkbox** — filters to quality-event-flagged rows; only shown when events exist
 - **Next quality event button** — selects next flagged point after current (wraps); only shown when events exist
 - **Selected-range-only checkbox** — filters to active index range; only shown when range exists
@@ -542,8 +563,8 @@ All read-only by default; editable text inputs when unlocked:
 
 ### Metadata & State
 - **Reference metadata warning** — "Reference metadata is incomplete: 3D geometry is local visualization only and must not be used for cross-source altitude/time comparison." (shown if altitude or time reference UNKNOWN)
-- **Companion tracks note** — "Shared ENU frame includes {n} compatible companion track(s) (purple)." (only if compatible companions exist)
-- **Incompatible datasets warning** — "{n} dataset(s) excluded from shared 3D…" (only if incompatible)
+- **Companion plan** (`planSceneCompanions`) — every other visible dataset lands in one bucket: `compatible` (declared, matching references) and `same-recording` (P5 slots sharing a `p5DocumentKey`) are drawn; `unknown-reference` is counted with an opt-in checkbox ("also show {n} track(s) whose altitude or time reference is unknown") and marked "(ref. unknown)" when drawn; `blocked` (declared and conflicting) is counted as excluded; datasets hidden in Sources are counted
+- **Companion legend** — "Shared ENU frame with {n} companion track(s):" + a colour chip and name per track
 - **Metric cards** — source points, valid coords, rendered vertices, E/N/U spans
 - **Usage hint** — "Drag to orbit, Shift/right-drag to pan, wheel to zoom. Hover/playback updates cursor; click selects persistent point."
 

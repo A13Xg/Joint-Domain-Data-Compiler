@@ -3,6 +3,43 @@
 Notable user-facing and operational changes are recorded here. This project follows Semantic
 Versioning; release tags use the `vX.Y.Z` form.
 
+## Unreleased
+
+### Fixed
+
+- **The 3D view silently dropped most companion tracks.** It drew only tracks whose references
+  were fully "compatible" and counted only "blocked" ones, so every track with an *unknown*
+  altitude or time reference — every CSV without a declared datum, and every P5 slot — vanished
+  with no note. A multi-aircraft P5 sortie could never be viewed together. Slots of one recording
+  now always share the scene (one georeference by construction); unknown-reference tracks are
+  counted, with an opt-in to draw them marked "ref. unknown"; conflicting ones are counted as
+  excluded; hidden ones are counted. The companion-legend styling the 0.7.0 notes described is
+  now actually included.
+- **Table "Export visible CSV" rounded the data.** It passed values through the grid's display
+  formatter, cutting coordinates to five decimals (~1 m). It now writes the raw values.
+- **A file dropped on any tab but Import was taken by the browser**, which navigated to it and
+  replaced the workbench — unsaved session included.
+- The Table was a fixed 460 px box and cut the time column to 13 of its 24 characters; it now fills
+  the tab and sizes columns to their content, with coordinates at a fixed six decimals.
+- Key/value tables (Overview time span, point accounting, metadata) right-aligned their labels.
+- The guide's Import screenshot was captured before the workbench had mounted.
+
+### Added
+
+- **Declare references** (Transform → Derive): record a track's altitude reference (MSL, HAE,
+  AGL, pressure) and time reference (UTC, GPS, TAI, local). A recorded, undoable, replayable
+  operation that relabels only — it never converts a value, and says so when changing a reference
+  that was already declared. It is what lets two CSV tracks be compared, shared in 3D, or fused.
+- **Map:** a scale bar in the display units (m/km or ft/NM); a real latitude/longitude grid for the
+  offline basemap, which was a blank grey plane; and a **Measure** tool — click points (or snap to
+  samples) for per-leg great-circle distance and initial true bearing, and the total.
+- **Keyboard shortcuts** from any tab: Ctrl/⌘+O load data, Ctrl/⌘+S save project, Ctrl/⌘+Z undo,
+  Ctrl/⌘+Shift+Z or Ctrl+Y redo, F1 user guide. Suppressed while typing in a field or while a
+  dialog is open. The desktop app has no menu bar, so it previously had no accelerators at all.
+- **Drop files anywhere** in the window, with a "Drop to import" overlay.
+- **Charts:** the interior gridlines carry values for the first two plotted series, and the time
+  axis has intermediate ticks.
+
 ## 0.7.0 - 2026-09-27
 
 ### Fixed

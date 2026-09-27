@@ -63,7 +63,8 @@ export function OfflineGraticule() {
     <>
       {grid.meridians.map((line) => <Polyline key={`m${line.value}`} positions={[[south, line.value], [north, line.value]] as LatLngTuple[]} pathOptions={{ color: '#64748b', weight: 1, opacity: 0.55, interactive: false }} />)}
       {grid.parallels.map((line) => <Polyline key={`p${line.value}`} positions={[[line.value, view.west], [line.value, view.east]] as LatLngTuple[]} pathOptions={{ color: '#64748b', weight: 1, opacity: 0.55, interactive: false }} />)}
-      {grid.meridians.map((line) => <Marker key={`ml${line.value}`} position={[labelLat, line.value]} interactive={false} icon={L.divIcon({ className: 'graticule-label graticule-label-meridian', html: `<span>${line.label}</span>`, iconSize: [0, 0] })} />)}
+      {/* Skip longitude labels in the lower-left corner, under the scale bar. */}
+      {grid.meridians.filter((line) => map.latLngToContainerPoint([labelLat, line.value]).x > 120).map((line) => <Marker key={`ml${line.value}`} position={[labelLat, line.value]} interactive={false} icon={L.divIcon({ className: 'graticule-label graticule-label-meridian', html: `<span>${line.label}</span>`, iconSize: [0, 0] })} />)}
       {grid.parallels.map((line) => <Marker key={`pl${line.value}`} position={[line.value, labelLon]} interactive={false} icon={L.divIcon({ className: 'graticule-label graticule-label-parallel', html: `<span>${line.label}</span>`, iconSize: [0, 0] })} />)}
     </>
   )
