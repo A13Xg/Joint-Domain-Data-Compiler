@@ -59,8 +59,20 @@
 .p5-roster { width: 100%; border-collapse: collapse; font-size: 12px; }
 .p5-roster th, .p5-roster td { padding: 5px 7px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
 .p5-roster th { position: sticky; top: 0; background: var(--bg-2); z-index: 1; }
-.p5-roster input[type='text'], .p5-roster input:not([type]) { width: 15ch; }
-.p5-roster input[type='number'] { width: 8ch; }
+.p5-roster input[type='text'] { width: 15ch; }
+.p5-roster input[type='text'] { padding: 4px 6px; }
+/* Wide enough for three digits after the input's own padding and Chromium's
+   spin buttons and datalist arrow; at 8ch a two-digit code was cut in half. */
+.p5-roster input[type='number'] { width: 11ch; min-width: 11ch; box-sizing: content-box; padding: 4px 6px; }
+.p5-companions { width: 100%; border-collapse: collapse; }
+.p5-companions th, .p5-companions td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.p5-companions th { color: var(--text-dim); font-weight: 600; font-size: 11px; }
+.p5-companions td:first-child { white-space: nowrap; }
+.p5-companions td:last-child { width: 30%; }
+.p5-companion-ok { color: #4ade80; }
+.p5-companion-info { color: var(--text-dim); }
+.p5-companion-warn { color: #fbbf24; }
+.p5-type-code { display: inline-flex; align-items: center; gap: 6px; }
 .p5-roster input[type='color'] { width: 34px; height: 24px; padding: 0; border: 1px solid var(--border); background: none; }
 /* An edited-but-unapplied slot has to be visibly distinct from a saved one, or
    "Apply" reads as a no-op and the edit is lost on rebuild. */

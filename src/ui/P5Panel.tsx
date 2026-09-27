@@ -331,6 +331,8 @@ function P5RecordingCard({
         ))}
       </header>
 
+      <P5CompanionFiles doc={doc} filename={group.filename} />
+
       <div className="p5-section">
         <h3>Range georeference</h3>
         <p className="muted small">
@@ -414,18 +416,23 @@ function P5RecordingCard({
                       <span className="muted small">—</span>
                     )}
                   </td>
-                  <td><input value={entry.callsign} maxLength={20} onChange={(e) => updateSlot(entry.slot, { callsign: e.target.value })} /></td>
-                  <td><input value={entry.aircraftId} maxLength={8} onChange={(e) => updateSlot(entry.slot, { aircraftId: e.target.value })} /></td>
-                  <td><input value={entry.unit} maxLength={8} onChange={(e) => updateSlot(entry.slot, { unit: e.target.value })} /></td>
+                  <td><input type="text" aria-label={`Callsign for slot ${entry.slot}`} value={entry.callsign} maxLength={20} onChange={(e) => updateSlot(entry.slot, { callsign: e.target.value })} /></td>
+                  <td><input type="text" aria-label={`Aircraft id for slot ${entry.slot}`} value={entry.aircraftId} maxLength={8} onChange={(e) => updateSlot(entry.slot, { aircraftId: e.target.value })} /></td>
+                  <td><input type="text" aria-label={`Unit for slot ${entry.slot}`} value={entry.unit} maxLength={8} onChange={(e) => updateSlot(entry.slot, { unit: e.target.value })} /></td>
                   <td>
-                    <input
-                      type="number"
-                      min={0}
-                      max={255}
-                      list="p5-type-codes"
-                      value={entry.typeCode}
-                      onChange={(e) => updateSlot(entry.slot, { typeCode: Number(e.target.value) })}
-                    />
+                    <span className="p5-type-code">
+                      <input
+                        type="number"
+                        min={0}
+                        max={255}
+                        list="p5-type-codes"
+                        aria-label={`Type code for slot ${entry.slot}`}
+                        value={entry.typeCode}
+                        onChange={(e) => updateSlot(entry.slot, { typeCode: Number(e.target.value) })}
+                      />
+                      {/* The format documents these codes in hex, so show that too. */}
+                      <span className="mono muted small">{formatTypeCodeHex(entry.typeCode)}</span>
+                    </span>
                   </td>
                   <td className="mono small">{doc.liveSlots.includes(entry.slot) ? 'live' : '—'}</td>
                 </tr>
@@ -492,7 +499,7 @@ function P5RecordingCard({
         <h3>Integrity and export</h3>
         <div className="p5-actions">
           <button type="button" disabled={busy} onClick={runValidation}>Validate structure &amp; integrity</button>
-          <button type="button" disabled={busy || geoDirty} onClick={exportRecording}>Export .msnP5 + .rpt</button>
+          <button type="button" disabled={busy || geoDirty} onClick={exportRecording}>Export .msnP5 + .rpt{doc.teq ? ' + .teq' : ''}</button>
         </div>
         {geoDirty && (
           <p className="warn small">
@@ -515,6 +522,80 @@ function P5RecordingCard({
       </div>
     </section>
   )
+}
+
+/**
+ * What each file of the set is for, and what this session actually has of it.
+ *
+ * Operators receive three files and reasonably ask which ones matter. The
+ * answer differs per file and per load: the .rpt can be rebuilt from the
+ * recording, the .teq cannot be (nobody knows its layout), and whether either
+ * was dropped in changes what an export produces. Claims here keep the evidence
+ * tiers of docs/P5-MSN.md: the .rpt's role is confirmed, the .teq's is not.
+ */
+function P5CompanionFiles({ doc, filename }: { doc: P5Document; filename: string }) {
+  const stem = filename.replace(/\.msnp5$/i, '')
+  const rptDisagrees = doc.warnings.some((warning) => warning.startsWith('.rpt'))
+  const teqDisagrees = doc.warnings.some((warning) => warning.includes('.teq'))
+  const rows: Array<{ file: string; role: string; status: string; tone: 'ok' | 'info' | 'warn' }> = [
+    {
+      file: `${stem}.msnP5`,
+      role: 'The recording itself. One block per mission second, ten subframes per block, one 88-byte record per roster slot per subframe — every position sample lives here, along with the participant roster in block 0.',
+      status: `Loaded · ${formatBytes(doc.bytes.byteLength)}`,
+      tone: 'ok',
+    },
+    {
+      file: `${stem}.rpt`,
+      role: 'Block index (confirmed). A table of {size, offset} pairs saying where each one-second block starts inside the .msnP5, plus the mission date. It holds no samples; it lets a reader jump straight to any second of a 400 MB recording instead of walking it from the start. Because every block after the first has a fixed size, JDDC can rebuild it from the recording alone.',
+      status: doc.rptHeader
+        ? rptDisagrees
+          ? 'Supplied, but it disagrees with the recording — the layout derived from the .msnP5 is being used; see the warning above.'
+          : 'Supplied and cross-checked: it matches the recording block for block. Export rewrites it in the same footprint.'
+        : 'Not supplied. Not needed to read the recording — the index was derived from it — and export writes a freshly generated .rpt.',
+      tone: doc.rptHeader && !rptDisagrees ? 'ok' : rptDisagrees ? 'warn' : 'info',
+    },
+    {
+      file: `${stem}.teq`,
+      role: 'Companion table, contents not decoded. In the only recording examined it repeats the mission start time and is otherwise all zeros; its 220,000 bytes fit a per-participant table (50 slots × 4,400 bytes) that that sortie never filled. What would populate it — equipment configuration, weapons events, line-up changes — is unknown. JDDC reads only that start time, to check the file belongs to this mission, and otherwise carries it through untouched so an exported set matches the imported one.',
+      status: doc.teq
+        ? teqDisagrees
+          ? 'Supplied, but its start time differs from the recording — it may belong to another mission. It is still carried through unchanged.'
+          : 'Supplied; start time matches the recording. Export writes it back byte-for-byte.'
+        : 'Not supplied. Nothing is lost from the tracks; export will produce the .msnP5 and .rpt only.',
+      tone: doc.teq && !teqDisagrees ? 'ok' : teqDisagrees ? 'warn' : 'info',
+    },
+  ]
+  return (
+    <div className="p5-section">
+      <h3>Files in this set</h3>
+      <p className="muted small">
+        A P5 recording arrives as three files sharing one name. Only the <code>.msnP5</code> holds data; drop the
+        other two in the same batch and they are paired with it by name. See <code>docs/P5-MSN.md</code> §3–4.
+      </p>
+      <table className="p5-companions">
+        <thead><tr><th>File</th><th>What it is</th><th>In this session</th></tr></thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.file}>
+              <td className="mono small">{row.file}</td>
+              <td className="small">{row.role}</td>
+              <td className={`small p5-companion-${row.tone}`}>{row.status}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MB`
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${bytes} B`
+}
+
+function formatTypeCodeHex(code: number): string {
+  return Number.isInteger(code) && code >= 0 && code <= 255 ? `0x${code.toString(16).toUpperCase().padStart(2, '0')}` : 'invalid'
 }
 
 function saveBinary(bytes: Uint8Array, fileName: string): void {
