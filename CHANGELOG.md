@@ -30,7 +30,6 @@ Versioning; release tags use the `vX.Y.Z` form.
 
 ## 0.8.0 - 2026-09-27
 
-
 ### Added
 
 - **JDDC Playback** — a standalone app that loads a `.jddc-playback` scenario (or a `.jddc-project`,

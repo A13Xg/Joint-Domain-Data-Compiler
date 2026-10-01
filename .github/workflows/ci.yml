@@ -117,7 +117,6 @@ jobs:
           else
             PREVIOUS_VERSION=""
           fi
-          echo "current=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
           PREVIOUS_VERSION="$PREVIOUS_VERSION" CURRENT_VERSION="$CURRENT_VERSION" node scripts/check-version-bump.mjs >> "$GITHUB_OUTPUT"
 
       - name: Tag and push
