@@ -1,9 +1,13 @@
 // Versioning automation: the pre-commit patch auto-increment and the CI
 // auto-tag decision. See scripts/bump-patch-version.mjs, scripts/check-version-bump.mjs,
 // and CONTRIBUTING.md's "Versioning" section for the policy these implement.
-import { readFile } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { nextPatchVersion } from '../scripts/bump-patch-version.mjs'
 import { shouldTagRelease } from '../scripts/check-version-bump.mjs'
+import { configureGitHooks } from '../scripts/setup-git-hooks.mjs'
 
 let failures = 0
 function check(name: string, condition: boolean): void {
@@ -39,6 +43,27 @@ check('Pre-release suffix is ignored when comparing major/minor', shouldTagRelea
 {
   const hook = await readFile('githooks/pre-commit', 'utf8')
   check('pre-commit hook invokes the patch bump script', hook.includes('scripts/bump-patch-version.mjs'))
+}
+
+// setup-git-hooks.mjs: must configure a real git checkout, and must not
+// throw against a plain directory that has no .git at all.
+{
+  const gitDir = await mkdtemp(join(tmpdir(), 'jddc-git-hooks-'))
+  try {
+    execFileSync('git', ['init', '--quiet'], { cwd: gitDir })
+    check('configureGitHooks configures core.hooksPath inside a git repo', configureGitHooks(gitDir) === 'configured')
+    const configured = execFileSync('git', ['config', 'core.hooksPath'], { cwd: gitDir, encoding: 'utf8' }).trim()
+    check('core.hooksPath is set to githooks', configured === 'githooks')
+  } finally {
+    await rm(gitDir, { recursive: true, force: true })
+  }
+
+  const plainDir = await mkdtemp(join(tmpdir(), 'jddc-no-git-'))
+  try {
+    check('configureGitHooks is a no-op outside a git repo', configureGitHooks(plainDir) === 'not-a-git-repo')
+  } finally {
+    await rm(plainDir, { recursive: true, force: true })
+  }
 }
 
 console.log(`\n${failures === 0 ? 'ALL VERSION BUMP CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`)

@@ -8,22 +8,14 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { basename } from 'node:path'
+import { parseVersion } from './version-format.mjs'
 
 const PKG_PATH = 'package.json'
 
-// A trailing pre-release/build suffix (`-rc.1`, `+build.5`) is accepted and
-// carried through unchanged: only the numeric major.minor.patch prefix is
-// ever incremented. `resolveVersion` in resolve-release-matrix.mjs already
-// treats such a suffix as part of the version elsewhere in the release
-// pipeline, so this does not invent a new rule.
-const VERSION_PATTERN = /^(\d+)\.(\d+)\.(\d+)((?:-|\+).*)?$/
-
 /** Pure so it is unit-testable without touching git or the filesystem. */
 export function nextPatchVersion(currentVersion) {
-  const match = VERSION_PATTERN.exec(currentVersion)
-  if (!match) throw new Error(`Cannot parse version "${currentVersion}" as major.minor.patch`)
-  const [, major, minor, patch, suffix] = match
-  return `${major}.${minor}.${Number(patch) + 1}${suffix ?? ''}`
+  const { major, minor, patch, suffix } = parseVersion(currentVersion)
+  return `${major}.${minor}.${patch + 1}${suffix}`
 }
 
 function previousCommittedVersion() {
