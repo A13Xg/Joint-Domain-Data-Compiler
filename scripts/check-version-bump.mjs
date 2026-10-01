@@ -10,14 +10,16 @@
 // Gates" and the expensive packaging workflows separate.
 import { basename } from 'node:path'
 
+// Only the numeric major.minor.patch prefix is compared; a pre-release/build
+// suffix (`-rc.1`, `+build.5`) is accepted but ignored for this decision, the
+// same tolerance bump-patch-version.mjs gives it when auto-incrementing.
+const VERSION_PATTERN = /^(\d+)\.(\d+)\.(\d+)(?:(?:-|\+).*)?$/
+
 function parseVersion(version) {
-  const parts = version.split('.')
-  if (parts.length !== 3) throw new Error(`Cannot parse version "${version}" as major.minor.patch`)
-  const [major, minor, patch] = parts.map(Number)
-  if (![major, minor, patch].every(Number.isInteger)) {
-    throw new Error(`Cannot parse version "${version}" as major.minor.patch`)
-  }
-  return { major, minor, patch }
+  const match = VERSION_PATTERN.exec(version)
+  if (!match) throw new Error(`Cannot parse version "${version}" as major.minor.patch`)
+  const [, major, minor, patch] = match
+  return { major: Number(major), minor: Number(minor), patch: Number(patch) }
 }
 
 /**

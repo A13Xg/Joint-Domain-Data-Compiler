@@ -11,15 +11,19 @@ import { basename } from 'node:path'
 
 const PKG_PATH = 'package.json'
 
+// A trailing pre-release/build suffix (`-rc.1`, `+build.5`) is accepted and
+// carried through unchanged: only the numeric major.minor.patch prefix is
+// ever incremented. `resolveVersion` in resolve-release-matrix.mjs already
+// treats such a suffix as part of the version elsewhere in the release
+// pipeline, so this does not invent a new rule.
+const VERSION_PATTERN = /^(\d+)\.(\d+)\.(\d+)((?:-|\+).*)?$/
+
 /** Pure so it is unit-testable without touching git or the filesystem. */
 export function nextPatchVersion(currentVersion) {
-  const parts = currentVersion.split('.')
-  if (parts.length !== 3) throw new Error(`Cannot parse version "${currentVersion}" as major.minor.patch`)
-  const [major, minor, patch] = parts.map(Number)
-  if (![major, minor, patch].every(Number.isInteger)) {
-    throw new Error(`Cannot parse version "${currentVersion}" as major.minor.patch`)
-  }
-  return `${major}.${minor}.${patch + 1}`
+  const match = VERSION_PATTERN.exec(currentVersion)
+  if (!match) throw new Error(`Cannot parse version "${currentVersion}" as major.minor.patch`)
+  const [, major, minor, patch, suffix] = match
+  return `${major}.${minor}.${Number(patch) + 1}${suffix ?? ''}`
 }
 
 function previousCommittedVersion() {

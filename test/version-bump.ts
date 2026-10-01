@@ -14,6 +14,8 @@ function check(name: string, condition: boolean): void {
 check('Patch increments by one', nextPatchVersion('1.2.3') === '1.2.4')
 check('Patch increment leaves major/minor untouched', nextPatchVersion('0.8.0') === '0.8.1')
 check('Double-digit patch increments correctly', nextPatchVersion('2.0.9') === '2.0.10')
+check('Pre-release suffix is preserved across a patch bump', nextPatchVersion('0.9.0-rc.1') === '0.9.1-rc.1')
+check('Build-metadata suffix is preserved across a patch bump', nextPatchVersion('1.0.0+build.5') === '1.0.1+build.5')
 
 let rejected = false
 try { nextPatchVersion('1.2') } catch { rejected = true }
@@ -25,6 +27,7 @@ check('Patch-only change never tags', shouldTagRelease('0.8.0', '0.8.1') === fal
 check('Minor bump tags', shouldTagRelease('0.8.4', '0.9.0') === true)
 check('Major bump tags', shouldTagRelease('0.8.4', '1.0.0') === true)
 check('Patch going backwards (e.g. manual revert) does not tag', shouldTagRelease('0.8.5', '0.8.1') === false)
+check('Pre-release suffix is ignored when comparing major/minor', shouldTagRelease('0.8.0', '0.8.1-rc.1') === false)
 
 // package.json's prepare script wires the hook up on every install so a
 // fresh clone does not need a manual `git config` step.
