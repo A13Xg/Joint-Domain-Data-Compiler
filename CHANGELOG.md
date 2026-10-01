@@ -3,7 +3,31 @@
 Notable user-facing and operational changes are recorded here. This project follows Semantic
 Versioning; release tags use the `vX.Y.Z` form.
 
+## Unreleased
+
+### Added
+
+- **Release info popup** — a small version button beside the header's **?** help button opens a
+  dialog listing the app version, the key libraries JDDC is built on, "A13Xg Industries"
+  copyright attribution, and a disclaimer that the app is for notional data only.
+- **Automated patch versioning** — a git pre-commit hook (`githooks/pre-commit`, wired up by
+  `npm run prepare`) auto-increments `package.json`'s patch version on every commit. A manual
+  minor/major bump is detected by a new CI job (`ci.yml`'s `auto-tag-release`), which tags `main`
+  as `v<version>` to start the existing tag-triggered release workflow — so a release still never
+  builds on an ordinary push, only on a deliberate version bump or a manual workflow run.
+- **CodeQL security scanning** (`.github/workflows/codeql.yml`) — static analysis of the
+  TypeScript/JavaScript source on every push/PR to `main` and a weekly schedule.
+- **Dependency Review** (`.github/workflows/dependency-review.yml`) — flags dependencies a PR
+  adds or changes that carry a known high-severity vulnerability, alongside the existing
+  `npm audit` gate in Quality Gates.
+
+### Fixed
+
+- README and `AGENTS.md` cited a stale regression-harness count (62/100); corrected to the
+  current 101.
+
 ## 0.8.0 - 2026-09-27
+
 
 ### Added
 

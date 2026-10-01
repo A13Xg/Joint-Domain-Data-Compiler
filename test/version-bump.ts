@@ -1,0 +1,42 @@
+// Versioning automation: the pre-commit patch auto-increment and the CI
+// auto-tag decision. See scripts/bump-patch-version.mjs, scripts/check-version-bump.mjs,
+// and CONTRIBUTING.md's "Versioning" section for the policy these implement.
+import { readFile } from 'node:fs/promises'
+import { nextPatchVersion } from '../scripts/bump-patch-version.mjs'
+import { shouldTagRelease } from '../scripts/check-version-bump.mjs'
+
+let failures = 0
+function check(name: string, condition: boolean): void {
+  if (!condition) failures++
+  console.log(`  [${condition ? 'PASS' : 'FAIL'}] ${name}`)
+}
+
+check('Patch increments by one', nextPatchVersion('1.2.3') === '1.2.4')
+check('Patch increment leaves major/minor untouched', nextPatchVersion('0.8.0') === '0.8.1')
+check('Double-digit patch increments correctly', nextPatchVersion('2.0.9') === '2.0.10')
+
+let rejected = false
+try { nextPatchVersion('1.2') } catch { rejected = true }
+check('Malformed version is rejected', rejected)
+
+check('No prior version never tags (first commit)', shouldTagRelease(null, '0.1.0') === false)
+check('Unchanged version never tags', shouldTagRelease('0.8.0', '0.8.0') === false)
+check('Patch-only change never tags', shouldTagRelease('0.8.0', '0.8.1') === false)
+check('Minor bump tags', shouldTagRelease('0.8.4', '0.9.0') === true)
+check('Major bump tags', shouldTagRelease('0.8.4', '1.0.0') === true)
+check('Patch going backwards (e.g. manual revert) does not tag', shouldTagRelease('0.8.5', '0.8.1') === false)
+
+// package.json's prepare script wires the hook up on every install so a
+// fresh clone does not need a manual `git config` step.
+{
+  const pkg = JSON.parse(await readFile('package.json', 'utf8')) as { scripts?: Record<string, string> }
+  check('package.json prepare script installs the git hook', pkg.scripts?.prepare === 'node scripts/setup-git-hooks.mjs')
+}
+
+{
+  const hook = await readFile('githooks/pre-commit', 'utf8')
+  check('pre-commit hook invokes the patch bump script', hook.includes('scripts/bump-patch-version.mjs'))
+}
+
+console.log(`\n${failures === 0 ? 'ALL VERSION BUMP CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`)
+process.exit(failures === 0 ? 0 : 1)

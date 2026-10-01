@@ -9,8 +9,8 @@ audit of parsers, exporters, accessibility, settings, tests, desktop integration
 checks; the rest are carryover, which is why the total list is longer than that — nothing was
 trimmed to hit a number.
 
-**Current Release:** v0.7.0
-**Latest Stable:** v0.7.0
+**Current Release:** v0.8.0
+**Latest Stable:** v0.8.0
 
 ---
 

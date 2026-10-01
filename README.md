@@ -24,6 +24,9 @@ JDDC is a functional engineering workbench with a strong deterministic core. It 
   guide to every tab, control, and keyboard gesture. It ships with the app and works offline —
   the desktop app opens it in a window of its own, read from the installed files; the source is
   `public/user-guide.html`.
+- **Release info popup** — press the small **v0.8.0** button beside the **?** in the header for
+  the current version, the key libraries JDDC is built on, developer/copyright attribution, and
+  the notional-data usage disclaimer.
 - **`FEATURE_INVENTORY.md`** — Exhaustive reference for every control and behavior in the workbench.
 - **`CHANGELOG.md`** — User-visible changes grouped by release.
 - **`ROADMAP.md`** — Planned features, phases, and future direction.
@@ -226,9 +229,52 @@ rollback recovery steps are documented in `CONTRIBUTING.md`. Linux is locally pr
 Windows and macOS execution awaits an available GitHub-hosted runner. macOS signing/notarization
 still requires owner-provided credentials.
 
+## Continuous integration and releases
+
+| Workflow | Trigger | Purpose |
+|---|---|---|
+| `ci.yml` ("Quality Gates") | Every push/PR to `main` (code changes only), or manual dispatch | Lint, the full regression suite, a web build, the app-health check, and a runtime dependency audit. Also tags `main` for release on a version bump — see Versioning below — and prunes old workflow runs after a push. |
+| `codeql.yml` | Push/PR to `main`, weekly schedule, or manual dispatch | Static security analysis (CodeQL) of the TypeScript/JavaScript source. |
+| `dependency-review.yml` | Pull requests to `main` | Flags dependencies a PR adds or changes that carry a known high-severity vulnerability or an incompatible license. |
+| `release.yml` | A `v*` tag, or manual dispatch | Packages Linux + Windows (and macOS, opt-in) into one GitHub release. This is the workflow a version-bump tag from `ci.yml` starts. |
+| `release-linux.yml` / `release-windows.yml` / `release-macos.yml` | Their own tag prefix (`linux-v*`, `win-v*`, `mac-v*`), or manual dispatch | Publish a single platform into an existing (or new) `v<version>` release — for a hotfix on one platform without rebuilding the others. |
+| `prune-runs.yml` | Manual dispatch only | One-off sweep of Actions run history across every workflow; the per-workflow prune above handles ongoing housekeeping. |
+
+**No workflow builds a desktop package on an ordinary push.** `ci.yml` only lints, tests, and
+builds the *web* bundle — packaging (NSIS/AppImage/DEB/DMG) runs exclusively from the `release*`
+workflows above, which fire only on a tag or a manual dispatch. All GitHub Actions in every
+workflow are pinned to an immutable commit SHA (never a moving tag); `test/release-integrity.ts`
+fails the build if one drifts back to a floating ref.
+
+As of this writing every run of every workflow on `main` is green; the most recent `main` failures
+on record (`Release Build`, since retired and replaced by the matrix above) were in August and are
+not reproducible against the current workflow files.
+
+### Versioning
+
+`package.json`'s `version` field is the **single source of truth** — `vite.config.ts` injects it
+into the app as `__APP_VERSION__` (read by the About dialog and project/playback archives), the
+release workflows read it to name artifacts and tags, and `test/release-integrity.ts` fails if
+the README's pinned package badges drift from it. Nothing else hardcodes a version number.
+
+The scheme is `major.minor.patch`:
+
+1. **Every commit auto-increments the patch number.** A git hook (`githooks/pre-commit`, wired up
+   automatically by `npm run prepare` after `npm install`/`npm ci`) bumps `package.json`'s patch
+   version and stages the change — unless the version was already edited as part of that commit.
+2. **A developer bumps the minor (or major) number by hand** when a release is actually wanted,
+   resetting the patch back to `0` (e.g. `0.8.6` → `0.9.0`).
+3. **`ci.yml` detects that bump** (`scripts/check-version-bump.mjs` compares the new commit's
+   version to its parent's) **and tags `main` with `v<version>`**, which is exactly the trigger
+   `release.yml` already watches for — no separate "build" step to remember.
+
+A patch-only commit never tags anything, so a release still never happens "by accident" on a
+routine push — only a deliberate minor/major bump, or running a release workflow by hand, starts
+one. See `CONTRIBUTING.md` for the full walkthrough.
+
 ## Testing
 
-The default suite currently includes 62 deterministic TypeScript regression harnesses covering
+The default suite currently includes 101 deterministic TypeScript regression harnesses covering
 analytics, linked visualization helpers, selection, transforms, fusion, resampling, compute
 protocol/runtime, project archives/migrations, diagnostics, recipes/plugins, geodesy, 3D
 geometry, parsers (including EAG TSPI with geographic sanity and midnight-crossing tests), bounded property/fuzz cases and exports.

@@ -11,6 +11,7 @@
   "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
+    "prepare": "node scripts/setup-git-hooks.mjs",
     "dev": "vite",
     "dev:desktop": "concurrently -k \"npm:dev\" \"npm:electron\"",
     "electron": "wait-on tcp:5173 && electron .",

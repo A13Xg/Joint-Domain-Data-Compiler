@@ -15,6 +15,11 @@ material behind `public/user-guide.html`, and stands on its own as a developer r
 - **App title/subtitle** — "Joint Domain Data Compiler" / "TSPI flight-data conversion & analysis workbench" (static branding)
 - **Spinner** — displayed next to status light while async operations (import/analysis/build) are in progress; shows operation text ("Analyzing…", "Building dataset…", "Parsing…")
 - **StatusLight** — persistent indicator: `idle` ("No datasets loaded"), `busy` ("Working"), `ok` ("Ready", shows dataset count), `warn` (N warnings), `error` (N errors); precedence: errors > warnings > ok
+- **Release info button** (`v<version>`, next to the **?** help button) — opens a modal dialog
+  showing the running app version (from `package.json` via `__APP_VERSION__`), the five key
+  libraries JDDC is built on, "A13Xg Industries" copyright attribution, and a disclaimer that the
+  app is for notional data only and not a source of Truth/Evidentiary Data. Closes on Escape,
+  backdrop click, or the Close button.
 
 ### Sidebar
 - **"+ Load data" button** — opens hidden `<input type="file" multiple>` picker; accepts `.csv,.tsv,.txt,.gpx,.geojson,.json,.kml,.kmz,.nmea,.gps,.log,.gpb,.bin,.msnP5,.rpt,.teq`
