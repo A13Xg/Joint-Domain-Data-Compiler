@@ -10,6 +10,9 @@
   },
   "main": "electron/main.cjs",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "prepare": "node scripts/setup-git-hooks.mjs",
     "dev": "vite",

@@ -20,6 +20,8 @@ Versioning; release tags use the `vX.Y.Z` form.
 - **Dependency Review** (`.github/workflows/dependency-review.yml`) — flags dependencies a PR
   adds or changes that carry a known high-severity vulnerability, alongside the existing
   `npm audit` gate in Quality Gates.
+- **`.nvmrc` and `package.json#engines`** — pin the expected Node.js version (22) so tools like
+  `nvm use` and `npm install` warn on a mismatch instead of failing confusingly later.
 
 ### Fixed
 
