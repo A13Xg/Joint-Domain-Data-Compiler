@@ -32,6 +32,11 @@ Versioning; release tags use the `vX.Y.Z` form.
 
 ### Fixed
 
+- Two test harnesses failed on a developer machine: `test/electron-fuses.ts` hard-coded POSIX
+  `/release/...` paths (failing on Windows hosts), and `test/release-integrity.ts` demanded README
+  badges match the full package version even though the patch-bump hook changes it on every commit.
+  Paths are now built with the host separator, and badges are checked against `v<major>.<minor>.0`,
+  the only tags CI creates.
 - README and `AGENTS.md` cited a stale regression-harness count (62/100); corrected to the
   current 101.
 
