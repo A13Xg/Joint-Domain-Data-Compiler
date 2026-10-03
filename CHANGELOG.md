@@ -23,8 +23,20 @@ Versioning; release tags use the `vX.Y.Z` form.
 - **`.nvmrc` and `package.json#engines`** — pin the expected Node.js version (22) so tools like
   `nvm use` and `npm install` warn on a mismatch instead of failing confusingly later.
 
+### Changed
+
+- **Dependency roundup** — folded ten Dependabot PRs into one: Electron 42.9.0 → 42.10.0 (the only
+  direct dependency; now `^42.10.0`) and transitive build/tooling bumps to brace-expansion 1.1.21,
+  axios 1.20.0, undici 6.29.0, js-yaml 4.3.2, baseline-browser-mapping 2.11.22, joi 18.2.9,
+  @xmldom/xmldom 0.8.15, fast-uri 3.1.7, and browserslist 4.28.9. All are dev/build-time only.
+
 ### Fixed
 
+- Two test harnesses failed on a developer machine: `test/electron-fuses.ts` hard-coded POSIX
+  `/release/...` paths (failing on Windows hosts), and `test/release-integrity.ts` demanded README
+  badges match the full package version even though the patch-bump hook changes it on every commit.
+  Paths are now built with the host separator, and badges are checked against `v<major>.<minor>.0`,
+  the only tags CI creates.
 - README and `AGENTS.md` cited a stale regression-harness count (62/100); corrected to the
   current 101.
 

@@ -241,7 +241,8 @@ Issues are tracked in GitHub with these labels:
 
 ### Node.js & Runtimes
 - **Current minimum:** Node 22 (required by Vite 8, File/Blob/Web Crypto APIs)
-- **Electron:** Follows 6-month major-version cadence with security patches
+- **Electron:** Follows 6-month major-version cadence with security patches (currently 42.10.x;
+  Electron 42.10 declares `engines.node >=22`, matching our minimum)
 - **Timeline:** Quarterly minor-version bumps; major versions with full test suite
 
 ### Format Support

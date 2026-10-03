@@ -157,15 +157,17 @@ try {
 
 // README platform badges. Packaging runs on `v*` tags, so the badges are pinned
 // to the release tag; a `branch=main` badge only sees stale manual runs and read
-// "failing" for a month of green releases. Pinned badges must move with the version.
+// "failing" for a month of green releases. Tags are only cut on a minor/major bump (the
+// patch-bump hook never tags), so badges track `v<major>.<minor>.0`, not the patch.
 {
   const readme = await readFile('README.md', 'utf8')
-  const packageVersion = (JSON.parse(await readFile('package.json', 'utf8')) as { version: string }).version
+  const [major, minor] = (JSON.parse(await readFile('package.json', 'utf8')) as { version: string }).version.split('.')
+  const releaseTag = `v${major}.${minor}.0`
   const badgeLines = readme.split('\n').filter((line) => /^\[!\[(Windows|Linux|macOS) package\]/.test(line))
   const pinnedRefs = badgeLines.flatMap((line) => [...line.matchAll(/check-runs\/A13Xg\/Joint-Domain-Data-Compiler\/([^?\s)]+)/g)].map((m) => m[1]))
   check('README has a badge for each packaged platform', badgeLines.length === 3)
   check('README platform badges never filter release runs by branch', badgeLines.every((line) => !/release[^)]*branch=/.test(line)))
-  check(`README package badges are pinned to v${packageVersion}`, pinnedRefs.length >= 2 && pinnedRefs.every((ref) => ref === `v${packageVersion}`))
+  check(`README package badges are pinned to ${releaseTag}`, pinnedRefs.length >= 2 && pinnedRefs.every((ref) => ref === releaseTag))
 }
 
 // Auto-tag-on-version-bump: a release must never start just because main
