@@ -1,0 +1,47 @@
+name: CodeQL
+
+# Static security analysis for the TypeScript/JavaScript source. Runs on PRs
+# and pushes to main (so a vulnerable pattern is caught before merge) plus a
+# weekly schedule (so a newly published CodeQL query still catches something
+# already in main). Not part of Quality Gates: a security scan is a separate
+# concern from "does it build and pass its tests," and failing it should not
+# block on the same job as the regression suite.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 3 * * 1' # Monday 03:17 UTC -- off-peak, arbitrary minute to avoid the shared :00 spike.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (javascript-typescript)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@e12f0178983d466f2f6028f5cc7a6d786fd97f4b # v4.31.4
+        with:
+          languages: javascript-typescript
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@e12f0178983d466f2f6028f5cc7a6d786fd97f4b # v4.31.4
+        with:
+          category: '/language:javascript-typescript'

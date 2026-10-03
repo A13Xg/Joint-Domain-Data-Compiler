@@ -88,6 +88,45 @@ jobs:
       - name: Audit shipped runtime dependencies
         run: npm audit --omit=dev --audit-level=high
 
+  # Tags main with `v<version>` the moment a commit changes package.json's
+  # major or minor version component -- the "manual change by the dev" step
+  # in the versioning scheme (see CONTRIBUTING.md). The tag push is what
+  # starts a release: release.yml triggers on `v*` tags, same as a tag pushed
+  # by hand. A patch-only commit (the pre-commit hook's auto-increment) never
+  # matches, so a release is still never built just because main moved.
+  auto-tag-release:
+    name: Tag release on version bump
+    needs: [test]
+    if: github.event_name == 'push' && needs.test.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+
+      - name: Compare version to the previous commit
+        id: version
+        run: |
+          CURRENT_VERSION="$(node -p "require('./package.json').version")"
+          if git cat-file -e HEAD^:package.json 2>/dev/null; then
+            PREVIOUS_VERSION="$(git show HEAD^:package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")"
+          else
+            PREVIOUS_VERSION=""
+          fi
+          PREVIOUS_VERSION="$PREVIOUS_VERSION" CURRENT_VERSION="$CURRENT_VERSION" node scripts/check-version-bump.mjs >> "$GITHUB_OUTPUT"
+
+      - name: Tag and push
+        if: steps.version.outputs.should_tag == 'true'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git tag -a "${{ steps.version.outputs.tag }}" -m "Release ${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+
   # Housekeeping, not a gate: runs after the verdict is in, never blocks it.
   # Restricted to pushes because a pull_request event from a fork gets a
   # read-only token, and pruning from a PR run serves no purpose anyway.

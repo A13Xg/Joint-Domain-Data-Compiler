@@ -128,7 +128,13 @@ for (const path of ['.github/workflows/ci.yml', ...releaseCallerFiles]) {
 
 // Actions must be pinned to immutable commit SHAs, never moving tags.
 const allWorkflows = await Promise.all(
-  ['.github/workflows/ci.yml', '.github/workflows/_release.yml', ...releaseCallerFiles].map((path) => readFile(path, 'utf8')),
+  [
+    '.github/workflows/ci.yml',
+    '.github/workflows/_release.yml',
+    '.github/workflows/codeql.yml',
+    '.github/workflows/dependency-review.yml',
+    ...releaseCallerFiles,
+  ].map((path) => readFile(path, 'utf8')),
 )
 const floatingTagRefs = allWorkflows.flatMap((workflow) => [...workflow.matchAll(/uses:\s+([\w-]+\/[\w-]+)@(v[\d.]+)\s*$/gm)].map((match) => `${match[1]}@${match[2]}`))
 check(`All actions are pinned to a commit SHA${floatingTagRefs.length > 0 ? ` — found ${floatingTagRefs.join(', ')}` : ''}`, floatingTagRefs.length === 0)
@@ -160,6 +166,18 @@ try {
   check('README has a badge for each packaged platform', badgeLines.length === 3)
   check('README platform badges never filter release runs by branch', badgeLines.every((line) => !/release[^)]*branch=/.test(line)))
   check(`README package badges are pinned to v${packageVersion}`, pinnedRefs.length >= 2 && pinnedRefs.every((ref) => ref === `v${packageVersion}`))
+}
+
+// Auto-tag-on-version-bump: a release must never start just because main
+// moved. It is gated on `test` succeeding, scoped to pushes, and only fires
+// when scripts/check-version-bump.mjs says the major/minor changed.
+{
+  const ci = await readFile('.github/workflows/ci.yml', 'utf8')
+  check('ci.yml has the auto-tag-release job', ci.includes('auto-tag-release:'))
+  check('Auto-tag job requires the test job to succeed first', /auto-tag-release:[\s\S]*?needs: \[test\]/.test(ci))
+  check('Auto-tag job is scoped to push events', ci.includes("if: github.event_name == 'push' && needs.test.result == 'success'"))
+  check('Auto-tag job defers to check-version-bump.mjs', ci.includes('scripts/check-version-bump.mjs'))
+  check('Auto-tag job only pushes a tag when should_tag is true', ci.includes("if: steps.version.outputs.should_tag == 'true'"))
 }
 
 console.log(`\n${failures === 0 ? 'ALL RELEASE INTEGRITY CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`)

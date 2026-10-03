@@ -44,6 +44,7 @@ import { executeOperation } from './core/recipes/executor'
 import { computeTrackDiff } from './core/repair/diff'
 import { RepairPreviewDialog, type RepairPreviewRequest } from './ui/RepairPreviewDialog'
 import { openUserGuide } from './ui/userGuide'
+import { AboutDialog } from './ui/AboutDialog'
 import { DEFAULT_TRACK_HEALTH_CONFIG } from './core/quality/trackHealthConfig'
 
 // Every tab but the first (Import, above) is loaded on demand instead of
@@ -149,6 +150,7 @@ export default function App() {
   const [busy, setBusy] = useState<string | null>(null)
   const [progress, setProgress] = useState<number | null>(null)
   const [pendingCsv, setPendingCsv] = useState<PendingCsv | null>(null)
+  const [showAbout, setShowAbout] = useState(false)
   // The Track Health scan's own repair, held at the same Accept/Revert gate the
   // Transform tab uses. Nothing is applied until Accept, so leaving the overview
   // — or switching dataset — reverts by construction.
@@ -963,7 +965,8 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="app-header"><div className="brand"><span className="brand-mark">JD</span><div><h1>Joint Domain Data Compiler</h1><p>TSPI flight-data conversion &amp; analysis workbench</p></div></div><div className="header-status">{busy && <Spinner label={busy} />}<StatusLight tone={statusTone} label={statusLabel} detail={statusDetail} /><button type="button" className="header-help" onClick={openUserGuide} title="Open the user guide" aria-label="Open the user guide">?</button></div></header>
+      <header className="app-header"><div className="brand"><span className="brand-mark">JD</span><div><h1>Joint Domain Data Compiler</h1><p>TSPI flight-data conversion &amp; analysis workbench</p></div></div><div className="header-status">{busy && <Spinner label={busy} />}<StatusLight tone={statusTone} label={statusLabel} detail={statusDetail} /><button type="button" className="header-version" onClick={() => setShowAbout(true)} title="Release information" aria-label="Release information">v{__APP_VERSION__}</button><button type="button" className="header-help" onClick={openUserGuide} title="Open the user guide" aria-label="Open the user guide">?</button></div></header>
+      {showAbout && <AboutDialog onClose={() => setShowAbout(false)} />}
       <div className="app-body">
         <aside className="sidebar">
           <button type="button" className="primary-action" onClick={() => fileInputRef.current?.click()}>+ Load data</button>
