@@ -167,7 +167,7 @@
     "linkedom": "^0.18.13",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
-    "vite": "^8.0.12",
+    "vite": "^8.3.5",
     "wait-on": "^9.0.10"
   },
   "homepage": "https://github.com/A13Xg/Joint-Domain-Data-Compiler",
