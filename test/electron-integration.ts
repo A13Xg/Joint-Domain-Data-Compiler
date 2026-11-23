@@ -97,6 +97,16 @@ check('Splash art ships beside its page', existsSync(resolve(process.cwd(), 'ele
 check('Splash is shown on the document first paint', /once\('ready-to-show', \(\) => markShown\(/.test(mainProcessSource))
 check('Splash is also shown when the artwork reports in', /ipcMain\.on\(SPLASH_PAINTED_CHANNEL[\s\S]{0,200}markShown\('artwork decoded'\)/.test(mainProcessSource))
 check('The artwork report is accepted only from the splash renderer', /SPLASH_PAINTED_CHANNEL[\s\S]{0,200}event\.sender === window\.webContents/.test(mainProcessSource))
+// Shown the moment it is created: first paint was a further ~120 ms (Windows
+// runner) to seconds (a cold machine) of a double-click producing nothing.
+check('Splash is shown as soon as it is created', /markShown\('created'\)\n\}/.test(mainProcessSource))
+check('Splash has a taskbar button from the first moment', /openSplash[\s\S]*?skipTaskbar: false/.test(mainProcessSource))
+check('The crash reporter starts after the splash, not before `ready`',
+  /openSplash\(\)[\s\S]{0,300}startCrashReporter\(\)/.test(mainProcessSource) && !/^crashReporter\.start/m.test(mainProcessSource))
+check('Splash events are not taken as evidence the GPU works',
+  !/function openSplash[\s\S]*?recordLaunchPhase\('painted'\)[\s\S]*?\nfunction dismissSplash/.test(mainProcessSource))
+check('Splash says the launch is still alive when a stage runs long',
+  /SLOW_STAGE_MS/.test(splashPreloadSource) && /id="splash-hint"/.test(splashHtmlSource) && /No need to start it again/.test(splashHtmlSource))
 check('Splash has a last-resort show timer', /SPLASH_FALLBACK_SHOW_MS/.test(mainProcessSource) && /setTimeout\(\(\) => markShown\(/.test(mainProcessSource))
 check('Splash preload reports the decoded artwork', splashPreloadSource.includes("SPLASH_PAINTED_CHANNEL = 'splash:painted'") && splashPreloadSource.includes('plate.decode'))
 // A splash that is constructed but never visible must not suppress the

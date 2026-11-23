@@ -135,6 +135,10 @@ check('it became visible before the workbench mounted',
 check('it became visible within 2s of the main process starting',
   splashVisible !== undefined && splashVisible < 2000, `${splashVisible}ms`)
 check('the workbench reported itself mounted', workbenchMounted !== undefined)
+// Shown before its page loads (so a double-click is answered at once), the
+// splash must still finish loading -- otherwise it never receives a stage and
+// its bar never moves.
+check('the splash page finished loading, so its progress stages were delivered', phaseAt('splash page loaded') !== undefined)
 check('the splash was dismissed rather than left on screen', phaseAt('splash dismissed') !== undefined)
 // Every window the process creates, and how often each is shown. "Ghost windows
 // that open and close" at launch were reported; this pins what ours are: one

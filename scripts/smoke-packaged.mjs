@@ -1,23 +1,30 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { createServer } from 'node:net'
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs'
 import { readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-// Usage: smoke-packaged.mjs [executable] [--portable] [--gpu]
+// Usage: smoke-packaged.mjs [executable | archive.zip] [--portable | --zip] [--gpu]
 //
 //   --portable  launch the Windows Portable.exe from release/ instead of
 //               win-unpacked. That is what users actually run, and it first
 //               extracts the whole app into %TEMP% -- a step the unpacked
 //               launch skips entirely, and the slowest part of a portable start.
+//   --zip       extract the Windows .zip (or the .zip given) into a fresh temp
+//               folder the way a user would -- Expand-Archive on Windows -- check
+//               it holds one top-level folder with the README, and launch the
+//               executable from inside it.
 //   --gpu       leave hardware acceleration on. Every earlier gate passed
 //               --disable-gpu, so the GPU path users hit was never launched.
 const flags = new Set(process.argv.slice(2).filter((arg) => arg.startsWith('--')))
 const positional = process.argv.slice(2).find((arg) => !arg.startsWith('--'))
 const usePortable = flags.has('--portable')
+const useZip = flags.has('--zip')
 const useGpu = flags.has('--gpu')
-const executable = resolve(positional ?? (usePortable ? await portableExecutable() : await defaultExecutable()))
+const executable = useZip
+  ? extractZipAndLocateExecutable(resolve(positional ?? await windowsZip()))
+  : resolve(positional ?? (usePortable ? await portableExecutable() : await defaultExecutable()))
 const expectedTitle = 'Joint Domain Data Compiler'
 const expectedUrlFragment = 'app.asar/dist/index.html'
 // The portable launcher's extraction happens inside this window, so it gets
@@ -31,7 +38,7 @@ const electronArgs = [...(useGpu ? [] : ['--disable-gpu']), `--remote-debugging-
 // can find on any platform. Asserted below: a build whose log is silent is a
 // build whose next field failure cannot be diagnosed.
 const logDir = mkdtempSync(join(tmpdir(), 'jddc-smoke-log-'))
-console.log(`Launching ${executable}${usePortable ? ' (portable launcher)' : ''} with ${useGpu ? 'hardware acceleration' : '--disable-gpu'}`)
+console.log(`Launching ${executable}${usePortable ? ' (portable launcher)' : useZip ? ' (extracted from the zip)' : ''} with ${useGpu ? 'hardware acceleration' : '--disable-gpu'}`)
 const launchedAt = Date.now()
 if (inCiLinux || process.env.JDDC_SMOKE_NO_SANDBOX === '1') {
   electronArgs.push('--no-sandbox', '--disable-setuid-sandbox')
@@ -171,6 +178,28 @@ function evaluateDevTools(url, expression, awaitPromise = false) {
     })
     socket.addEventListener('error', () => { clearTimeout(timer); reject(new Error('Could not connect to packaged renderer DevTools endpoint.')) })
   })
+}
+
+async function windowsZip() {
+  const zips = (await readdir('release')).filter((name) => /Windows-x64\.zip$/.test(name))
+  if (zips.length !== 1) throw new Error(`Expected exactly one Windows zip in release/, found ${zips.length}.`)
+  return join('release', zips[0])
+}
+
+function extractZipAndLocateExecutable(zipPath) {
+  const target = mkdtempSync(join(tmpdir(), 'jddc-smoke-zip-'))
+  const extract = process.platform === 'win32'
+    ? spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', 'Expand-Archive -LiteralPath $env:JDDC_ZIP -DestinationPath $env:JDDC_ZIP_TARGET'], { env: { ...process.env, JDDC_ZIP: zipPath, JDDC_ZIP_TARGET: target }, encoding: 'utf8' })
+    : spawnSync('unzip', ['-q', zipPath, '-d', target], { encoding: 'utf8' })
+  if (extract.status !== 0) throw new Error(`Could not extract ${zipPath}: ${extract.stderr || extract.stdout || `exit ${extract.status}`}`)
+  const top = readdirSync(target)
+  if (top.length !== 1) throw new Error(`The zip must hold exactly one top-level folder; found ${JSON.stringify(top)}.`)
+  const folder = join(target, top[0])
+  if (!existsSync(join(folder, 'README.txt'))) throw new Error('The zip has no README.txt beside the executable.')
+  const exe = join(folder, process.platform === 'win32' ? 'JointDomainDataCompiler.exe' : 'joint-domain-data-compiler')
+  if (!existsSync(exe)) throw new Error(`The zip has no executable at ${exe}.`)
+  console.log(`Extracted ${zipPath} to ${folder}`)
+  return exe
 }
 
 async function portableExecutable() {

@@ -11,12 +11,13 @@ const ARTIFACTS_BY_PLATFORM = {
   windows: [
     { label: 'Windows installer', pattern: /Windows-x64-Setup\.exe$/ },
     { label: 'Windows portable executable', pattern: /Windows-x64-Portable\.exe$/ },
+    { label: 'Windows zip archive', pattern: /Windows-x64\.zip$/ },
     { label: 'Windows SBOM', pattern: /^JDDC-SBOM-Windows\.cdx\.json$/ },
     { label: 'Windows checksum manifest', pattern: /^SHA256SUMS-Windows\.txt$/ },
   ],
   macos: [
     { label: 'macOS disk image', pattern: /\.dmg$/ },
-    { label: 'macOS zip archive', pattern: /\.zip$/ },
+    { label: 'macOS zip archive', pattern: /-mac-[^/]*\.zip$/ },
     { label: 'macOS SBOM', pattern: /^JDDC-SBOM-macOS\.cdx\.json$/ },
   ],
 }

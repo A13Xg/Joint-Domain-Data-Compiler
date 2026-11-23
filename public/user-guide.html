@@ -918,9 +918,22 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
 <section id="faq">
   <h2>Troubleshooting</h2>
 
+  <h3>Which Windows download should I use?</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Download</th><th>Use it when</th></tr></thead>
+    <tbody>
+      <tr><td><code>…-Windows-x64-Setup.exe</code></td><td>You can install software. Fastest launches; adds Start menu and desktop shortcuts.</td></tr>
+      <tr><td><code>…-Windows-x64.zip</code></td><td>You cannot or would rather not install. Right-click the zip, choose <em>Extract All…</em>, then open the extracted <em>Joint Domain Data Compiler</em> folder and run <code>JointDomainDataCompiler.exe</code>. Keep the folder's files together — the program cannot run from inside the zip or on its own. Launches as quickly as the installed copy.</td></tr>
+      <tr><td><code>…-Windows-x64-Portable.exe</code></td><td>You need a single file. It unpacks the whole app to a temporary folder on <em>every</em> launch, showing nothing while it does — several seconds before the splash appears. Prefer the zip.</td></tr>
+    </tbody>
+  </table></div>
+  <p>All three share your settings, overlay library and logs, which live in your user profile.</p>
+
   <h3>The app takes a long time to start</h3>
-  <p>A launch splash with a progress bar appears within about half a second and stays until the
-  workbench is ready, so you should never be looking at nothing. If a launch still feels slow, you
+  <p>The launch splash appears as soon as the program is running and stays until the workbench is
+  ready, with its own button on the taskbar. If a single step takes more than a few seconds, the
+  splash says the app is still starting — there is no need to start it again; doing so only brings
+  the starting copy forward. If a launch still feels slow, you
   can find out exactly where the time goes — run the app from a terminal with the startup trace
   turned on:</p>
   <pre><code>JDDC_STARTUP_TRACE=1 JointDomainDataCompiler</code></pre>

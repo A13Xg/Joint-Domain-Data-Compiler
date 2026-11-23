@@ -165,14 +165,6 @@ if (isPrimaryInstance) {
   }
 }
 
-// Minidumps stay on this machine (nothing is uploaded) in the crashDumps
-// directory, so a crash that leaves no log line still leaves evidence.
-try {
-  crashReporter.start({ uploadToServer: false })
-  launchLog.info(`Crash dumps: ${app.getPath('crashDumps')}`)
-} catch (error) {
-  launchLog.warn(`Crash reporter unavailable: ${error instanceof Error ? error.message : String(error)}`)
-}
 const packagedRendererUrl = pathToFileURL(path.join(__dirname, '../dist/index.html')).href
 const packagedGuideUrl = pathToFileURL(path.join(__dirname, '../dist/user-guide.html')).href
 
@@ -328,7 +320,13 @@ function openSplash() {
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
-    skipTaskbar: true,
+    // On the taskbar from the first moment, under the page title "Starting
+    // Joint Domain Data Compiler". The taskbar is where people look after a
+    // double-click; with the splash skipped there and the workbench still
+    // hidden, a launch had no taskbar button at all until it finished. Both
+    // windows group under the app's one taskbar icon, so the handoff is a
+    // change of title rather than a second button.
+    skipTaskbar: false,
     alwaysOnTop: true,
     center: true,
     backgroundColor: '#050b18',
@@ -343,9 +341,18 @@ function openSplash() {
     },
   })
 
-  // Shown on the FIRST PAINT OF THE DOCUMENT, and never gated on the artwork.
+  // Shown THE MOMENT IT EXISTS (see the markShown('created') call below), with
+  // the routes that follow kept only as a backstop.
   //
-  // This is the correction to four previous attempts. Every one of them made
+  // First paint was ~120 ms after creation on the Windows release runner and
+  // longer on a cold machine, where the splash renderer is a new process that
+  // antivirus may inspect: time in which a double-click still produced nothing.
+  // Shown at creation, the window is up at once in `backgroundColor` -- the same
+  // --ink the page paints -- and its status line and bar fill in a moment later.
+  // A dark plate that fills in beats no window. The same reasoning as before
+  // applies: visibility must never wait on the artwork.
+  //
+  // The history, for whoever touches this next. Four previous attempts Every one of them made
   // visibility depend on splash.png being decoded -- the last by waiting for an
   // IPC message the preload sends after Image.decode() -- on the theory that a
   // window shown earlier is "a black box". It is not. splash.html paints its own
@@ -363,17 +370,19 @@ function openSplash() {
     window.show()
     tracePhase(`splash visible (${why})`)
   }
-  // Whichever of these happens first wins; they are three independent routes to
-  // the same one-shot, because the failure being fixed is "none of them fired".
+  // Whichever of these happens first wins; they are independent routes to the
+  // same one-shot, because the failure once fixed here was "none of them fired".
+  //
+  // None of them records the launch as 'painted' any more. A window that is
+  // already visible never emits 'ready-to-show', and the artwork report comes
+  // from an image decode that succeeds without the GPU compositor -- so neither
+  // is evidence the GPU works. The hidden workbench's 'ready-to-show' is, and
+  // is what the software-rendering fallback goes by.
   window.once('ready-to-show', () => markShown('first paint'))
-  window.once('ready-to-show', () => recordLaunchPhase('painted'))
   // Sender-checked: this channel is only meaningful from the splash's own
   // renderer, and the workbench renderer must not be able to trip it.
   ipcMain.on(SPLASH_PAINTED_CHANNEL, (event) => {
-    if (event.sender === window.webContents) {
-      recordLaunchPhase('painted')
-      markShown('artwork decoded')
-    }
+    if (event.sender === window.webContents) markShown('artwork decoded')
   })
   // Last resort. Deliberately shorter than any plausible artwork decode: if the
   // renderer is so starved that it has not managed a first paint by now, showing
@@ -399,6 +408,7 @@ function openSplash() {
   })
 
   window.webContents.on('did-finish-load', () => {
+    tracePhase('splash page loaded')
     splashCanReceive = true
     sendSplashStage()
   })
@@ -412,6 +422,7 @@ function openSplash() {
     console.warn(`[splash] Could not load the launch splash: ${error instanceof Error ? error.message : String(error)}`)
     dismissSplash()
   })
+  markShown('created')
 }
 
 function dismissSplash() {
@@ -606,12 +617,13 @@ function createWindow() {
 
   // loadURL/loadFile reject when the dev server is down or dist/ is missing;
   // unawaited that is a blank window with no explanation anywhere.
-  const load = useDevServer
+  const load = loadWithRetry(window, 'workbench', () => useDevServer
     ? window.loadURL(DEV_ORIGIN)
-    : window.loadFile(path.join(__dirname, '../dist/index.html'))
-  // Fatal and exiting: without a renderer the window can never show anything,
-  // and a hidden window left alive keeps 'window-all-closed' from ever firing --
-  // a process that lingers in Task Manager with nothing on screen.
+    : window.loadFile(path.join(__dirname, '../dist/index.html')))
+  // Fatal and exiting once the retry is spent: without a renderer the window can
+  // never show anything, and a hidden window left alive keeps
+  // 'window-all-closed' from ever firing -- a process that lingers in Task
+  // Manager with nothing on screen.
   load.catch((error) => {
     reportFatal(useDevServer ? `Could not load the dev server at ${DEV_ORIGIN}` : 'Could not load the packaged renderer', error, { exit: true })
   })
@@ -658,6 +670,26 @@ function createWindow() {
   })
 
   return window
+}
+
+// One retry for a page load that rejects.
+//
+// Electron 42.10.0 rejects some loads that actually succeeded: the document
+// navigates (200 OK) and paints, then 'did-stop-loading' fires with no
+// 'dom-ready' or 'did-finish-load', and loadURL() rejects with ERR_FAILED (-2).
+// Observed on the user guide over http in development, 3-4 launches in 6, and
+// never on 42.9.0 with the same code. Before this, that closed the guide on
+// sight -- and the same rejection on the workbench is treated as fatal and
+// exits. A genuinely missing page fails twice and still ends up there; a
+// spurious abort costs one reload.
+async function loadWithRetry(window, label, load) {
+  try {
+    return await load()
+  } catch (error) {
+    if (window.isDestroyed()) throw error
+    console.warn(`[main] The ${label} page load was rejected (${error instanceof Error ? error.message : String(error)}); retrying once.`)
+    return await load()
+  }
 }
 
 // Renderer-side failures, written to the launch log. None of these reached
@@ -1051,8 +1083,13 @@ function registerKmlLibraryIpc() {
 // archive, needs no browser and no network, and keeps it beside the workbench.
 let guideWindow = null
 
+// From a file in development too, not the dev server: that is how the
+// packaged app reads it, and over http Electron 42.10 aborted the guide's load
+// in about half of development launches (see loadWithRetry) while file://
+// never failed. The guide is a static page; it gains nothing from the server.
+const devGuideUrl = pathToFileURL(path.join(__dirname, '../public/user-guide.html')).href
 function userGuideUrl() {
-  return useDevServer ? `${DEV_ORIGIN}/user-guide.html` : packagedGuideUrl
+  return useDevServer ? devGuideUrl : packagedGuideUrl
 }
 
 /** In-page anchors are the only navigation the guide window allows. */
@@ -1103,8 +1140,9 @@ function openUserGuideWindow() {
   })
   window.webContents.on('will-attach-webview', (event) => { event.preventDefault() })
   window.webContents.on('did-finish-load', () => tracePhase(`user guide loaded (${window.webContents.getTitle()})`))
+  logWebContentsDiagnostics(window.webContents, 'user guide')
   window.on('closed', () => { if (guideWindow === window) guideWindow = null })
-  window.loadURL(userGuideUrl()).catch((error) => {
+  loadWithRetry(window, 'user guide', () => window.loadURL(userGuideUrl())).catch((error) => {
     console.warn(`[guide] Could not load the user guide: ${error instanceof Error ? error.message : String(error)}`)
     if (!window.isDestroyed()) window.destroy()
   })
@@ -1214,7 +1252,7 @@ function openSuiteWindow(appType) {
     suiteReady[appType] = false
     suitePendingPayloads[appType] = null
   })
-  window.loadURL(suiteAppUrl(appType)).catch((error) => {
+  loadWithRetry(window, `${appType} window`, () => window.loadURL(suiteAppUrl(appType))).catch((error) => {
     console.warn(`[suite] Could not load the ${appType} window: ${error instanceof Error ? error.message : String(error)}`)
     if (!window.isDestroyed()) window.destroy()
   })
@@ -1541,6 +1579,22 @@ function registerChildProcessDiagnostics() {
   })
 }
 
+// Minidumps stay on this machine (nothing is uploaded) in the crashDumps
+// directory, so a crash that leaves no log line still leaves evidence.
+//
+// Started just AFTER the splash is up rather than before `ready`: its first
+// run creates the crash database and, on Windows, spawns a handler process,
+// which cost ~500 ms on a cold launch -- all of it before any window could
+// exist. Only the splash's own renderer predates it.
+function startCrashReporter() {
+  try {
+    crashReporter.start({ uploadToServer: false })
+    launchLog.info(`Crash dumps: ${app.getPath('crashDumps')}`)
+  } catch (error) {
+    launchLog.warn(`Crash reporter unavailable: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
 function startApplication() {
   app.whenReady().then(async () => {
     tracePhase('app ready')
@@ -1566,6 +1620,7 @@ function startApplication() {
       console.warn(`[splash] Could not open the launch splash: ${error instanceof Error ? error.message : String(error)}`)
       dismissSplash()
     }
+    startCrashReporter()
     registerKmlLibraryIpc()
     registerFileArchiveIpc()
     registerDiagnosticIpc()

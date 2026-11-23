@@ -3,6 +3,26 @@
 Notable user-facing and operational changes are recorded here. This project follows Semantic
 Versioning; release tags use the `vX.Y.Z` form.
 
+## 0.9.1 - 2026-11-23
+
+### Added
+
+- **Windows zip download** (`…-Windows-x64.zip`): extract it, open the `Joint Domain Data Compiler`
+  folder, run `JointDomainDataCompiler.exe`. One top-level folder with a README explaining exactly
+  that. Unlike the portable executable it never re-unpacks ~300 MB into a temporary folder on each
+  launch, so it starts as quickly as an installed copy; unlike the installer it needs no install.
+  Published by the release workflow, checksummed, and launched from an extracted copy by the
+  Windows release gate.
+
+### Changed
+
+- **The launch splash appears immediately.** It is shown the moment its window exists rather than
+  at its first paint, has its own taskbar button from the start, and the crash reporter's
+  first-run setup (~500 ms on a cold launch) now happens after it instead of before it.
+- **The splash says when a launch is slow.** If one step takes more than four seconds it explains
+  that the first launch after an install or update can take longer while security software checks
+  the app, and that there is no need to start it again.
+
 ## 0.9.0 - 2026-11-23
 
 ### Fixed

@@ -222,7 +222,11 @@ npm run build:desktop:linux
 
 Configured targets:
 
-- Windows: NSIS installer and portable executable.
+- Windows: NSIS installer (`…-Windows-x64-Setup.exe`), a zip to extract and run
+  (`…-Windows-x64.zip`, one `Joint Domain Data Compiler` folder holding the program and a README,
+  built by `scripts/package-zip.mjs`), and a single-file portable executable
+  (`…-Windows-x64-Portable.exe`). The zip is the recommended no-install option: the portable
+  executable unpacks the whole app into a temporary folder, silently, on every launch.
 - Linux: AppImage and DEB.
 - macOS: DMG and ZIP.
 

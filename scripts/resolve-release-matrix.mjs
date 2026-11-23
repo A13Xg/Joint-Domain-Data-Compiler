@@ -23,6 +23,7 @@ const PLATFORM_CONFIG = {
     artifact_glob: [
       'release/*Windows*x64*Setup.exe',
       'release/*Windows*x64*Portable.exe',
+      'release/*Windows-x64.zip',
       'release/SHA256SUMS-Windows.txt',
       'release/JDDC-SBOM-Windows.cdx.json',
     ].join('\n'),

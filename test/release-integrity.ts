@@ -14,6 +14,7 @@ function check(name: string, condition: boolean): void {
 const completeBundle = [
   'Joint Domain Data Compiler-0.2.0-Windows-x64-Setup.exe',
   'Joint Domain Data Compiler-0.2.0-Windows-x64-Portable.exe',
+  'Joint Domain Data Compiler-0.2.0-Windows-x64.zip',
   'Joint Domain Data Compiler-0.2.0-linux-x86_64.AppImage',
   'joint-domain-data-compiler_0.2.0_amd64.deb',
   'Joint Domain Data Compiler-0.2.0-mac-arm64.dmg',
@@ -26,6 +27,9 @@ const completeBundle = [
 
 check('Complete release file set is accepted', validateReleaseFileSet(completeBundle).length === 0)
 check('Missing platform artifact is rejected', validateReleaseFileSet(completeBundle.filter((name) => !name.endsWith('.dmg'))).some((error) => error.includes('macOS disk image')))
+check('A Windows-only release requires the zip', validateReleaseFileSet(completeBundle.filter((name) => !name.endsWith('Windows-x64.zip')), ['windows']).some((error) => error.includes('Windows zip archive')))
+check('The Windows zip is not mistaken for the macOS zip', validateReleaseFileSet(completeBundle.filter((name) => !name.endsWith('mac-arm64.zip'))).some((error) => error.includes('macOS zip archive')))
+check('The Windows zip is published by the release matrix', buildMatrix(parsePlatforms('["windows"]'))[0]!.artifact_glob.includes('release/*Windows-x64.zip'))
 check('Duplicate artifact is rejected', validateReleaseFileSet([...completeBundle, 'duplicate.AppImage']).some((error) => error.includes('found 2')))
 
 const hash = 'a'.repeat(64)

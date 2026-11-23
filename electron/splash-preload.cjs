@@ -22,6 +22,11 @@ const SPLASH_STAGE_CHANNEL = 'splash:stage'
 const SPLASH_PAINTED_CHANNEL = 'splash:painted'
 const ITEM_INTERVAL_MS = 470
 const SWAP_FADE_MS = 180
+// How long one stage may run before the splash says, in words, that the launch
+// is still alive. A healthy launch moves through every stage in about a second;
+// a cold one under antivirus can sit in one for many, and that is exactly when
+// people double-click again.
+const SLOW_STAGE_MS = 4000
 
 let view = null
 // A stage can land before the document parses; the splash window is created
@@ -29,6 +34,14 @@ let view = null
 let queuedStage = null
 let itemTimer = null
 let swapTimer = null
+let slowTimer = null
+
+function armSlowHint(finished) {
+  clearTimeout(slowTimer)
+  view.hint.classList.remove('is-visible')
+  if (finished) return
+  slowTimer = setTimeout(() => view.hint.classList.add('is-visible'), SLOW_STAGE_MS)
+}
 
 function showItems(items) {
   clearInterval(itemTimer)
@@ -62,6 +75,7 @@ function applyStage(stage) {
   }
   view.fill.style.width = `${Math.min(100, Math.max(0, stage.progress * 100))}%`
   if (Array.isArray(stage.items)) showItems(stage.items)
+  armSlowHint(stage.progress >= 1)
 }
 
 ipcRenderer.on(SPLASH_STAGE_CHANNEL, (_event, stage) => {
@@ -74,8 +88,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const item = document.getElementById('splash-item')
   const fill = document.getElementById('splash-fill')
   const version = document.getElementById('splash-version')
-  if (!item || !fill || !version) return
-  view = { item, fill, version }
+  const hint = document.getElementById('splash-hint')
+  if (!item || !fill || !version || !hint) return
+  view = { item, fill, version, hint }
+  // Armed from the document itself too, so a launch stuck before the first
+  // stage message arrives still gets the reassurance.
+  armSlowHint(false)
   if (queuedStage) {
     applyStage(queuedStage)
     queuedStage = null
