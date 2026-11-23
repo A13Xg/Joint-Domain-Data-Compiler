@@ -127,11 +127,14 @@ check('Splash paint signal does not depend on a frame callback', !/requestAnimat
     /reportFatal\(useDevServer \? [^\n]+\{ exit: true \}\)/.test(mainProcessSource))
   check('Startup-time main-process errors exit',
     /uncaughtException[\s\S]{0,120}exit: !startupComplete/.test(mainProcessSource) && /unhandledRejection[\s\S]{0,120}exit: !startupComplete/.test(mainProcessSource))
-  check('A lost workbench renderer offers a reload', /render-process-gone[\s\S]{0,120}recoverFromRendererLoss/.test(mainProcessSource) && /buttons: \['Reload', 'Quit'\]/.test(mainProcessSource))
+  check('A lost workbench renderer offers a reload', /render-process-gone[\s\S]{0,400}recoverFromRendererLoss/.test(mainProcessSource) && /buttons: \['Reload', 'Quit'\]/.test(mainProcessSource))
   check('Only one instance runs per profile', /app\.requestSingleInstanceLock\(/.test(mainProcessSource))
   check('A losing instance never starts the app', /if \(isPrimaryInstance\) \{[\s\S]*?startApplication\(\)[\s\S]*?\} else \{[\s\S]*?handOffToRunningInstance\(\)/.test(mainProcessSource))
   check('The running instance acknowledges a second launch before raising its window',
-    /'second-instance'[\s\S]{0,400}INSTANCE_ACK_FILE[\s\S]{0,400}bringToFront/.test(mainProcessSource))
+    /'second-instance'[\s\S]{0,400}instanceAckFile\(nonce\)[\s\S]{0,400}bringToFront/.test(mainProcessSource))
+  check('A copy still starting is not declared hung', /INSTANCE_STARTING_TIMEOUT_MS/.test(mainProcessSource) && /ready: true/.test(mainProcessSource))
+  check('Ending a stuck copy does not relaunch from the portable temp folder',
+    /PORTABLE_EXECUTABLE_FILE\) \{[\s\S]{0,400}app\.exit\(0\)[\s\S]{0,40}return\s*\}\s*app\.relaunch\(\)/.test(mainProcessSource))
   check('The second-launch listener exists before `ready`',
     /registerSecondInstanceHandler\(\)\n\s+registerChildProcessDiagnostics\(\)\n\s+startApplication\(\)/.test(mainProcessSource))
   check('The rendering mode is decided before `ready`',

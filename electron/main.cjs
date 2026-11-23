@@ -101,12 +101,21 @@ const useDevServer = isDev
 const instanceNonce = crypto.randomUUID()
 const isPrimaryInstance = app.requestSingleInstanceLock({ nonce: instanceNonce })
 const INSTANCE_FILE = path.join(userDataDir, 'instance.json')
-const INSTANCE_ACK_FILE = path.join(userDataDir, 'instance-ack.json')
-// How long a second launch waits for the running copy to acknowledge it before
-// concluding that copy is stuck. A healthy main process answers in well under
-// a second; this has to outlast only a slow machine, not a slow startup, since
-// the main process stays responsive while the renderer loads.
+// One acknowledgement file per launch, named by its nonce: a shared file let
+// two quick double-clicks overwrite each other's acknowledgement, and the loser
+// then reported a healthy copy as hung.
+function instanceAckFile(nonce) {
+  return path.join(userDataDir, `instance-ack-${String(nonce).replace(/[^0-9a-f-]/gi, '')}.json`)
+}
+// How long a second launch waits for an acknowledgement from a running copy
+// that has reached `ready`. A healthy main process answers in well under a
+// second once it is there.
 const INSTANCE_ACK_TIMEOUT_MS = 6000
+// A running copy that has NOT reached `ready` cannot answer at all --
+// 'second-instance' is never emitted before it -- and a cold Windows start
+// under antivirus can spend many seconds there. That is the moment people
+// double-click again, so it is not evidence of a hang; wait much longer.
+const INSTANCE_STARTING_TIMEOUT_MS = 60_000
 
 // Rendering mode, decided before `ready` because Chromium reads it at GPU
 // process launch. See decideRendering() in diagnostics.cjs for the policy.
@@ -149,7 +158,7 @@ if (isPrimaryInstance) {
   }
   writeLaunchState(userDataDir, launchState)
   try {
-    fs.writeFileSync(INSTANCE_FILE, JSON.stringify({ pid: process.pid, startedAt: launchState.startedAt, version: app.getVersion() }), 'utf8')
+    fs.writeFileSync(INSTANCE_FILE, JSON.stringify({ pid: process.pid, startedAt: launchState.startedAt, version: app.getVersion(), ready: false }), 'utf8')
   } catch (error) {
     launchLog.warn(`Could not record the running instance: ${error instanceof Error ? error.message : String(error)}`)
   }
@@ -640,6 +649,10 @@ function createWindow() {
 
   logWebContentsDiagnostics(window.webContents, 'workbench')
   window.webContents.on('render-process-gone', (_event, details) => {
+    // A dead renderer must not be "revealed" by the fallback timer and counted
+    // as a completed startup. A reload that mounts still reports ready, which
+    // reveals the window through the normal path.
+    clearTimeout(revealTimer)
     recoverFromRendererLoss(window, details)
   })
 
@@ -1238,30 +1251,42 @@ function reportFatal(context, error, { exit = false } = {}) {
 // nothing at all. So say so, and offer to end it and start fresh.
 async function handOffToRunningInstance() {
   launchLog.info(`Another instance holds the lock; handing off (nonce ${instanceNonce}).`)
-  const deadline = Date.now() + INSTANCE_ACK_TIMEOUT_MS
-  while (Date.now() < deadline) {
+  const ackFile = instanceAckFile(instanceNonce)
+  const readRunning = () => {
     try {
-      const ack = JSON.parse(fs.readFileSync(INSTANCE_ACK_FILE, 'utf8'))
-      if (ack?.nonce === instanceNonce) {
-        launchLog.info(`Running instance (pid ${ack.pid}) acknowledged; exiting.`)
-        app.exit(0)
-        return
-      }
+      return JSON.parse(fs.readFileSync(INSTANCE_FILE, 'utf8'))
+    } catch {
+      // No record: a copy older than this one, or one that could not write it.
+      return null
+    }
+  }
+  const began = Date.now()
+  let running = readRunning()
+  // The clock for "not answering" starts when the running copy reaches `ready`,
+  // not when this launch began.
+  let readySince = running?.ready === true ? began : null
+  while (true) {
+    try {
+      const ack = JSON.parse(fs.readFileSync(ackFile, 'utf8'))
+      fs.rmSync(ackFile, { force: true })
+      launchLog.info(`Running instance (pid ${ack?.pid}) acknowledged; exiting.`)
+      app.exit(0)
+      return
     } catch {
       // Not written yet.
     }
+    const now = Date.now()
+    if (readySince === null) {
+      running = readRunning()
+      if (running?.ready === true) readySince = now
+    }
+    if (readySince !== null ? now - readySince > INSTANCE_ACK_TIMEOUT_MS : now - began > INSTANCE_STARTING_TIMEOUT_MS) break
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
-
-  let running = null
-  try {
-    running = JSON.parse(fs.readFileSync(INSTANCE_FILE, 'utf8'))
-  } catch {
-    // No record: a copy older than this one, or one that could not write it.
-  }
+  running = readRunning()
   const pid = Number.isInteger(running?.pid) && running.pid > 0 && running.pid !== process.pid ? running.pid : null
   const alive = pid !== null && isProcessAlive(pid)
-  launchLog.warn(`Running instance did not acknowledge within ${INSTANCE_ACK_TIMEOUT_MS} ms (recorded pid ${running?.pid ?? 'none'}, alive ${alive}).`)
+  launchLog.warn(`Running instance did not acknowledge after ${Date.now() - began} ms (recorded pid ${running?.pid ?? 'none'}, ready ${running?.ready === true}, alive ${alive}).`)
 
   await app.whenReady()
   const started = typeof running?.startedAt === 'string' ? new Date(running.startedAt).toLocaleString() : 'an unknown time'
@@ -1283,7 +1308,7 @@ async function handOffToRunningInstance() {
     noLink: true,
     title: 'Joint Domain Data Compiler',
     message: 'Joint Domain Data Compiler is already running, but it is not responding.',
-    detail: `The running copy (process ${pid}, started ${started}) did not answer within ${INSTANCE_ACK_TIMEOUT_MS / 1000} seconds. It may be stuck while starting.\n\nEnding it discards anything unsaved in it.\n\nLog: ${launchLog.path}`,
+    detail: `The running copy (process ${pid}, started ${started}) did not answer. It may be stuck while starting.\n\nEnding it discards anything unsaved in it.\n\nLog: ${launchLog.path}`,
   })
   if (choice !== 0) {
     app.exit(0)
@@ -1298,6 +1323,19 @@ async function handOffToRunningInstance() {
   const killDeadline = Date.now() + 5000
   while (isProcessAlive(pid) && Date.now() < killDeadline) {
     await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  // Not under the portable launcher: this process runs from the folder that
+  // launcher extracted, and it deletes that folder the moment this process
+  // exits -- out from under a relaunched copy. Ask for a fresh start instead.
+  if (process.env.PORTABLE_EXECUTABLE_FILE) {
+    dialog.showMessageBoxSync({
+      type: 'info',
+      title: 'Joint Domain Data Compiler',
+      message: 'The stuck copy has been ended.',
+      detail: 'Start Joint Domain Data Compiler again.',
+    })
+    app.exit(0)
+    return
   }
   app.relaunch()
   app.exit(0)
@@ -1321,7 +1359,7 @@ function registerSecondInstanceHandler() {
     const nonce = typeof additionalData?.nonce === 'string' ? additionalData.nonce : null
     launchLog.info(`A second launch was redirected here (nonce ${nonce ?? 'none'}).`)
     try {
-      fs.writeFileSync(INSTANCE_ACK_FILE, JSON.stringify({ nonce, pid: process.pid, at: new Date().toISOString() }), 'utf8')
+      if (nonce) fs.writeFileSync(instanceAckFile(nonce), JSON.stringify({ pid: process.pid, at: new Date().toISOString() }), 'utf8')
     } catch (error) {
       launchLog.warn(`Could not acknowledge the second launch: ${error instanceof Error ? error.message : String(error)}`)
     }
@@ -1360,6 +1398,12 @@ function registerChildProcessDiagnostics() {
 function startApplication() {
   app.whenReady().then(async () => {
     tracePhase('app ready')
+    // From here a second launch can be acknowledged, so it may start timing.
+    try {
+      fs.writeFileSync(INSTANCE_FILE, JSON.stringify({ pid: process.pid, startedAt: launchState.startedAt, version: app.getVersion(), ready: true }), 'utf8')
+    } catch (error) {
+      launchLog.warn(`Could not record the running instance as ready: ${error instanceof Error ? error.message : String(error)}`)
+    }
     // The workbench owns its visible navigation and commands. Remove Electron's
     // default File/Edit/View/Window menu in both development and packaged builds.
     Menu.setApplicationMenu(null)
