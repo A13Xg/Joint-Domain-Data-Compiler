@@ -33,6 +33,11 @@ test-results
 # build/icon.png survived only because it was already tracked.
 build/*
 !build/icon.png
+# The launcher's icon (csc /win32icon needs .ico) and the NSIS hook that points
+# the installer's shortcuts at the launcher. build/launcher/, its compiled
+# output, stays ignored.
+!build/icon.ico
+!build/installer.nsh
 .env.local
 .env.*.local
 
@@ -67,3 +72,4 @@ build/*
 *.[mM][sS][nN][pP]5
 *.[rR][pP][tT]
 *.[tT][eE][qQ]
+

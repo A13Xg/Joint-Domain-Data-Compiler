@@ -10,7 +10,7 @@ import { randomBytes } from 'node:crypto'
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { crc32, inflateRawSync } from 'node:zlib'
-import { README_TEXT, windowsZipName, writeZip } from '../scripts/package-zip.mjs'
+import { LAUNCHER_FILE_NAME, README_TEXT, windowsZipName, writeZip } from '../scripts/package-zip.mjs'
 
 let failures = 0
 function check(name: string, condition: boolean, detail = ''): void {
@@ -92,6 +92,32 @@ const exe = entries.find((entry) => entry.name.endsWith('.exe'))!
 check('Unix permission bits are recorded for Unix extractors', exe.madeBy >> 8 === 3 && ((exe.external >>> 16) & 0o777) === 0o755)
 const folder = entries.find((entry) => entry.name === 'Joint Domain Data Compiler/')!
 check('directories carry the MS-DOS directory bit', (folder.external & 0x10) === 0x10)
+
+// --- the Windows release layout: launcher and README on top, app below ---
+{
+  writeFileSync(join(source, LAUNCHER_FILE_NAME), Buffer.from('MZ launcher'))
+  const layoutZip = join(root, 'out', 'layout.zip')
+  writeZip(source, layoutZip, 'Joint Domain Data Compiler', [{ name: 'README.txt', data: README_TEXT }], { appFolder: 'app', topLevel: [LAUNCHER_FILE_NAME] })
+  const names = (() => {
+    const data = readFileSync(layoutZip)
+    const end = data.length - 22
+    const listed: string[] = []
+    let at = data.readUInt32LE(end + 16)
+    for (let i = 0; i < data.readUInt16LE(end + 10); i++) {
+      const length = data.readUInt16LE(at + 28)
+      listed.push(data.subarray(at + 46, at + 46 + length).toString('utf8'))
+      at += 46 + length + data.readUInt16LE(at + 30) + data.readUInt16LE(at + 32)
+    }
+    return listed
+  })()
+  const topLevel = [...new Set(names.map((name) => name.split('/')[1]).filter(Boolean))].sort()
+  check('the top level holds only the launcher, the README and the app folder', topLevel.join('|') === ['README.txt', 'app', LAUNCHER_FILE_NAME].sort().join('|'), topLevel.join(', '))
+  check('the app executable sits in app/', names.includes('Joint Domain Data Compiler/app/JointDomainDataCompiler.exe'))
+  check('nested app files keep their structure under app/', names.includes('Joint Domain Data Compiler/app/resources/app.asar'))
+  check('the launcher appears once, at the top', names.filter((name) => name.endsWith(LAUNCHER_FILE_NAME)).length === 1)
+  check('the README says which file to run and to keep the app folder', /double-click "Joint Domain Data Compiler\.exe"/.test(README_TEXT) && /"app" folder/.test(README_TEXT))
+  rmSync(join(source, LAUNCHER_FILE_NAME))
+}
 
 let rejectedNestedRoot = false
 try { writeZip(source, join(root, 'bad.zip'), 'a/b') } catch { rejectedNestedRoot = true }

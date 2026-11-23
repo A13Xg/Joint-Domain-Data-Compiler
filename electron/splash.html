@@ -75,6 +75,7 @@
       .status {
         display: flex;
         align-items: center;
+        justify-content: flex-end;
         gap: 9px;
         min-width: 0;
         color: var(--text);
@@ -211,7 +212,11 @@
     <!-- Text lives here rather than in the preload so the page stays the single
          place its wording is read and reviewed. -->
     <div class="hint" id="splash-hint" role="status" aria-live="polite">Still starting&hellip; the first launch after an install or update can take longer while security software checks the app. No need to start it again.</div>
+    <!-- Version left, what is loading right: the same arrangement the Windows
+         launcher (launcher/Launcher.cs) paints, so its hand-off to this page is
+         a swap of identical pictures. -->
     <div class="footer">
+      <span class="version" id="splash-version"></span>
       <div class="status">
         <span class="pip"></span>
         <!-- Seeded with the first stage's label so the very first paint is
@@ -219,7 +224,6 @@
              replaces a frame later. -->
         <span class="item" id="splash-item">Starting Joint Domain Data Compiler</span>
       </div>
-      <span class="version" id="splash-version"></span>
     </div>
     <div class="bar"><div class="bar__fill" id="splash-fill"></div></div>
   </body>

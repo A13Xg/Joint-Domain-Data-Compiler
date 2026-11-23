@@ -73,6 +73,16 @@ function applyStage(stage) {
     clearInterval(itemTimer)
     clearTimeout(swapTimer)
   }
+  // Started by the Windows launcher, whose own bar is already part-way along:
+  // jump there without the easing, then ease on, so the hand-off never shows
+  // the bar running backwards to zero.
+  if (typeof stage.from === 'number' && !view.fill.dataset.started) {
+    view.fill.style.transition = 'none'
+    view.fill.style.width = `${Math.min(100, Math.max(0, stage.from * 100))}%`
+    void view.fill.offsetWidth
+    view.fill.style.transition = ''
+  }
+  view.fill.dataset.started = 'true'
   view.fill.style.width = `${Math.min(100, Math.max(0, stage.progress * 100))}%`
   if (Array.isArray(stage.items)) showItems(stage.items)
   armSlowHint(stage.progress >= 1)

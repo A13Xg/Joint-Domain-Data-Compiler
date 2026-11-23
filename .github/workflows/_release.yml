@@ -67,10 +67,12 @@ jobs:
           node-version: 22
           cache: npm
 
-      # xmllint backs the GPX/KML schema assertions in test/validate.ts.
-      # Without it those checks silently skip rather than fail.
-      - name: Install GPX schema validator
-        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
+      # xmllint backs the GPX/KML schema assertions in test/validate.ts, and
+      # Mono lets test/launcher.ts compile and run the Windows launcher at the
+      # same C# 5 level as Windows' in-box csc. Without either, those checks
+      # silently skip rather than fail.
+      - name: Install GPX schema validator and C# compiler
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils mono-mcs mono-runtime libmono-system-windows-forms4.0-cil
 
       - name: Install dependencies (with timeout)
         timeout-minutes: 5
@@ -140,6 +142,13 @@ jobs:
         timeout-minutes: 30
         run: ${{ matrix.build_command }}
 
+      # Its own step, ahead of the ~10 minute package build, so a launcher that
+      # does not compile with the runner's in-box csc fails in seconds.
+      - name: Compile Windows launcher
+        if: runner.os == 'Windows'
+        timeout-minutes: 3
+        run: node scripts/build-launcher.mjs
+
       - name: Build and package Windows app (with timeout)
         if: runner.os == 'Windows'
         timeout-minutes: 30
@@ -172,8 +181,10 @@ jobs:
       # correctly reported "Packaged application exited early with code 1" on
       # Windows and macOS, and published anyway because it was advisory. Nothing
       # ships past a red verdict here.
+      # Windows runs five launches here (unpacked, GPU, zip via its launcher,
+      # installed via its shortcut, portable) plus an install and uninstall.
       - name: Verify and launch packaged application (release gate, with timeout)
-        timeout-minutes: 10
+        timeout-minutes: 25
         run: ${{ matrix.smoke_command }}
 
       - name: Verify Windows executables

@@ -122,6 +122,7 @@ test/                        # Test harnesses (check() pattern)
 
 benchmarks/                  # Performance baseline harnesses
 electron/                    # Desktop app main process, preload script, security config
+launcher/                    # Windows launcher: shows the splash at the double-click, starts the app
 docs/ (removed)             # Docs consolidated into .agents/ + ONBOARDING.md
 
 .agents/                     # AI tooling + ARCHITECTURE.md (how the app works)

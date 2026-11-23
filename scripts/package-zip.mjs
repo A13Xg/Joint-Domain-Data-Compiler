@@ -1,13 +1,17 @@
-import { closeSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, statSync, writeSync } from 'node:fs'
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, statSync, writeSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { crc32, deflateRawSync } from 'node:zlib'
 
-// Packs an unpacked desktop build into a plain .zip with ONE top-level folder:
+// Packs an unpacked desktop build into a plain .zip with ONE top-level folder.
+// The Windows release lays it out so the only program in sight is the one to
+// double-click:
 //
 //   Joint Domain Data Compiler/
-//     JointDomainDataCompiler.exe
-//     resources/ locales/ ...
+//     Joint Domain Data Compiler.exe   <- the launcher (launcher/Launcher.cs)
 //     README.txt
+//     app/
+//       JointDomainDataCompiler.exe    <- the Electron app it starts
+//       resources/ locales/ ...
 //
 // The "extract it and run the exe" distribution. Unlike the portable .exe it
 // never re-extracts ~300 MB into %TEMP% on every launch, and unlike the
@@ -23,6 +27,7 @@ import { crc32, deflateRawSync } from 'node:zlib'
 //
 // Usage: node scripts/package-zip.mjs <unpacked dir> <output.zip> [top-level folder name]
 
+export const LAUNCHER_FILE_NAME = 'Joint Domain Data Compiler.exe'
 const ZIP32_LIMIT = 0xffffffff
 const MAX_ENTRIES = 0xffff
 
@@ -30,13 +35,13 @@ export const README_TEXT = [
   'Joint Domain Data Compiler',
   '==========================',
   '',
-  'To run: open this folder and double-click JointDomainDataCompiler.exe.',
+  'To run: double-click "Joint Domain Data Compiler.exe" in this folder.',
   '',
-  'Keep every file in this folder together. The program loads the files beside',
-  'it, so it cannot run from inside the .zip or after being copied out on its',
-  'own. Extract the whole folder first (right-click the .zip > Extract All...),',
-  'then run it from the extracted folder. Any location you can write to works,',
-  'including a USB drive.',
+  'Keep everything in this folder together, including the "app" folder: the',
+  'program is in there, and "Joint Domain Data Compiler.exe" only shows the',
+  'splash and starts it. It cannot run from inside the .zip. Extract the whole',
+  'zip first (right-click the .zip > Extract All...), then run it from the',
+  'extracted folder. Any location you can write to works, including a USB drive.',
   '',
   'Settings, the overlay library and logs are kept in your user profile',
   '(%APPDATA%\\Joint Domain Data Compiler), not in this folder, so replacing the',
@@ -79,18 +84,23 @@ function walk(root) {
 
 /**
  * Writes `sourceDir` into `outFile` under `rootName/`, plus any `extraFiles`
- * ({ name, data }) placed inside that folder. Returns the entry count.
+ * ({ name, data }) placed inside that folder. With `appFolder`, everything
+ * except the top-level files named in `topLevel` goes one level down, under
+ * `rootName/<appFolder>/`. Returns the entry count.
  */
-export function writeZip(sourceDir, outFile, rootName, extraFiles = []) {
+export function writeZip(sourceDir, outFile, rootName, extraFiles = [], { appFolder = null, topLevel = [] } = {}) {
   if (!rootName || /[\\/]/.test(rootName)) throw new Error('The top-level folder name must be a single path segment.')
   const source = resolve(sourceDir)
   if (!statSync(source).isDirectory()) throw new Error(`Not a directory: ${source}`)
   mkdirSync(dirname(resolve(outFile)), { recursive: true })
 
+  if (appFolder !== null && (!appFolder || /[\\/]/.test(appFolder))) throw new Error('The app folder name must be a single path segment.')
+  const placed = (relativePath) => (appFolder && !topLevel.includes(relativePath) ? `${rootName}/${appFolder}/${relativePath}` : `${rootName}/${relativePath}`)
   const items = [
     { name: `${rootName}/`, directory: true, mtime: new Date(), mode: 0o755 },
+    ...(appFolder ? [{ name: `${rootName}/${appFolder}/`, directory: true, mtime: new Date(), mode: 0o755 }] : []),
     ...walk(source).map(({ full, stat, directory }) => ({
-      name: `${rootName}/${relative(source, full).split(sep).join('/')}${directory ? '/' : ''}`,
+      name: `${placed(relative(source, full).split(sep).join('/'))}${directory ? '/' : ''}`,
       directory,
       full,
       mtime: stat.mtime,
@@ -187,12 +197,16 @@ export function windowsZipName(productName, version) {
 
 if (process.argv[1] && basename(process.argv[1]) === 'package-zip.mjs') {
   let [sourceDir, outFile, rootName] = process.argv.slice(2)
+  let layout = {}
   if (sourceDir === '--windows') {
     // The release build: release/win-unpacked -> release/<name>-<version>-Windows-x64.zip
     const pkg = JSON.parse(readFileSync('package.json', 'utf8'))
     rootName = pkg.build.productName
     sourceDir = join('release', 'win-unpacked')
     outFile = join('release', windowsZipName(pkg.build.productName, pkg.version))
+    // electron-builder copies the launcher in beside the app (build.win.extraFiles).
+    if (!existsSync(join(sourceDir, LAUNCHER_FILE_NAME))) throw new Error(`${join(sourceDir, LAUNCHER_FILE_NAME)} is missing; run scripts/build-launcher.mjs before packaging.`)
+    layout = { appFolder: 'app', topLevel: [LAUNCHER_FILE_NAME] }
   }
   rootName ??= 'Joint Domain Data Compiler'
   if (!sourceDir || !outFile) {
@@ -200,6 +214,6 @@ if (process.argv[1] && basename(process.argv[1]) === 'package-zip.mjs') {
     process.exit(1)
   }
   const started = Date.now()
-  const count = writeZip(sourceDir, outFile, rootName, [{ name: 'README.txt', data: README_TEXT }])
+  const count = writeZip(sourceDir, outFile, rootName, [{ name: 'README.txt', data: README_TEXT }], layout)
   console.log(`Wrote ${outFile}: ${count} entries under "${rootName}/", ${(statSync(outFile).size / 1024 ** 2).toFixed(1)} MB in ${((Date.now() - started) / 1000).toFixed(1)} s`)
 }

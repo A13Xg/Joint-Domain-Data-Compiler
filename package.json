@@ -23,7 +23,7 @@
     "clean:release": "node -e \"require('fs').rmSync('release',{recursive:true,force:true})\"",
     "build:desktop": "npm run clean:release && npm run build && electron-builder --publish never && npm run check:asar",
     "build:desktop:linux": "npm run clean:release && npm run build && electron-builder --linux AppImage deb --publish never && npm run check:asar",
-    "build:desktop:win": "npm run clean:release && npm run build && electron-builder --win nsis portable --x64 --publish never && node scripts/package-zip.mjs --windows && npm run check:asar",
+    "build:desktop:win": "npm run clean:release && npm run build && node scripts/build-launcher.mjs && electron-builder --win nsis portable --x64 --publish never && node scripts/package-zip.mjs --windows && npm run check:asar",
     "test": "node scripts/run-tests.mjs",
     "test:e2e": "playwright test",
     "test:e2e:ci": "playwright test test/e2e/ci-smoke.spec.ts",
@@ -40,7 +40,7 @@
     "check:e2e": "playwright test test/e2e/ci-smoke.spec.ts test/e2e/workbench-smoke.spec.ts",
     "check:asar": "node scripts/verify-asar-integrity.mjs",
     "check:desktop:linux": "npm run check:asar && node scripts/smoke-packaged.mjs",
-    "check:desktop:win": "npm run check:asar && node scripts/smoke-packaged.mjs && node scripts/smoke-packaged.mjs --gpu && node scripts/smoke-packaged.mjs --zip && node scripts/smoke-packaged.mjs --portable",
+    "check:desktop:win": "npm run check:asar && node scripts/smoke-packaged.mjs && node scripts/smoke-packaged.mjs --gpu && node scripts/smoke-packaged.mjs --zip && node scripts/smoke-installer.mjs && node scripts/smoke-packaged.mjs --portable",
     "check:desktop:mac": "npm run check:asar && node scripts/smoke-packaged.mjs",
     "check:all": "npm run check:unit && npm run check:app-health",
     "check:full": "npm run check:all && npm run check:e2e",
@@ -108,6 +108,15 @@
             "*.kml"
           ]
         }
+      ],
+      "extraFiles": [
+        {
+          "from": "build/launcher",
+          "to": ".",
+          "filter": [
+            "Joint Domain Data Compiler.exe"
+          ]
+        }
       ]
     },
     "nsis": {
@@ -117,7 +126,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": false,
+      "include": "build/installer.nsh"
     },
     "portable": {
       "artifactName": "${productName}-${version}-Windows-${arch}-Portable.${ext}"

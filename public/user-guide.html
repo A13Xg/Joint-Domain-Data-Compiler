@@ -923,15 +923,16 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
     <thead><tr><th>Download</th><th>Use it when</th></tr></thead>
     <tbody>
       <tr><td><code>…-Windows-x64-Setup.exe</code></td><td>You can install software. Fastest launches; adds Start menu and desktop shortcuts.</td></tr>
-      <tr><td><code>…-Windows-x64.zip</code></td><td>You cannot or would rather not install. Right-click the zip, choose <em>Extract All…</em>, then open the extracted <em>Joint Domain Data Compiler</em> folder and run <code>JointDomainDataCompiler.exe</code>. Keep the folder's files together — the program cannot run from inside the zip or on its own. Launches as quickly as the installed copy.</td></tr>
+      <tr><td><code>…-Windows-x64.zip</code></td><td>You cannot or would rather not install. Right-click the zip, choose <em>Extract All…</em>, then open the extracted <em>Joint Domain Data Compiler</em> folder and double-click <code>Joint Domain Data Compiler.exe</code>. Keep the <code>app</code> folder beside it — the program is in there — and do not run it from inside the zip. Launches as quickly as the installed copy.</td></tr>
       <tr><td><code>…-Windows-x64-Portable.exe</code></td><td>You need a single file. It unpacks the whole app to a temporary folder on <em>every</em> launch, showing nothing while it does — several seconds before the splash appears. Prefer the zip.</td></tr>
     </tbody>
   </table></div>
   <p>All three share your settings, overlay library and logs, which live in your user profile.</p>
 
   <h3>The app takes a long time to start</h3>
-  <p>The launch splash appears as soon as the program is running and stays until the workbench is
-  ready, with its own button on the taskbar. If a single step takes more than a few seconds, the
+  <p>On Windows the splash appears the instant you double-click, from a small launcher program,
+  before the main program has even finished loading; the installer's shortcuts and the zip both
+  use it. It stays, with its own taskbar button, until the workbench is ready. If a single step takes more than a few seconds, the
   splash says the app is still starting — there is no need to start it again; doing so only brings
   the starting copy forward. If a launch still feels slow, you
   can find out exactly where the time goes — run the app from a terminal with the startup trace

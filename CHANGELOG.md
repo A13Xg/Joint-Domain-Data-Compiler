@@ -5,23 +5,49 @@ Versioning; release tags use the `vX.Y.Z` form.
 
 ## 0.9.1 - 2026-11-23
 
+### Fixed
+
+- **On Windows, nothing appeared for seconds after a double-click, then the splash flashed open
+  and shut with the workbench right behind it.** The time went before any of the app's code ran:
+  Windows loading — and antivirus scanning — the ~190 MB unsigned Electron executable. No window
+  the app creates can cover time that passes before the app exists, so every earlier splash fix
+  started too late. A small native **launcher** (`Joint Domain Data Compiler.exe`,
+  `launcher/Launcher.cs`, ~400 KB, needs only the .NET Framework built into Windows 10/11) now
+  shows the splash, its progress bar and a status line at the bottom right the instant it is
+  started, then starts the app. The app opens its own splash over exactly the same rectangle once
+  its artwork is painted, and the launcher steps aside, so the hand-off is a swap of identical
+  pictures; the bar carries on from where the launcher left it. The installer's Start menu and
+  desktop shortcuts and the zip's top-level program both use it. If the app's files are missing
+  (the launcher was run from inside the zip), it says to extract the zip first.
+- The app's log now records the time from the double-click to its own code running on every
+  launch, so a slow start can be told apart from a slow app.
+- **A page load that Electron 42.10 aborted after it had succeeded** (`did-stop-loading` with no
+  `dom-ready`, `ERR_FAILED`) closed the user guide, and on the workbench would have been treated as
+  fatal. Loads are retried once. In development the guide now loads from its file, as in the
+  packaged app, where the abort was never seen.
+
 ### Added
 
-- **Windows zip download** (`…-Windows-x64.zip`): extract it, open the `Joint Domain Data Compiler`
-  folder, run `JointDomainDataCompiler.exe`. One top-level folder with a README explaining exactly
-  that. Unlike the portable executable it never re-unpacks ~300 MB into a temporary folder on each
-  launch, so it starts as quickly as an installed copy; unlike the installer it needs no install.
-  Published by the release workflow, checksummed, and launched from an extracted copy by the
-  Windows release gate.
+- **Windows zip download** (`…-Windows-x64.zip`): extract it and double-click
+  `Joint Domain Data Compiler.exe`. One top-level folder holding just that launcher, a README, and
+  an `app` folder with everything else. Unlike the portable executable it never re-unpacks ~300 MB
+  into a temporary folder on each launch; unlike the installer it needs no install. Published,
+  checksummed, and launched from an extracted copy by the Windows release gate.
+- The Windows release gate now also installs the app silently, checks both shortcuts start the
+  launcher, launches through it, and uninstalls, checking nothing is left behind.
 
 ### Changed
 
-- **The launch splash appears immediately.** It is shown the moment its window exists rather than
-  at its first paint, has its own taskbar button from the start, and the crash reporter's
-  first-run setup (~500 ms on a cold launch) now happens after it instead of before it.
+- **The splash's status line moved to the bottom right**, with the version on the left, matching
+  the launcher.
+- **The splash appears immediately when the app is started directly.** It is shown the moment its
+  window exists rather than at its first paint, has its own taskbar button from the start, and the
+  crash reporter's first-run setup (~500 ms on a cold launch) now happens after it.
 - **The splash says when a launch is slow.** If one step takes more than four seconds it explains
   that the first launch after an install or update can take longer while security software checks
   the app, and that there is no need to start it again.
+- The launcher, the app's windows and the installer's shortcuts share one taskbar identity
+  (`com.a13xg.jointdomaindatacompiler`).
 
 ## 0.9.0 - 2026-11-23
 

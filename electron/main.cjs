@@ -70,7 +70,9 @@ const startupBegan = Date.now()
 // Always recorded in the launch log; printed to stdout only on request, since
 // test/electron-launch.ts and the packaged smoke gate parse that output.
 function tracePhase(name) {
-  const line = `[startup] ${String(Date.now() - startupBegan).padStart(6)}ms  ${name}`
+  traceLine(`[startup] ${String(Date.now() - startupBegan).padStart(6)}ms  ${name}`)
+}
+function traceLine(line) {
   launchLog.info(line)
   if (!STARTUP_TRACE) return
   try {
@@ -79,13 +81,38 @@ function tracePhase(name) {
     // No attached stdout; the log line above is the record.
   }
 }
-if (STARTUP_TRACE) {
+// Logged on every launch, not only under JDDC_STARTUP_TRACE: this is the number
+// that says whether a slow launch is the app's fault or happened before the app
+// existed. The Windows launcher sets JDDC_SPAWN_MS at the user's double-click.
+{
   const spawnedAt = Number(process.env.JDDC_SPAWN_MS)
-  if (Number.isFinite(spawnedAt) && spawnedAt > 0) {
-    console.log(`[startup] ${String(startupBegan - spawnedAt).padStart(6)}ms  process spawn to main.cjs (cannot be covered by any in-app window)`)
+  if (Number.isFinite(spawnedAt) && spawnedAt > 0 && spawnedAt <= startupBegan) {
+    traceLine(`[startup] ${String(startupBegan - spawnedAt).padStart(6)}ms  process spawn to main.cjs (cannot be covered by any in-app window)`)
   }
   tracePhase('main.cjs loaded')
 }
+
+// Started by launcher/Launcher.cs, whose own splash is already on screen. Read
+// once and removed from the environment, so a relaunch or a child process
+// never inherits a stale launcher's rectangle or timestamp.
+const launcher = (() => {
+  const pid = Number(process.env.JDDC_LAUNCHER_PID)
+  const parts = String(process.env.JDDC_LAUNCHER_BOUNDS ?? '').split(',').map(Number)
+  const bounds = parts.length === 4 && parts.every(Number.isFinite) && parts[2] > 0 && parts[3] > 0
+    ? { x: parts[0], y: parts[1], width: parts[2], height: parts[3] }
+    : null
+  delete process.env.JDDC_LAUNCHER_PID
+  delete process.env.JDDC_LAUNCHER_BOUNDS
+  delete process.env.JDDC_SPAWN_MS
+  return Number.isInteger(pid) && pid > 0 ? { pid, bounds } : null
+})()
+if (launcher) launchLog.info(`Started by the JDDC launcher (pid ${launcher.pid})${launcher.bounds ? `, splash at ${JSON.stringify(launcher.bounds)} px` : ''}`)
+
+// The same ID the launcher and the installer's shortcuts use (package.json
+// build.appId), so the launcher's splash, this splash and the workbench share
+// one taskbar button instead of swapping between two.
+const APP_USER_MODEL_ID = 'com.a13xg.jointdomaindatacompiler'
+if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID)
 
 const isDev = !app.isPackaged
 const useDevServer = isDev
@@ -284,6 +311,12 @@ const SPLASH_MIN_VISIBLE_MS = 900
 // window anyway. See markShown() in openSplash() for why a blind show is the
 // right fallback rather than a hazard.
 const SPLASH_FALLBACK_SHOW_MS = 700
+// Under the launcher there is no hurry: its own splash is on screen, and showing
+// this one before the artwork is painted would put a dark frame over it.
+const SPLASH_FALLBACK_SHOW_UNDER_LAUNCHER_MS = 2500
+// Where the launcher's bar has eased to by the hand-off; this splash's bar
+// starts there instead of at zero, so it never runs backwards.
+const SPLASH_LAUNCHER_PROGRESS = 0.14
 
 let splashWindow = null
 // When the splash actually became visible -- not when it was constructed. The
@@ -302,6 +335,7 @@ function sendSplashStage() {
   splashWindow.webContents.send(SPLASH_STAGE_CHANNEL, {
     ...SPLASH_STAGES[splashStageName],
     version: app.getVersion(),
+    ...(launcher && splashStageName === 'boot' ? { from: SPLASH_LAUNCHER_PROGRESS } : {}),
   })
 }
 
@@ -311,9 +345,24 @@ function splashStage(name) {
   sendSplashStage()
 }
 
+// The launcher's splash rectangle, in this process's DIPs. It is reported in
+// physical pixels; converting through the display's own scale factor puts this
+// splash exactly over it on any DPI, where centring independently could land a
+// pixel or a monitor away and show as a jump.
+function launcherSplashBounds() {
+  if (!launcher?.bounds || process.platform !== 'win32') return null
+  try {
+    return screen.screenToDipRect(null, launcher.bounds)
+  } catch (error) {
+    console.warn(`[splash] Could not place the splash over the launcher's: ${error instanceof Error ? error.message : String(error)}`)
+    return null
+  }
+}
+
 function openSplash() {
+  const overLauncher = launcherSplashBounds()
   const window = new BrowserWindow({
-    ...SPLASH_SIZE,
+    ...(overLauncher ?? SPLASH_SIZE),
     frame: false,
     resizable: false,
     movable: false,
@@ -328,7 +377,7 @@ function openSplash() {
     // change of title rather than a second button.
     skipTaskbar: false,
     alwaysOnTop: true,
-    center: true,
+    center: !overLauncher,
     backgroundColor: '#050b18',
     show: false,
     webPreferences: {
@@ -366,6 +415,8 @@ function openSplash() {
   // that had been "fixed" four times.
   const markShown = (why) => {
     if (window.isDestroyed() || splashShownAt !== null) return
+    // Under the launcher only a painted plate may replace its splash.
+    if (launcher && (why === 'created' || why === 'first paint')) return
     splashShownAt = Date.now()
     window.show()
     tracePhase(`splash visible (${why})`)
@@ -388,7 +439,7 @@ function openSplash() {
   // renderer is so starved that it has not managed a first paint by now, showing
   // the window with its background colour is still the right answer, because the
   // alternative that shipped was showing nothing for ten seconds.
-  const blindShow = setTimeout(() => markShown('fallback timer'), SPLASH_FALLBACK_SHOW_MS)
+  const blindShow = setTimeout(() => markShown('fallback timer'), launcher ? SPLASH_FALLBACK_SHOW_UNDER_LAUNCHER_MS : SPLASH_FALLBACK_SHOW_MS)
   window.once('closed', () => clearTimeout(blindShow))
 
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))

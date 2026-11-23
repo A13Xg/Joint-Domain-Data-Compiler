@@ -68,10 +68,12 @@ jobs:
           node-version: 22
           cache: npm
 
-      # xmllint backs the GPX/KML schema assertions in test/validate.ts.
-      # Without it those checks silently skip rather than fail.
-      - name: Install GPX schema validator
-        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
+      # xmllint backs the GPX/KML schema assertions in test/validate.ts, and
+      # Mono lets test/launcher.ts compile and run the Windows launcher at the
+      # same C# 5 level as Windows' in-box csc. Without either, those checks
+      # silently skip rather than fail.
+      - name: Install GPX schema validator and C# compiler
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils mono-mcs mono-runtime libmono-system-windows-forms4.0-cil
 
       - name: Install dependencies
         run: npm ci
