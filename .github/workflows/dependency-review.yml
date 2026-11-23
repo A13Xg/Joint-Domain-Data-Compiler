@@ -1,0 +1,27 @@
+name: Dependency Review
+
+# Flags newly introduced dependencies with known vulnerabilities or
+# incompatible licenses before a PR merges -- complements `npm audit` in
+# Quality Gates (which only audits what is already in the lockfile) by
+# reviewing exactly what a given PR adds or changes.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    name: Review dependency changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        with:
+          fail-on-severity: high

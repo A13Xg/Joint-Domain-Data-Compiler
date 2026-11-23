@@ -15,6 +15,11 @@ material behind `public/user-guide.html`, and stands on its own as a developer r
 - **App title/subtitle** — "Joint Domain Data Compiler" / "TSPI flight-data conversion & analysis workbench" (static branding)
 - **Spinner** — displayed next to status light while async operations (import/analysis/build) are in progress; shows operation text ("Analyzing…", "Building dataset…", "Parsing…")
 - **StatusLight** — persistent indicator: `idle` ("No datasets loaded"), `busy` ("Working"), `ok` ("Ready", shows dataset count), `warn` (N warnings), `error` (N errors); precedence: errors > warnings > ok
+- **Release info button** (`v<version>`, next to the **?** help button) — opens a modal dialog
+  showing the running app version (from `package.json` via `__APP_VERSION__`), the five key
+  libraries JDDC is built on, "A13Xg Industries" copyright attribution, and a disclaimer that the
+  app is for notional data only and not a source of Truth/Evidentiary Data. Closes on Escape,
+  backdrop click, or the Close button.
 
 ### Sidebar
 - **"+ Load data" button** — opens hidden `<input type="file" multiple>` picker; accepts `.csv,.tsv,.txt,.gpx,.geojson,.json,.kml,.kmz,.nmea,.gps,.log,.gpb,.bin,.msnP5,.rpt,.teq`
@@ -759,6 +764,11 @@ No interactive controls; pure rendering driven by caller (RepairPreviewDialog).
   - **Note:** ProjectPanel is the one place `window.confirm` survives (not ConfirmDialog)
 - **"Export manifest only" button** — human-readable JSON project manifest without embedded data; disabled with 0 datasets or busy
 - **"Export report (HTML / PDF)" button** — opens ReportExportDialog; disabled with 0 datasets or busy
+- **"Export to Playback" button** — opens PlaybackExportDialog; disabled with 0 datasets or busy
+- **"Launch Playback" / "Launch Graph Analysis" buttons** — desktop only (hidden when `window.jointDomainCompiler?.launchSuiteApp` is absent, i.e. the browser build)
+  - Quick-send: every loaded dataset, no metadata prompt (unlike "Export to Playback")
+  - Builds a gzip `.jddc-playback` archive and sends it over IPC to `launchSuiteApp(appType, bytes)`, which opens (or focuses/reuses) the Playback or Graph Analysis window and delivers it once that window reports ready
+  - Disabled with 0 datasets or busy
 
 ### Diagnostics
 - **Diagnostics note textarea** — placeholder "Describe what happened…"; optional free-text included in bundle
@@ -809,6 +819,15 @@ No interactive controls; pure rendering driven by caller (RepairPreviewDialog).
     Includes the distribution table (n / min / median / P95 / max / std dev per quantity) and a
     20-bin slant-range histogram as inline SVG.
   - Downloads file
+
+### PlaybackExportDialog (opened from "Export to Playback" button)
+- **Scenario name field** — prefilled from the project name
+- **Download filename field** — prefilled and sanitized separately; preview shows "{sanitizedFilename}.jddc-playback"
+- **"Gzip-compress" checkbox** — checked by default; unchecked saves plain, human-readable JSON instead (both are valid `.jddc-playback` input — the decoder sniffs gzip magic bytes rather than assuming either)
+- **Per-dataset table** — one row per loaded dataset: name (read-only), callsign field (defaults to the dataset name), aircraft type field (free text, e.g. "F-16C")
+- **"Cancel" button** — closes dialog; no download
+- **Escape key / backdrop click** — both close (no download)
+- **"Export" button** — builds a `.jddc-playback` archive (every loaded dataset's current points/channels; no undo history, recipes, or fusion artifacts; original `sourceFormat`/`sourceFileName` preserved, never rewritten) and downloads it
 
 ---
 

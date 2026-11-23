@@ -21,6 +21,10 @@ export interface ProjectDatasetEntry {
   visible: boolean
   color?: string
   timeOffsetMs?: number
+  /** Suite metadata (playback/graph profiles): editable label, never derived from id. */
+  callsign?: string
+  /** Suite metadata (playback/graph profiles): free-text platform type, e.g. "F-16C". */
+  aircraftType?: string
 }
 
 export interface ProjectBookmark {
@@ -208,6 +212,15 @@ function validateDatasetEntry(value: unknown): asserts value is ProjectDatasetEn
     throw new Error(`Dataset ${value.id} externalReference must be a string`)
   }
   if (value.timeOffsetMs !== undefined) requireFiniteNumber(value.timeOffsetMs, `Dataset ${value.id} timeOffsetMs`)
+  if (value.color !== undefined && (typeof value.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(value.color))) {
+    throw new Error(`Dataset ${value.id} color must be a #rrggbb string`)
+  }
+  if (value.callsign !== undefined && typeof value.callsign !== 'string') {
+    throw new Error(`Dataset ${value.id} callsign must be a string`)
+  }
+  if (value.aircraftType !== undefined && typeof value.aircraftType !== 'string') {
+    throw new Error(`Dataset ${value.id} aircraftType must be a string`)
+  }
 }
 
 function validateRecipe(value: unknown): asserts value is Recipe {

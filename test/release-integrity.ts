@@ -128,7 +128,13 @@ for (const path of ['.github/workflows/ci.yml', ...releaseCallerFiles]) {
 
 // Actions must be pinned to immutable commit SHAs, never moving tags.
 const allWorkflows = await Promise.all(
-  ['.github/workflows/ci.yml', '.github/workflows/_release.yml', ...releaseCallerFiles].map((path) => readFile(path, 'utf8')),
+  [
+    '.github/workflows/ci.yml',
+    '.github/workflows/_release.yml',
+    '.github/workflows/codeql.yml',
+    '.github/workflows/dependency-review.yml',
+    ...releaseCallerFiles,
+  ].map((path) => readFile(path, 'utf8')),
 )
 const floatingTagRefs = allWorkflows.flatMap((workflow) => [...workflow.matchAll(/uses:\s+([\w-]+\/[\w-]+)@(v[\d.]+)\s*$/gm)].map((match) => `${match[1]}@${match[2]}`))
 check(`All actions are pinned to a commit SHA${floatingTagRefs.length > 0 ? ` — found ${floatingTagRefs.join(', ')}` : ''}`, floatingTagRefs.length === 0)
@@ -151,15 +157,29 @@ try {
 
 // README platform badges. Packaging runs on `v*` tags, so the badges are pinned
 // to the release tag; a `branch=main` badge only sees stale manual runs and read
-// "failing" for a month of green releases. Pinned badges must move with the version.
+// "failing" for a month of green releases. Tags are only cut on a minor/major bump (the
+// patch-bump hook never tags), so badges track `v<major>.<minor>.0`, not the patch.
 {
   const readme = await readFile('README.md', 'utf8')
-  const packageVersion = (JSON.parse(await readFile('package.json', 'utf8')) as { version: string }).version
+  const [major, minor] = (JSON.parse(await readFile('package.json', 'utf8')) as { version: string }).version.split('.')
+  const releaseTag = `v${major}.${minor}.0`
   const badgeLines = readme.split('\n').filter((line) => /^\[!\[(Windows|Linux|macOS) package\]/.test(line))
   const pinnedRefs = badgeLines.flatMap((line) => [...line.matchAll(/check-runs\/A13Xg\/Joint-Domain-Data-Compiler\/([^?\s)]+)/g)].map((m) => m[1]))
   check('README has a badge for each packaged platform', badgeLines.length === 3)
   check('README platform badges never filter release runs by branch', badgeLines.every((line) => !/release[^)]*branch=/.test(line)))
-  check(`README package badges are pinned to v${packageVersion}`, pinnedRefs.length >= 2 && pinnedRefs.every((ref) => ref === `v${packageVersion}`))
+  check(`README package badges are pinned to ${releaseTag}`, pinnedRefs.length >= 2 && pinnedRefs.every((ref) => ref === releaseTag))
+}
+
+// Auto-tag-on-version-bump: a release must never start just because main
+// moved. It is gated on `test` succeeding, scoped to pushes, and only fires
+// when scripts/check-version-bump.mjs says the major/minor changed.
+{
+  const ci = await readFile('.github/workflows/ci.yml', 'utf8')
+  check('ci.yml has the auto-tag-release job', ci.includes('auto-tag-release:'))
+  check('Auto-tag job requires the test job to succeed first', /auto-tag-release:[\s\S]*?needs: \[test\]/.test(ci))
+  check('Auto-tag job is scoped to push events', ci.includes("if: github.event_name == 'push' && needs.test.result == 'success'"))
+  check('Auto-tag job defers to check-version-bump.mjs', ci.includes('scripts/check-version-bump.mjs'))
+  check('Auto-tag job only pushes a tag when should_tag is true', ci.includes("if: steps.version.outputs.should_tag == 'true'"))
 }
 
 console.log(`\n${failures === 0 ? 'ALL RELEASE INTEGRITY CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`)

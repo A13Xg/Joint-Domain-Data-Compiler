@@ -1,0 +1,5 @@
+#!/bin/sh
+# Auto-increments package.json's patch version on every commit unless the
+# developer already changed it (a manual minor/major bump). See
+# scripts/bump-patch-version.mjs and CONTRIBUTING.md's "Versioning" section.
+node scripts/bump-patch-version.mjs || exit 1

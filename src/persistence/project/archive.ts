@@ -234,6 +234,8 @@ export function buildProjectManifest(input: {
   namedRecipes?: Readonly<Record<string, readonly Recipe[]>>
   createdAt?: number
   applicationVersion: string
+  /** Suite metadata (playback/graph export): callsign/aircraft type per dataset id. */
+  datasetSuiteMetadata?: Readonly<Record<string, { callsign?: string; aircraftType?: string }>>
 }): ProjectManifest {
   const now = Date.now()
   const operationRecipes: Recipe[] = input.datasets.flatMap((dataset) => {
@@ -264,16 +266,23 @@ export function buildProjectManifest(input: {
     createdAt: input.createdAt ?? now,
     updatedAt: now,
     applicationVersion: input.applicationVersion,
-    datasets: input.datasets.map((dataset) => ({
-      id: dataset.id,
-      name: dataset.name,
-      sourceFormat: dataset.sourceFormat,
-      sourceHash: fingerprintDataset(dataset),
-      sourceFileName: dataset.metadata?.source.filename ?? dataset.name,
-      embeddedDataPath: `datasets/${dataset.id}.json`,
-      recipeIds: recipeIdsByDataset.get(dataset.id) ?? [],
-      visible: true,
-    })),
+    datasets: input.datasets.map((dataset) => {
+      const suiteMeta = input.datasetSuiteMetadata?.[dataset.id]
+      const displayColor = input.datasetDisplay?.[dataset.id]?.color
+      return {
+        id: dataset.id,
+        name: dataset.name,
+        sourceFormat: dataset.sourceFormat,
+        sourceHash: fingerprintDataset(dataset),
+        sourceFileName: dataset.metadata?.source.filename ?? dataset.name,
+        embeddedDataPath: `datasets/${dataset.id}.json`,
+        recipeIds: recipeIdsByDataset.get(dataset.id) ?? [],
+        visible: true,
+        ...(displayColor ? { color: displayColor } : {}),
+        ...(suiteMeta?.callsign ? { callsign: suiteMeta.callsign } : {}),
+        ...(suiteMeta?.aircraftType ? { aircraftType: suiteMeta.aircraftType } : {}),
+      }
+    }),
     recipes,
     bookmarks: input.bookmarks ?? [],
     fusionArtifacts: input.fusionArtifacts ?? [],

@@ -4,6 +4,9 @@ known limitations) or `CHANGELOG.md` (what shipped).
 Open:
 
 Done:
+- Repository-wide audit pass: release info popup (About dialog), automated patch
+  versioning + CI auto-tag-on-minor/major-bump, CodeQL + Dependency Review workflows,
+  stale test-count corrections in README/AGENTS.md.
 - HTML Help document: in-app user guide, feature inventory, screenshot capture, info buttons,
   and the accessible-name audit.
 - Wire comparison results into the HTML report (part 1: the section is no longer dead code).

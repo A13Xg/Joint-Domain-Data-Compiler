@@ -30,15 +30,6 @@ Versioning; release tags use the `vX.Y.Z` form.
   - The workbench window is sized to the screen (its 1100×700 minimum no longer exceeds small
     laptop displays), and on Windows is raised above other windows when it appears, so a launch that
     took long enough for the user to click elsewhere no longer opens behind them.
-
-### Changed
-
-- Only the `en-US` Chromium locale is packaged: about 46 MB less for the Windows portable build to
-  unpack, and for antivirus to scan, on every launch.
-- The Windows release gate now also launches the real Portable.exe and a GPU-enabled launch (every
-  earlier gate ran `win-unpacked` with `--disable-gpu` only), reports launch-to-workbench time, and
-  requires the launch log to have been written.
-
 - **The 3D view silently dropped most companion tracks.** It drew only tracks whose references
   were fully "compatible" and counted only "blocked" ones, so every track with an *unknown*
   altitude or time reference — every CSV without a declared datum, and every P5 slot — vanished
@@ -58,6 +49,13 @@ Versioning; release tags use the `vX.Y.Z` form.
   the tab and sizes columns to their content, with coordinates at a fixed six decimals.
 - Key/value tables (Overview time span, point accounting, metadata) right-aligned their labels.
 - The guide's Import screenshot was captured before the workbench had mounted.
+- Two test harnesses failed on a developer machine: `test/electron-fuses.ts` hard-coded POSIX
+  `/release/...` paths (failing on Windows hosts), and `test/release-integrity.ts` demanded README
+  badges match the full package version even though the patch-bump hook changes it on every commit.
+  Paths are now built with the host separator, and badges are checked against `v<major>.<minor>.0`,
+  the only tags CI creates.
+- README and `AGENTS.md` cited a stale regression-harness count (62/100); corrected to the
+  current 101.
 
 ### Added
 
@@ -76,6 +74,64 @@ Versioning; release tags use the `vX.Y.Z` form.
 - **Drop files anywhere** in the window, with a "Drop to import" overlay.
 - **Charts:** the interior gridlines carry values for the first two plotted series, and the time
   axis has intermediate ticks.
+- **Release info popup** — a small version button beside the header's **?** help button opens a
+  dialog listing the app version, the key libraries JDDC is built on, "A13Xg Industries"
+  copyright attribution, and a disclaimer that the app is for notional data only.
+- **Automated patch versioning** — a git pre-commit hook (`githooks/pre-commit`, wired up by
+  `npm run prepare`) auto-increments `package.json`'s patch version on every commit. A manual
+  minor/major bump is detected by a new CI job (`ci.yml`'s `auto-tag-release`), which tags `main`
+  as `v<version>` to start the existing tag-triggered release workflow — so a release still never
+  builds on an ordinary push, only on a deliberate version bump or a manual workflow run.
+- **CodeQL security scanning** (`.github/workflows/codeql.yml`) — static analysis of the
+  TypeScript/JavaScript source on every push/PR to `main` and a weekly schedule.
+- **Dependency Review** (`.github/workflows/dependency-review.yml`) — flags dependencies a PR
+  adds or changes that carry a known high-severity vulnerability, alongside the existing
+  `npm audit` gate in Quality Gates.
+- **`.nvmrc` and `package.json#engines`** — pin the expected Node.js version (22) so tools like
+  `nvm use` and `npm install` warn on a mismatch instead of failing confusingly later.
+
+### Changed
+
+- Only the `en-US` Chromium locale is packaged: about 46 MB less for the Windows portable build to
+  unpack, and for antivirus to scan, on every launch.
+- The Windows release gate now also launches the real Portable.exe and a GPU-enabled launch (every
+  earlier gate ran `win-unpacked` with `--disable-gpu` only), reports launch-to-workbench time, and
+  requires the launch log to have been written.
+- **Dependency roundup** — folded ten Dependabot PRs into one: Electron 42.9.0 → 42.10.0 (the only
+  direct dependency; now `^42.10.0`) and transitive build/tooling bumps to brace-expansion 1.1.21,
+  axios 1.20.0, undici 6.29.0, js-yaml 4.3.2, baseline-browser-mapping 2.11.22, joi 18.2.9,
+  @xmldom/xmldom 0.8.15, fast-uri 3.1.7, and browserslist 4.28.9. All are dev/build-time only.
+
+## 0.8.0 - 2026-09-27
+
+### Added
+
+- **JDDC Playback** — a standalone app that loads a `.jddc-playback` scenario (or a `.jddc-project`,
+  ignoring its history/recipes) and animates it: play/pause/seek/speed, per-track visibility and
+  colour, and live range/bearing/closure-rate between two selected tracks. Reached via
+  `?app=playback` in the browser build, or "Launch Playback" in the Workbench's Project panel on
+  desktop, which opens a real window and streams the current data to it over IPC.
+- **JDDC Graph Analysis** — a companion app for numerical review without animation: per-entity
+  altitude/speed/climb-rate charts, a statistics table (mean/min/max), and — for a selected pair —
+  closure-rate and slant-range over time plus a closure-rate-vs-range correlation scatter. Reached
+  the same way, via `?app=graph` or "Launch Graph Analysis".
+- **`.jddc-playback` format** — a scoped profile of the existing `.jddc-project` archive (same
+  gzip-JSON codec, same validation boundary): every loaded dataset's current points and channels,
+  callsign/aircraft-type/colour per dataset, no undo history, recipes, or fusion artifacts, and the
+  original `sourceFormat`/`sourceFileName` preserved rather than rewritten. "Export to Playback" in
+  the Project panel offers gzip (default) or plain, human-readable JSON.
+- Shared building blocks for the two new apps, reusable by future ones: a pairwise range/bearing/
+  closure-rate helper computed on demand and never stored (`src/core/analytics/pairwise.ts`), and a
+  helper that derives missing `standard-kinematics` channels on load without ever overwriting a
+  channel a dataset already carries (`src/core/analytics/ensureChannels.ts`).
+
+### Known limitations
+
+- No desktop shortcut or CLI argument launches Playback/Graph directly in the packaged app; today
+  they're reached from within a running Workbench, or by hand in the browser build. Per-platform
+  launchers (macOS can't pass a launch argument from the Dock) are future work.
+- Not benchmarked at scale — tested with real fixtures up to a couple thousand points across two
+  entities, not the 100-aircraft/multi-million-point exercises the suite is ultimately for.
 
 ## 0.7.0 - 2026-09-27
 

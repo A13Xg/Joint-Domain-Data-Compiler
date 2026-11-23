@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { FuseV1Options, FuseVersion } from '@electron/fuses'
 
 const {
@@ -34,9 +34,9 @@ check('File protocol privileges remain enabled for BrowserWindow.loadFile', EXPE
 // appOutDir comes from electron-builder and is always a host path, so packaging
 // Windows from a POSIX host must keep POSIX separators. The executable is named
 // after productFilename, not executableName.
-check('Windows executable path follows electron-builder output', packagedExecutablePath(context('win32', '/release')) === '/release/JointDomainDataCompiler.exe')
-check('Linux executable path uses configured executable name', packagedExecutablePath(context('linux', '/release')) === '/release/joint-domain-data-compiler')
-check('macOS executable path targets the app bundle', packagedExecutablePath(context('darwin', '/release', 'JDDC')) === '/release/JDDC.app/Contents/MacOS/JDDC')
+check('Windows executable path follows electron-builder output', packagedExecutablePath(context('win32', '/release')) === join('/release', 'JointDomainDataCompiler.exe'))
+check('Linux executable path uses configured executable name', packagedExecutablePath(context('linux', '/release')) === join('/release', 'joint-domain-data-compiler'))
+check('macOS executable path targets the app bundle', packagedExecutablePath(context('darwin', '/release', 'JDDC')) === join('/release', 'JDDC.app', 'Contents', 'MacOS', 'JDDC'))
 
 console.log(`\n${failures === 0 ? 'ALL ELECTRON FUSE CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`)
 process.exit(failures === 0 ? 0 : 1)

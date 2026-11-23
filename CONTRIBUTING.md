@@ -103,7 +103,7 @@ npm run dev:desktop
 ### Running Tests
 
 ```bash
-# Full test suite (62+ harnesses)
+# Full test suite (101+ harnesses)
 npm test
 
 # Linting
@@ -133,6 +133,40 @@ npm run build:desktop:win
 
 # Package for macOS
 npm run build:desktop
+```
+
+## Versioning & Releases
+
+`package.json`'s `version` is the single place a version number lives; every other reference
+(the About dialog, project/playback archive metadata, release artifact names, README badges) is
+derived from it at build or release time — never edited separately.
+
+The scheme is `major.minor.patch`, and almost none of it is manual:
+
+1. **Patch bumps itself.** `npm install`/`npm ci` runs `npm run prepare`, which points git at
+   `githooks/pre-commit`. From then on, every commit on this clone runs
+   `scripts/bump-patch-version.mjs`, which increments `package.json`'s patch number and stages it
+   — unless the commit already changed the version itself (see step 2), in which case the hook
+   leaves it alone.
+2. **You bump minor (or major) by hand when you want a release.** Edit `package.json` directly,
+   e.g. `0.8.6` → `0.9.0` (reset the patch to `0`), and include that edit in your commit.
+3. **CI does the rest.** On push to `main`, `ci.yml`'s `auto-tag-release` job (backed by
+   `scripts/check-version-bump.mjs`) compares the new commit's version to its parent's. If the
+   major or minor component changed, it tags `main` as `v<version>` and pushes the tag — which is
+   exactly what `release.yml` already triggers on. A patch-only commit never tags anything, so
+   routine commits never start a release.
+
+If you are working from a fork or an environment where the hook can't run (or you need a one-off
+manual bump), run `node scripts/bump-patch-version.mjs` yourself, or edit `package.json` directly
+— the hook only automates the common case, it is not the only valid path.
+
+```bash
+# Example: cut a release
+#  1. npm version is NOT used here -- edit package.json's "version" by hand instead,
+#     so the patch resets to 0 as part of the same commit.
+#  2. git commit -am "feat: whatever earned the minor bump"
+#  3. git push origin main
+#  -> ci.yml's auto-tag-release job pushes v0.9.0, which starts release.yml
 ```
 
 ## Branch Strategy

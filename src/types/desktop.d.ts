@@ -37,6 +37,8 @@ export interface JointDomainCompilerDesktopApi {
   setUnsavedChanges?: (dirty: boolean) => void
   /** Reports that the workbench has mounted, retiring the launch splash. */
   notifyRendererReady?: () => void
+  /** Opens (or focuses) the Playback/Graph window and delivers a gzip .jddc-playback archive to it. */
+  launchSuiteApp?: (appType: 'playback' | 'graph', bytes: ArrayBuffer) => Promise<void>
 }
 
 declare global {
