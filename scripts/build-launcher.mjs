@@ -63,6 +63,9 @@ export function buildLauncher(outFile) {
     'target:winexe',
     'optimize+',
     'warnaserror+',
+    // CS1668: an invalid directory in the LIB variable, which some machines
+    // have and which says nothing about this code.
+    'nowarn:1668',
     'langversion:5',
     `out:${out}`,
     'r:System.Windows.Forms.dll',

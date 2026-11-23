@@ -35,7 +35,8 @@ const {
 // Windows build has no console: until this existed, every warning and fatal
 // error this file printed went nowhere on the machines where launches hung.
 // Lives at <userData>/logs/main.log -- on Windows,
-// %APPDATA%\Joint Domain Data Compiler\logs\main.log -- and every error
+// %APPDATA%\joint-domain-data-compiler\logs\main.log (userData is named from
+// package.json `name`, not the product name) -- and every error
 // dialog names it. JDDC_LOG_DIR overrides it, like the other directories here.
 const userDataDir = app.getPath('userData')
 const logDir = process.env.JDDC_LOG_DIR ? path.resolve(process.env.JDDC_LOG_DIR) : path.join(userDataDir, 'logs')

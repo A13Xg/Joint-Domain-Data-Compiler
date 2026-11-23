@@ -43,6 +43,10 @@ namespace Jddc.Launcher
         internal const string AppUserModelId = "com.a13xg.jointdomaindatacompiler";
         internal const string AppExeName = "JointDomainDataCompiler.exe";
         internal const string ProductName = "Joint Domain Data Compiler";
+        // The app's userData folder under %APPDATA%. Electron names it from
+        // package.json's top-level `name` (there is no top-level productName),
+        // so it is NOT the product name; test/launcher.ts pins the two together.
+        internal const string UserDataFolderName = "joint-domain-data-compiler";
 
         [STAThread]
         private static int Main(string[] args)
@@ -88,9 +92,14 @@ namespace Jddc.Launcher
                 return 2;
             }
 
-            // A copy already running needs no splash: the new process hands off to
-            // it within milliseconds and it raises its own window.
-            bool alreadyRunning = Process.GetProcessesByName(Path.GetFileNameWithoutExtension(AppExeName)).Length > 0;
+            // A copy already on screen needs no splash: the new process hands off
+            // to it within milliseconds and it raises its own window. "On
+            // screen", not merely "running": a copy stuck before its first window,
+            // or one closing down, or the renderer and crash-handler helpers that
+            // share its image name, must not cost the user the splash -- that was
+            // the original complaint.
+            bool alreadyRunning = WindowFinder.AnyVisibleWindowOf(Path.GetFileNameWithoutExtension(AppExeName));
+            Log.Write(alreadyRunning ? "a running copy already has a window on screen" : "no running copy on screen");
             bool splashOwner;
             using (Mutex splashMutex = new Mutex(true, @"Local\JDDC-Launcher-Splash", out splashOwner))
             {
@@ -294,7 +303,7 @@ namespace Jddc.Launcher
                 Hide();
                 MessageBox.Show(
                     "Joint Domain Data Compiler stopped while starting (exit code " + code + ").\n\n" +
-                    "Its log is in %APPDATA%\\Joint Domain Data Compiler\\logs\\main.log",
+                    "Its log is in " + (Log.Directory ?? @"%APPDATA%\joint-domain-data-compiler\logs") + "\\main.log",
                     Program.ProductName, MessageBoxButtons.OK, MessageBoxIcon.Error);
                 Finish(code);
                 return;
@@ -302,10 +311,11 @@ namespace Jddc.Launcher
 
             if (handoffSeenMs < 0)
             {
-                if (WindowFinder.HasVisibleWindow(child.Id, Handle))
+                string window = WindowFinder.DescribeVisibleWindow(child.Id, Handle);
+                if (window != null)
                 {
                     handoffSeenMs = clock.ElapsedMilliseconds;
-                    Log.Write(string.Format(CultureInfo.InvariantCulture, "app window visible {0} ms after launch; handing off", Clock.EpochMs() - spawnedAtMs));
+                    Log.Write(string.Format(CultureInfo.InvariantCulture, "app window visible {0} ms after launch ({1}); handing off", Clock.EpochMs() - spawnedAtMs, window));
                 }
             }
             else if (clock.ElapsedMilliseconds - handoffSeenMs >= HandoffOverlapMs)
@@ -510,21 +520,42 @@ namespace Jddc.Launcher
 
     internal static class WindowFinder
     {
-        // True once any visible top-level window belongs to the app's process:
-        // its splash, or the workbench if the splash was skipped.
-        internal static bool HasVisibleWindow(int processId, IntPtr ignore)
+        // The first visible top-level window of the process -- its splash, the
+        // workbench if the splash was skipped, or an error dialog, any of which
+        // means this splash should step aside -- described for the log, so a
+        // user's launcher.log says exactly what the hand-off happened to.
+        internal static string DescribeVisibleWindow(int processId, IntPtr ignore)
         {
-            bool found = false;
+            string found = null;
             NativeMethods.EnumWindows(delegate (IntPtr hwnd, IntPtr lParam)
             {
                 if (hwnd == ignore || !NativeMethods.IsWindowVisible(hwnd)) return true;
                 uint owner;
                 NativeMethods.GetWindowThreadProcessId(hwnd, out owner);
                 if (owner != (uint)processId) return true;
-                found = true;
+                StringBuilder title = new StringBuilder(256);
+                StringBuilder className = new StringBuilder(256);
+                NativeMethods.GetWindowText(hwnd, title, title.Capacity);
+                NativeMethods.GetClassName(hwnd, className, className.Capacity);
+                NativeMethods.Rect rect;
+                NativeMethods.GetWindowRect(hwnd, out rect);
+                found = string.Format(CultureInfo.InvariantCulture, "class {0}, title \"{1}\", at {2},{3} {4}x{5}",
+                    className, title, rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
                 return false;
             }, IntPtr.Zero);
             return found;
+        }
+
+        internal static bool AnyVisibleWindowOf(string imageName)
+        {
+            foreach (Process process in Process.GetProcessesByName(imageName))
+            {
+                using (process)
+                {
+                    if (DescribeVisibleWindow(process.Id, IntPtr.Zero) != null) return true;
+                }
+            }
+            return false;
         }
     }
 
@@ -584,6 +615,7 @@ namespace Jddc.Launcher
     internal static class Log
     {
         internal static string FilePath { get; private set; }
+        internal static string Directory { get; private set; }
 
         internal static void Open()
         {
@@ -592,8 +624,9 @@ namespace Jddc.Launcher
                 string configured = Environment.GetEnvironmentVariable("JDDC_LOG_DIR");
                 string dir = !string.IsNullOrEmpty(configured)
                     ? configured
-                    : Path.Combine(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), Program.ProductName), "logs");
-                Directory.CreateDirectory(dir);
+                    : Path.Combine(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), Program.UserDataFolderName), "logs");
+                System.IO.Directory.CreateDirectory(dir);
+                Directory = dir;
                 FilePath = Path.Combine(dir, "launcher.log");
                 FileInfo info = new FileInfo(FilePath);
                 if (info.Exists && info.Length > 512 * 1024) File.Delete(FilePath);
@@ -632,6 +665,24 @@ namespace Jddc.Launcher
 
         [DllImport("user32.dll")]
         internal static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct Rect
+        {
+            public int Left;
+            public int Top;
+            public int Right;
+            public int Bottom;
+        }
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        internal static extern int GetWindowText(IntPtr hwnd, StringBuilder text, int maxCount);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        internal static extern int GetClassName(IntPtr hwnd, StringBuilder className, int maxCount);
+
+        [DllImport("user32.dll")]
+        internal static extern bool GetWindowRect(IntPtr hwnd, out Rect rect);
 
         [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
         internal static extern void SetCurrentProcessExplicitAppUserModelID(string appId);

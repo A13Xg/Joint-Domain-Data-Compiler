@@ -36,19 +36,26 @@ const sleep = (ms) => new Promise((resolveWait) => setTimeout(resolveWait, ms))
  * executable is launcher/Launcher.cs, which exits by design once the app's own
  * window is up.
  */
-export async function smokeLaunch({ executable, description = '', gpu = false, readyTimeoutMs = 30_000 }) {
+export async function smokeLaunch({ executable, description = '', gpu = false, readyTimeoutMs = 30_000, defaultLogDir = false }) {
   const launcher = basename(executable) === LAUNCHER_FILE_NAME
+  // A copy left over from an earlier run would make the launcher skip its
+  // splash (by design, when the app is already on screen) and the checks
+  // below fail with no obvious reason.
+  if (launcher && process.platform === 'win32') await stopLeftoverApp()
   const port = await availablePort()
   const output = []
   const inCiLinux = process.platform === 'linux' && (process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true')
   const electronArgs = [...(gpu ? [] : ['--disable-gpu']), `--remote-debugging-port=${port}`]
   if (inCiLinux || process.env.JDDC_SMOKE_NO_SANDBOX === '1') electronArgs.push('--no-sandbox', '--disable-setuid-sandbox')
-  // Pointed somewhere this script can find on any platform. A build whose log
+  // Pointed somewhere this script can find on any platform -- or, with
+  // `defaultLogDir`, left at the real default, so the folder the user guide
+  // tells people to open is proven to be where the logs go. A build whose log
   // is silent is a build whose next field failure cannot be diagnosed.
-  const logDir = mkdtempSync(join(tmpdir(), 'jddc-smoke-log-'))
+  const logDir = defaultLogDir ? defaultLogDirectory() : mkdtempSync(join(tmpdir(), 'jddc-smoke-log-'))
+  // Only this launch's part of a log that may hold earlier ones.
   const logs = {
-    main: () => readText(join(logDir, 'main.log')),
-    launcher: () => readText(join(logDir, 'launcher.log')),
+    main: () => fromLast(readText(join(logDir, 'main.log')), '---- launch: Joint Domain Data Compiler'),
+    launcher: () => fromLast(readText(join(logDir, 'launcher.log')), 'launcher started'),
   }
 
   console.log(`Launching ${executable}${description ? ` (${description})` : ''} with ${gpu ? 'hardware acceleration' : '--disable-gpu'}`)
@@ -58,7 +65,7 @@ export async function smokeLaunch({ executable, description = '', gpu = false, r
   const child = spawn(command, args, {
     detached: process.platform !== 'win32',
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, JDDC_STARTUP_TRACE: '1', JDDC_LOG_DIR: logDir, ...(gpu ? { JDDC_GPU: 'on' } : {}) },
+    env: { ...withoutLogDir(process.env), JDDC_STARTUP_TRACE: '1', ...(defaultLogDir ? {} : { JDDC_LOG_DIR: logDir }), ...(gpu ? { JDDC_GPU: 'on' } : {}) },
   })
   child.stdout.on('data', (chunk) => output.push(String(chunk)))
   child.stderr.on('data', (chunk) => output.push(String(chunk)))
@@ -84,6 +91,35 @@ export async function smokeLaunch({ executable, description = '', gpu = false, r
   } finally {
     stopPackagedApp(child, launcher)
   }
+}
+
+function defaultLogDirectory() {
+  // Electron names userData from package.json's top-level `name`.
+  if (process.platform === 'win32') return join(process.env.APPDATA, 'joint-domain-data-compiler', 'logs')
+  if (process.platform === 'darwin') return join(process.env.HOME, 'Library', 'Application Support', 'joint-domain-data-compiler', 'logs')
+  return join(process.env.XDG_CONFIG_HOME ?? join(process.env.HOME, '.config'), 'joint-domain-data-compiler', 'logs')
+}
+
+function withoutLogDir(env) {
+  const copy = { ...env }
+  delete copy.JDDC_LOG_DIR
+  return copy
+}
+
+function fromLast(text, marker) {
+  if (text === null) return null
+  const at = text.lastIndexOf(marker)
+  if (at < 0) return text
+  return text.slice(text.lastIndexOf('\n', at) + 1)
+}
+
+async function stopLeftoverApp() {
+  spawnSync('taskkill', ['/im', APP_IMAGE_NAME, '/t', '/f'], { stdio: 'ignore' })
+  for (const deadline = Date.now() + 15_000; Date.now() < deadline; await sleep(250)) {
+    const list = spawnSync('tasklist', ['/fi', `IMAGENAME eq ${APP_IMAGE_NAME}`, '/fo', 'csv', '/nh'], { encoding: 'utf8' }).stdout ?? ''
+    if (!list.includes(APP_IMAGE_NAME)) return
+  }
+  throw new Error(`${APP_IMAGE_NAME} processes from an earlier launch would not exit.`)
 }
 
 function readText(file) {
@@ -132,12 +168,21 @@ async function checkLauncherLog(readLauncher, readMain, launchedAt) {
   const appVisible = Number(/app window visible (\d+) ms after launch/.exec(text)?.[1])
   const exitCode = Number(/launcher exiting with code (-?\d+)/.exec(text)?.[1])
   const spawnGap = Number(/(\d+)ms {2}process spawn to main\.cjs/.exec(readMain() ?? '')?.[1])
+  // What the user experiences: from this script starting the launcher (the
+  // double-click) to the launcher's splash being on screen, .NET start-up
+  // included. Taken from the log line's own timestamp.
+  const splashLine = /^(\S+Z) \[\d+\] splash shown/m.exec(text)
+  const clickToSplash = splashLine ? Date.parse(splashLine[1]) - launchedAt : NaN
   console.log('Launcher timings:')
-  console.log(`  launcher splash on screen     ${splashShown} ms after the launcher started`)
+  console.log(`  launcher splash on screen     ${clickToSplash} ms after the double-click (process start, .NET included)`)
+  console.log(`  launcher splash on screen     ${splashShown} ms after the launcher's own code started`)
   console.log(`  app's code running            ${spawnGap} ms after the launcher started (process spawn to main.cjs)`)
   console.log(`  app window visible, hand-off  ${appVisible} ms after the launcher started`)
   console.log(`  (the launcher itself was started ${Date.now() - launchedAt} ms ago by this script)`)
   if (!Number.isFinite(splashShown)) throw new Error('The launcher never reported its splash on screen.')
+  // Generous: a cold CI runner, not a target. It exists to catch the launcher
+  // itself becoming slow -- the whole point of it is to be first.
+  if (!(clickToSplash < 15_000)) throw new Error(`The launcher's splash took ${clickToSplash} ms from the double-click.`)
   if (!Number.isFinite(appVisible)) throw new Error('The launcher never saw the app\'s window.')
   if (!(splashShown < appVisible)) throw new Error(`The launcher's splash (${splashShown} ms) was not up before the app's window (${appVisible} ms).`)
   if (exitCode !== 0) throw new Error(`The launcher did not exit cleanly after the hand-off (exit line: ${Number.isFinite(exitCode) ? exitCode : 'missing'}).`)

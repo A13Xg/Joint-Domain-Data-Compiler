@@ -31,6 +31,10 @@ const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as {
 const csharpId = /AppUserModelId = "([^"]+)"/.exec(source)?.[1]
 const electronId = /APP_USER_MODEL_ID = '([^']+)'/.exec(mainProcess)?.[1]
 check('the launcher, the app and the installer share one taskbar ID (build.appId)', csharpId === pkg.build.appId && electronId === pkg.build.appId, `${csharpId} / ${electronId} / ${pkg.build.appId}`)
+check('the launcher logs into the folder Electron actually uses (package.json name, not the product name)',
+  source.includes(`UserDataFolderName = "${(JSON.parse(readFileSync('package.json', 'utf8')) as { name: string }).name}"`))
+check('the docs name that same folder', !/%APPDATA%\\Joint Domain Data Compiler/.test(readFileSync('public/user-guide.html', 'utf8') + readFileSync('scripts/package-zip.mjs', 'utf8')))
+check('the launcher skips its splash only for a copy that is on screen, not merely running', /alreadyRunning = WindowFinder\.AnyVisibleWindowOf\(/.test(source))
 check('the launcher starts the executable electron-builder produces', source.includes(`AppExeName = "${pkg.build.win.executableName}.exe"`))
 check('the launcher is named after the product, and never collides with the app executable',
   LAUNCHER_FILE_NAME === `${pkg.build.productName}.exe` && LAUNCHER_FILE_NAME !== `${pkg.build.win.executableName}.exe` && ZIP_LAUNCHER_FILE_NAME === LAUNCHER_FILE_NAME)

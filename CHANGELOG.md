@@ -57,7 +57,7 @@ Versioning; release tags use the `vX.Y.Z` form.
   and several left a process running with no window.** A packaged Windows build has no console, so
   every warning and fatal error the main process printed went nowhere. Now:
   - Every launch writes `logs/main.log` in the app's data folder
-    (`%APPDATA%\Joint Domain Data Compiler\logs\main.log` on Windows): versions, OS, executable and
+    (`%APPDATA%\joint-domain-data-compiler\logs\main.log` on Windows): versions, OS, executable and
     arguments, how the previous launch ended, each startup phase with timings, every main-process
     message, workbench console errors, load failures, unresponsive renderers, child-process and GPU
     crashes, and the GPU status Chromium settled on. Every error dialog names the file. Crash dumps

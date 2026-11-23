@@ -72,7 +72,9 @@ try {
   }
   // Launched by the shortcut's own target, so the copy and the files under
   // test are exactly the installed ones.
-  await smokeLaunch({ executable: launcherPath, description: 'installed copy, via the Start menu shortcut target' })
+  // With the real default log folder, so the folder the user guide names is
+  // proven to be where an installed copy writes.
+  await smokeLaunch({ executable: launcherPath, description: 'installed copy, via the Start menu shortcut target, default log folder', defaultLogDir: true })
 } catch (error) {
   failure = error
 } finally {
