@@ -48,7 +48,9 @@ check('the Windows release gate installs and launches through the shortcut targe
 
 // --- behaviour the source must keep ---
 check('the app is started by CreateProcess, not ShellExecute (no second SmartScreen prompt)', source.includes('info.UseShellExecute = false;'))
-check('the splash is painted before the app is started', /Refresh\(\);[\s\S]{0,400}ChildLauncher\.Start\(/.test(source))
+check('the app is started on its own thread before the splash is built, so neither waits on the other',
+  source.indexOf('new ChildStarter(') > 0 && source.indexOf('new ChildStarter(') < source.indexOf('new SplashForm(') && /new Thread\(delegate \(\)[\s\S]{0,120}ChildLauncher\.Start\(/.test(source))
+check('a splash beaten to the screen by the app is not shown at all', /app window already on screen before this splash; not showing it/.test(source))
 check('the app is told the launcher splash rectangle and the double-click time',
   source.includes('"JDDC_LAUNCHER_BOUNDS"') && source.includes('"JDDC_SPAWN_MS"') && mainProcess.includes('JDDC_LAUNCHER_BOUNDS') && mainProcess.includes('screenToDipRect'))
 check('the app removes the launcher variables from its environment', /delete process\.env\.JDDC_LAUNCHER_BOUNDS/.test(mainProcess) && /delete process\.env\.JDDC_SPAWN_MS/.test(mainProcess))

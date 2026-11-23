@@ -179,12 +179,24 @@ async function checkLauncherLog(readLauncher, readMain, launchedAt) {
   console.log(`  app's code running            ${spawnGap} ms after the launcher started (process spawn to main.cjs)`)
   console.log(`  app window visible, hand-off  ${appVisible} ms after the launcher started`)
   console.log(`  (the launcher itself was started ${Date.now() - launchedAt} ms ago by this script)`)
+  const notNeeded = /app window already on screen before this splash/.test(text)
+  if (notNeeded) {
+    // Fast enough that the app's own splash came first: the launcher correctly
+    // stepped aside. Nothing to time.
+    console.log('  the app\'s own splash beat the launcher\'s to the screen; the launcher did not show one')
+    if (exitCode !== 0) throw new Error(`The launcher did not exit cleanly (exit line: ${Number.isFinite(exitCode) ? exitCode : 'missing'}).`)
+    return
+  }
   if (!Number.isFinite(splashShown)) throw new Error('The launcher never reported its splash on screen.')
   // Generous: a cold CI runner, not a target. It exists to catch the launcher
   // itself becoming slow -- the whole point of it is to be first.
   if (!(clickToSplash < 15_000)) throw new Error(`The launcher's splash took ${clickToSplash} ms from the double-click.`)
   if (!Number.isFinite(appVisible)) throw new Error('The launcher never saw the app\'s window.')
-  if (!(splashShown < appVisible)) throw new Error(`The launcher's splash (${splashShown} ms) was not up before the app's window (${appVisible} ms).`)
+  const startRequested = Number(/app start requested (\d+) ms after launch/.exec(text)?.[1])
+  const built = Number(/splash built (\d+) ms after launch/.exec(text)?.[1])
+  console.log(`  launcher: app start requested at ${startRequested} ms, splash built at ${built} ms`)
+  // The app must never wait on the launcher's own start-up.
+  if (!(startRequested < splashShown)) throw new Error(`The app was started (${startRequested} ms) after the launcher's splash (${splashShown} ms).`)
   if (exitCode !== 0) throw new Error(`The launcher did not exit cleanly after the hand-off (exit line: ${Number.isFinite(exitCode) ? exitCode : 'missing'}).`)
   const route = /splash visible \(([^)]+)\)/.exec(readMain() ?? '')?.[1]
   console.log(`  the app's splash took over via: ${route ?? 'not shown'}`)

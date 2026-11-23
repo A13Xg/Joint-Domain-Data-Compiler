@@ -117,9 +117,31 @@ namespace Jddc.Launcher
                     }
                 }
 
+                // The app is started FIRST, on its own thread, while this thread
+                // builds the splash. Starting it here would hold the splash back
+                // for as long as CreateProcess blocks -- and it blocks while
+                // antivirus scans the 190 MB executable, the very gap this
+                // program exists to cover. Starting it after the splash (the
+                // first version) delayed the app by this process's own start-up,
+                // ~750 ms on the release runner.
+                Rectangle bounds = SplashForm.CenteredBounds();
+                ChildStarter starter = new ChildStarter(appExe, args, spawnedAtMs, bounds);
+                Log.Write(string.Format(CultureInfo.InvariantCulture, "app start requested {0} ms after launch", Clock.EpochMs() - spawnedAtMs));
+
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
-                SplashForm form = new SplashForm(appExe, args, spawnedAtMs);
+                SplashForm form = new SplashForm(starter, appExe, spawnedAtMs, bounds);
+                Log.Write(string.Format(CultureInfo.InvariantCulture, "splash built {0} ms after launch", Clock.EpochMs() - spawnedAtMs));
+                // On a fast machine the app's own splash can beat this one to the
+                // screen; covering it with an identical picture would only add a
+                // window to close.
+                Process early = starter.Child;
+                if (early != null && WindowFinder.DescribeVisibleWindow(early.Id, IntPtr.Zero) != null)
+                {
+                    Log.Write("app window already on screen before this splash; not showing it");
+                    Log.Write("launcher exiting with code 0");
+                    return 0;
+                }
                 Application.Run(form);
                 Log.Write("launcher exiting with code " + form.ResultCode);
                 return form.ResultCode;
@@ -175,6 +197,28 @@ namespace Jddc.Launcher
         }
     }
 
+    // Starts the app on a background thread and publishes the outcome for the
+    // UI thread's timer to pick up.
+    internal sealed class ChildStarter
+    {
+        private volatile Process child;
+        private volatile Exception error;
+
+        internal ChildStarter(string appExe, string[] args, long spawnedAtMs, Rectangle bounds)
+        {
+            Thread thread = new Thread(delegate ()
+            {
+                try { child = ChildLauncher.Start(appExe, args, spawnedAtMs, bounds); }
+                catch (Exception e) { error = e; }
+            });
+            thread.IsBackground = true;
+            thread.Start();
+        }
+
+        internal Process Child { get { return child; } }
+        internal Exception Error { get { return error; } }
+    }
+
     internal sealed class SplashForm : Form
     {
         // How long after the app's own window appears to keep this one up, so
@@ -185,8 +229,8 @@ namespace Jddc.Launcher
         // says, in words, that it is still working.
         private const int SlowHintMs = 4000;
 
+        private readonly ChildStarter starter;
         private readonly string appExe;
-        private readonly string[] args;
         private readonly long spawnedAtMs;
         private readonly Stopwatch clock = Stopwatch.StartNew();
         private readonly System.Windows.Forms.Timer tick = new System.Windows.Forms.Timer();
@@ -197,10 +241,10 @@ namespace Jddc.Launcher
 
         internal int ResultCode { get; private set; }
 
-        internal SplashForm(string appExe, string[] args, long spawnedAtMs)
+        internal SplashForm(ChildStarter starter, string appExe, long spawnedAtMs, Rectangle bounds)
         {
+            this.starter = starter;
             this.appExe = appExe;
-            this.args = args;
             this.spawnedAtMs = spawnedAtMs;
             painter = new SplashPainter(VersionOf(appExe));
 
@@ -214,38 +258,29 @@ namespace Jddc.Launcher
             KeyPreview = true;
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { }
 
-            // The same logical size as the app's splash (800x343), scaled to the
-            // primary display's DPI, centred in its work area. The app is then
-            // told this exact rectangle and opens its splash over it.
+            Bounds = bounds;
+            tick.Interval = 33;
+            tick.Tick += OnTick;
+        }
+
+        // The same logical size as the app's splash (800x343), scaled to the
+        // primary display's DPI, centred in its work area. The app is told this
+        // exact rectangle and opens its splash over it.
+        internal static Rectangle CenteredBounds()
+        {
             float scale = 1f;
             using (Graphics screenGraphics = Graphics.FromHwnd(IntPtr.Zero)) scale = screenGraphics.DpiX / 96f;
             Size size = new Size((int)Math.Round(SplashPainter.LogicalWidth * scale), (int)Math.Round(SplashPainter.LogicalHeight * scale));
             Rectangle area = Screen.PrimaryScreen.WorkingArea;
-            Bounds = new Rectangle(area.Left + (area.Width - size.Width) / 2, area.Top + (area.Height - size.Height) / 2, size.Width, size.Height);
-
-            tick.Interval = 33;
-            tick.Tick += OnTick;
+            return new Rectangle(area.Left + (area.Width - size.Width) / 2, area.Top + (area.Height - size.Height) / 2, size.Width, size.Height);
         }
 
         protected override void OnShown(EventArgs e)
         {
             base.OnShown(e);
             Activate();
-            // Painted before the child exists, so nothing the child does -- or
-            // antivirus does to it -- can delay the first frame.
             Refresh();
             Log.Write(string.Format(CultureInfo.InvariantCulture, "splash shown {0} ms after launch", Clock.EpochMs() - spawnedAtMs));
-            try
-            {
-                child = ChildLauncher.Start(appExe, args, spawnedAtMs, Bounds);
-            }
-            catch (Exception error)
-            {
-                Hide();
-                ResultCode = Program.ReportStartFailure(appExe, error);
-                Close();
-                return;
-            }
             tick.Start();
         }
 
@@ -288,6 +323,18 @@ namespace Jddc.Launcher
         {
             if (closing) return;
             Invalidate();
+
+            if (starter.Error != null)
+            {
+                tick.Stop();
+                Hide();
+                Finish(Program.ReportStartFailure(appExe, starter.Error));
+                return;
+            }
+            // Still inside CreateProcess -- typically antivirus scanning the
+            // executable. This splash is exactly what covers that.
+            if (child == null) child = starter.Child;
+            if (child == null) return;
 
             if (child.HasExited)
             {

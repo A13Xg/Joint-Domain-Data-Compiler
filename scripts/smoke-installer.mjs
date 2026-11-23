@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { readdir } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { smokeLaunch } from './smoke-packaged.mjs'
 
 // Windows release gate for the installer itself. Every other gate launches
@@ -28,13 +28,19 @@ function powershell(script, env = {}) {
   return result.stdout.trim()
 }
 
+// The Add/Remove Programs entry. electron-builder keeps InstallLocation under a
+// separate per-app key, not here, so the install folder is taken from where
+// the uninstaller it registers lives.
 function installedApp() {
   const json = powershell(`
     $keys = Get-ChildItem 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall', 'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall' -ErrorAction SilentlyContinue
-    $app = $keys | Get-ItemProperty | Where-Object { $_.DisplayName -like '${PRODUCT_NAME}*' } | Select-Object -First 1 InstallLocation, QuietUninstallString, UninstallString, DisplayVersion
+    $app = $keys | Get-ItemProperty | Where-Object { $_.DisplayName -like '${PRODUCT_NAME}*' } | Select-Object -First 1 QuietUninstallString, UninstallString, DisplayVersion
     if ($app) { $app | ConvertTo-Json -Compress } else { 'null' }
   `)
-  return JSON.parse(json || 'null')
+  const app = JSON.parse(json || 'null')
+  if (!app) return null
+  const uninstaller = /^"([^"]+)"/.exec(app.UninstallString ?? '')?.[1]
+  return { ...app, InstallLocation: uninstaller ? dirname(uninstaller) : null }
 }
 
 function shortcutTarget(path) {
@@ -49,8 +55,11 @@ console.log(`Installing ${setupPath} silently`)
 const install = spawnSync(setupPath, ['/S'], { stdio: 'inherit' })
 if (install.status !== 0) throw new Error(`The installer exited with ${install.status}.`)
 
-const app = installedApp()
-if (!app?.InstallLocation) throw new Error('The installer finished but no uninstall entry with an InstallLocation was registered.')
+let app = null
+for (const deadline = Date.now() + 30_000; Date.now() < deadline && !app?.InstallLocation; await new Promise((wait) => setTimeout(wait, 500))) {
+  app = installedApp()
+}
+if (!app?.InstallLocation) throw new Error(`The installer finished but registered no uninstall entry with an uninstaller path: ${JSON.stringify(app)}`)
 const installDir = app.InstallLocation
 console.log(`Installed ${app.DisplayVersion} to ${installDir}`)
 

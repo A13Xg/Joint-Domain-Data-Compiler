@@ -13,8 +13,8 @@ Versioning; release tags use the `vX.Y.Z` form.
   the app creates can cover time that passes before the app exists, so every earlier splash fix
   started too late. A small native **launcher** (`Joint Domain Data Compiler.exe`,
   `launcher/Launcher.cs`, ~400 KB, needs only the .NET Framework built into Windows 10/11) now
-  shows the splash, its progress bar and a status line at the bottom right the instant it is
-  started, then starts the app. The app opens its own splash over exactly the same rectangle once
+  starts the app and, in parallel, shows the splash, its progress bar and a status line at the
+  bottom right, so the app never waits on it. The app opens its own splash over exactly the same rectangle once
   its artwork is painted, and the launcher steps aside, so the hand-off is a swap of identical
   pictures; the bar carries on from where the launcher left it. The installer's Start menu and
   desktop shortcuts and the zip's top-level program both use it. If the app's files are missing
