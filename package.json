@@ -1,7 +1,7 @@
 {
   "name": "joint-domain-data-compiler",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.9.0",
   "description": "Local-first trajectory and TSPI workbench for importing, analyzing, transforming, comparing, visualizing, saving, and exporting track data.",
   "desktopName": "JointDomainDataCompiler",
   "author": {
@@ -36,7 +36,7 @@
     "check:e2e": "playwright test test/e2e/ci-smoke.spec.ts test/e2e/workbench-smoke.spec.ts",
     "check:asar": "node scripts/verify-asar-integrity.mjs",
     "check:desktop:linux": "npm run check:asar && node scripts/smoke-packaged.mjs",
-    "check:desktop:win": "npm run check:asar && node scripts/smoke-packaged.mjs",
+    "check:desktop:win": "npm run check:asar && node scripts/smoke-packaged.mjs && node scripts/smoke-packaged.mjs --gpu && node scripts/smoke-packaged.mjs --portable",
     "check:desktop:mac": "npm run check:asar && node scripts/smoke-packaged.mjs",
     "check:all": "npm run check:unit && npm run check:app-health",
     "check:full": "npm run check:all && npm run check:e2e",
@@ -57,6 +57,9 @@
     ],
     "extraResources": [],
     "afterPack": "scripts/electron-fuses.cjs",
+    "electronLanguages": [
+      "en-US"
+    ],
     "linux": {
       "target": [
         "AppImage",

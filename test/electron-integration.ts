@@ -114,6 +114,38 @@ check('Startup seeds the overlay library without blocking the main thread',
 // requestAnimationFrame never arrived, so the splash was never shown at all.
 check('Splash paint signal does not depend on a frame callback', !/requestAnimationFrame\s*\(/.test(splashPreloadSource))
 
+// Launch robustness. Each of these was a way for a packaged launch to fail with
+// nothing on screen and nothing recorded anywhere.
+{
+  const logOpened = mainProcessSource.indexOf('createFileLog(logDir)')
+  const firstWindow = mainProcessSource.indexOf('new BrowserWindow(')
+  check('The launch log is opened before any window can be created', logOpened > 0 && logOpened < firstWindow)
+  check('Every console line is mirrored into the launch log', /mirrorConsole\(launchLog\)/.test(mainProcessSource))
+  check('Startup phases are always logged, not only on request', /function tracePhase[\s\S]{0,200}launchLog\.info\(line\)/.test(mainProcessSource))
+  check('Fatal dialogs name the launch log', /function reportFatal[\s\S]*?launchLog\.path[\s\S]*?\n\}/.test(mainProcessSource))
+  check('A renderer that cannot load exits instead of lingering hidden',
+    /reportFatal\(useDevServer \? [^\n]+\{ exit: true \}\)/.test(mainProcessSource))
+  check('Startup-time main-process errors exit',
+    /uncaughtException[\s\S]{0,120}exit: !startupComplete/.test(mainProcessSource) && /unhandledRejection[\s\S]{0,120}exit: !startupComplete/.test(mainProcessSource))
+  check('A lost workbench renderer offers a reload', /render-process-gone[\s\S]{0,120}recoverFromRendererLoss/.test(mainProcessSource) && /buttons: \['Reload', 'Quit'\]/.test(mainProcessSource))
+  check('Only one instance runs per profile', /app\.requestSingleInstanceLock\(/.test(mainProcessSource))
+  check('A losing instance never starts the app', /if \(isPrimaryInstance\) \{[\s\S]*?startApplication\(\)[\s\S]*?\} else \{[\s\S]*?handOffToRunningInstance\(\)/.test(mainProcessSource))
+  check('The running instance acknowledges a second launch before raising its window',
+    /'second-instance'[\s\S]{0,400}INSTANCE_ACK_FILE[\s\S]{0,400}bringToFront/.test(mainProcessSource))
+  check('The second-launch listener exists before `ready`',
+    /registerSecondInstanceHandler\(\)\n\s+registerChildProcessDiagnostics\(\)\n\s+startApplication\(\)/.test(mainProcessSource))
+  check('The rendering mode is decided before `ready`',
+    mainProcessSource.indexOf('app.disableHardwareAcceleration()') > 0 && mainProcessSource.indexOf('app.disableHardwareAcceleration()') < mainProcessSource.indexOf('app.whenReady()'))
+  check('A GPU process crash is remembered for the next launch', /details\.type === 'GPU'[\s\S]{0,200}softwareRendering = true/.test(mainProcessSource))
+  check('The workbench window is sized to the display', /\.\.\.workbenchBounds\(\)/.test(mainProcessSource))
+}
+{
+  const packageJson = JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as { build: { electronLanguages?: string[] }; scripts: Record<string, string> }
+  check('Only the en-US Chromium locale ships (less for the portable launcher to extract)', packageJson.build.electronLanguages?.join(',') === 'en-US')
+  check('The Windows release gate launches the portable executable and the GPU path',
+    /smoke-packaged\.mjs --gpu/.test(packageJson.scripts['check:desktop:win'] ?? '') && /smoke-packaged\.mjs --portable/.test(packageJson.scripts['check:desktop:win'] ?? ''))
+}
+
 // preload.cjs runs under webPreferences.sandbox: true (set in main.cjs), whose
 // restricted module loader only resolves 'electron' and Node built-ins — a
 // relative require('./security.cjs') throws "module not found" there even

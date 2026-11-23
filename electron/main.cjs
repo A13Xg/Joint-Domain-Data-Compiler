@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require('electron')
+const { app, BrowserWindow, crashReporter, dialog, ipcMain, Menu, screen, shell } = require('electron')
 const crypto = require('crypto')
 const fs = require('fs')
 const path = require('path')
@@ -22,6 +22,35 @@ const {
   safeArchiveName,
   safePdfName,
 } = require('./security.cjs')
+const {
+  createFileLog,
+  decideRendering,
+  mirrorConsole,
+  readLaunchState,
+  writeLaunchState,
+} = require('./diagnostics.cjs')
+
+// The launch log. Opened before anything else can fail, because a packaged
+// Windows build has no console: until this existed, every warning and fatal
+// error this file printed went nowhere on the machines where launches hung.
+// Lives at <userData>/logs/main.log -- on Windows,
+// %APPDATA%\Joint Domain Data Compiler\logs\main.log -- and every error
+// dialog names it. JDDC_LOG_DIR overrides it, like the other directories here.
+const userDataDir = app.getPath('userData')
+const logDir = process.env.JDDC_LOG_DIR ? path.resolve(process.env.JDDC_LOG_DIR) : path.join(userDataDir, 'logs')
+const launchLog = createFileLog(logDir)
+mirrorConsole(launchLog)
+launchLog.info(`---- launch: Joint Domain Data Compiler ${app.getVersion()} ----`)
+launchLog.info([
+  `electron ${process.versions.electron}, chrome ${process.versions.chrome}, node ${process.versions.node}`,
+  `os ${process.platform} ${os.release()} ${process.arch}, ${Math.round(os.totalmem() / 1024 ** 3)} GB RAM, ${os.cpus().length} CPUs`,
+  `packaged ${app.isPackaged}, executable ${process.execPath}`,
+  `arguments ${JSON.stringify(process.argv.slice(1))}`,
+  `userData ${userDataDir}`,
+  // Set by electron-builder's portable launcher, which extracts the whole app
+  // into %TEMP% on every launch before this process exists.
+  process.env.PORTABLE_EXECUTABLE_FILE ? `portable launcher ${process.env.PORTABLE_EXECUTABLE_FILE}` : 'not launched by the portable launcher',
+].join('\n'))
 
 // Startup phase trace, off unless JDDC_STARTUP_TRACE is set.
 //
@@ -37,9 +66,17 @@ const {
 // phase no in-app window can ever cover, because Electron has not booted yet.
 const STARTUP_TRACE = Boolean(process.env.JDDC_STARTUP_TRACE)
 const startupBegan = Date.now()
+// Always recorded in the launch log; printed to stdout only on request, since
+// test/electron-launch.ts and the packaged smoke gate parse that output.
 function tracePhase(name) {
+  const line = `[startup] ${String(Date.now() - startupBegan).padStart(6)}ms  ${name}`
+  launchLog.info(line)
   if (!STARTUP_TRACE) return
-  console.log(`[startup] ${String(Date.now() - startupBegan).padStart(6)}ms  ${name}`)
+  try {
+    process.stdout.write(`${line}\n`)
+  } catch {
+    // No attached stdout; the log line above is the record.
+  }
 }
 if (STARTUP_TRACE) {
   const spawnedAt = Number(process.env.JDDC_SPAWN_MS)
@@ -51,6 +88,81 @@ if (STARTUP_TRACE) {
 
 const isDev = !app.isPackaged
 const useDevServer = isDev
+
+// One running copy per profile.
+//
+// There was no lock, so a launch slow enough to look like nothing happened --
+// a portable build re-extracting itself, a cold Defender scan -- invited a
+// second double-click, and then a third: several Electron processes on one
+// userData directory, contending for its Chromium profile, its localStorage
+// and its GPU cache. A losing instance here does nothing but hand off to the
+// running one and leave; see handOffToRunningInstance() for what happens when
+// the running one does not answer.
+const instanceNonce = crypto.randomUUID()
+const isPrimaryInstance = app.requestSingleInstanceLock({ nonce: instanceNonce })
+const INSTANCE_FILE = path.join(userDataDir, 'instance.json')
+const INSTANCE_ACK_FILE = path.join(userDataDir, 'instance-ack.json')
+// How long a second launch waits for the running copy to acknowledge it before
+// concluding that copy is stuck. A healthy main process answers in well under
+// a second; this has to outlast only a slow machine, not a slow startup, since
+// the main process stays responsive while the renderer loads.
+const INSTANCE_ACK_TIMEOUT_MS = 6000
+
+// Rendering mode, decided before `ready` because Chromium reads it at GPU
+// process launch. See decideRendering() in diagnostics.cjs for the policy.
+const previousLaunch = isPrimaryInstance ? readLaunchState(userDataDir) : {}
+const rendering = isPrimaryInstance
+  ? decideRendering(previousLaunch, process.env, process.argv)
+  : { software: false, reason: null, remember: false }
+const launchState = {
+  ...(previousLaunch.softwareRendering === true ? { softwareRendering: true, softwareReason: previousLaunch.softwareReason } : {}),
+  version: app.getVersion(),
+  pid: process.pid,
+  startedAt: new Date().toISOString(),
+  rendering: rendering.software ? 'software' : 'hardware',
+  phase: 'started',
+}
+
+function recordLaunchPhase(phase) {
+  if (!isPrimaryInstance || launchState.phase === 'ready') return
+  if (phase === 'painted' && launchState.phase !== 'started') return
+  launchState.phase = phase
+  if (phase === 'ready' && rendering.remember) {
+    // This launch is the software retry after one that never painted. Its
+    // success is the evidence; keep software rendering from here on.
+    launchState.softwareRendering = true
+    launchState.softwareReason = `hardware launch at ${previousLaunch.startedAt ?? 'unknown time'} never painted; software launch at ${launchState.startedAt} succeeded`
+    launchLog.warn(`Hardware rendering will stay off on this machine: ${launchState.softwareReason}. Set JDDC_GPU=on to try it again.`)
+  }
+  writeLaunchState(userDataDir, launchState)
+}
+
+if (isPrimaryInstance) {
+  if (previousLaunch.phase && previousLaunch.phase !== 'ready') {
+    launchLog.warn(`The previous launch (${previousLaunch.version ?? '?'}, pid ${previousLaunch.pid ?? '?'}, ${previousLaunch.startedAt ?? '?'}, ${previousLaunch.rendering ?? '?'} rendering) ended at phase "${previousLaunch.phase}" without reaching the workbench.`)
+  }
+  if (rendering.software) {
+    app.disableHardwareAcceleration()
+    launchLog.warn(`Software rendering: ${rendering.reason}`)
+  } else {
+    launchLog.info(rendering.reason ? `Hardware rendering: ${rendering.reason}` : 'Hardware rendering')
+  }
+  writeLaunchState(userDataDir, launchState)
+  try {
+    fs.writeFileSync(INSTANCE_FILE, JSON.stringify({ pid: process.pid, startedAt: launchState.startedAt, version: app.getVersion() }), 'utf8')
+  } catch (error) {
+    launchLog.warn(`Could not record the running instance: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+// Minidumps stay on this machine (nothing is uploaded) in the crashDumps
+// directory, so a crash that leaves no log line still leaves evidence.
+try {
+  crashReporter.start({ uploadToServer: false })
+  launchLog.info(`Crash dumps: ${app.getPath('crashDumps')}`)
+} catch (error) {
+  launchLog.warn(`Crash reporter unavailable: ${error instanceof Error ? error.message : String(error)}`)
+}
 const packagedRendererUrl = pathToFileURL(path.join(__dirname, '../dist/index.html')).href
 const packagedGuideUrl = pathToFileURL(path.join(__dirname, '../dist/user-guide.html')).href
 
@@ -244,10 +356,14 @@ function openSplash() {
   // Whichever of these happens first wins; they are three independent routes to
   // the same one-shot, because the failure being fixed is "none of them fired".
   window.once('ready-to-show', () => markShown('first paint'))
+  window.once('ready-to-show', () => recordLaunchPhase('painted'))
   // Sender-checked: this channel is only meaningful from the splash's own
   // renderer, and the workbench renderer must not be able to trip it.
   ipcMain.on(SPLASH_PAINTED_CHANNEL, (event) => {
-    if (event.sender === window.webContents) markShown('artwork decoded')
+    if (event.sender === window.webContents) {
+      recordLaunchPhase('painted')
+      markShown('artwork decoded')
+    }
   })
   // Last resort. Deliberately shorter than any plausible artwork decode: if the
   // renderer is so starved that it has not managed a first paint by now, showing
@@ -315,12 +431,63 @@ function splashHoldMs() {
 // by a later 'activate' reopen, long after the splash is gone.
 let revealCurrentWindow = null
 
+// The preferred size, clamped to the display it opens on. A fixed 1480x920
+// with a 1100x700 minimum is taller than the whole work area of a 1366x768
+// laptop at 125% scaling (about 1093x614), which put the title bar or the
+// bottom of the workbench off screen with no way to drag it back.
+function workbenchBounds() {
+  const preferred = { width: 1480, height: 920, minWidth: 1100, minHeight: 700 }
+  try {
+    const { width, height } = screen.getPrimaryDisplay().workAreaSize
+    return {
+      width: Math.min(preferred.width, width),
+      height: Math.min(preferred.height, height),
+      minWidth: Math.min(preferred.minWidth, width),
+      minHeight: Math.min(preferred.minHeight, height),
+    }
+  } catch (error) {
+    console.warn(`[main] Could not read the display size: ${error instanceof Error ? error.message : String(error)}`)
+    return preferred
+  }
+}
+
+// Windows only lets the foreground process raise a window. The portable
+// launcher spends seconds extracting before this process even exists, and by
+// then the user has usually clicked elsewhere -- so show() + focus() put the
+// finished workbench BEHIND whatever they were doing, a launch that looked
+// like nothing happened. Briefly pinning it on top is the standard way round
+// the foreground lock; it is released at once, so the window behaves normally.
+function bringToFront(window) {
+  if (window.isDestroyed()) return
+  if (window.isMinimized()) window.restore()
+  if (process.platform === 'win32') {
+    window.setAlwaysOnTop(true)
+    window.show()
+    window.focus()
+    window.setAlwaysOnTop(false)
+  } else {
+    window.show()
+    window.focus()
+  }
+}
+
+// Set once the workbench is on screen. Before that, a main-process error is a
+// failed launch and exits; after it, the user may have unsaved work open.
+let startupComplete = false
+let workbenchWindow = null
+
+function onWorkbenchShown() {
+  startupComplete = true
+  recordLaunchPhase('ready')
+  tracePhase('startup complete')
+  warmKmlLibrary()
+  logGpuStatus()
+  exitAfterStartupIfAsked()
+}
+
 function createWindow() {
   const window = new BrowserWindow({
-    width: 1480,
-    height: 920,
-    minWidth: 1100,
-    minHeight: 700,
+    ...workbenchBounds(),
     backgroundColor: '#0f172a',
     // Held back until 'ready-to-show' below instead of appearing immediately:
     // an immediately-shown window is blank until the renderer's first paint,
@@ -360,9 +527,8 @@ function createWindow() {
     tracePhase('workbench revealed')
     if (!splashWindow || splashShownAt === null) {
       dismissSplash()
-      window.show()
-      warmKmlLibrary()
-      exitAfterStartupIfAsked()
+      bringToFront(window)
+      onWorkbenchShown()
       return
     }
     // The workbench is ready, but the splash may only just have appeared.
@@ -372,19 +538,17 @@ function createWindow() {
       tracePhase('workbench mounted')
       splashStage('ready')
       setTimeout(() => {
-        if (!window.isDestroyed()) {
-          window.show()
-          window.focus()
-        }
+        bringToFront(window)
         // Dismissed after the workbench window is up, never before: the other
         // order leaves a beat with no window of ours on screen at all.
         dismissSplash()
-        warmKmlLibrary()
-        exitAfterStartupIfAsked()
+        onWorkbenchShown()
       }, SPLASH_OUTRO_MS)
     }, splashHoldMs())
   }
   revealCurrentWindow = reveal
+  workbenchWindow = window
+  window.on('closed', () => { if (workbenchWindow === window) workbenchWindow = null })
   labelWindow(window, 'workbench')
 
   // Defensive: if the ready signal never arrives -- 'ready-to-show' swallowed
@@ -392,7 +556,12 @@ function createWindow() {
   // apps), or a bundle that throws before React mounts -- the window must not
   // stay permanently invisible with no way for the user to know why. The
   // skeleton is on screen by then and carries the failure text itself.
-  revealTimer = setTimeout(reveal, splashWindow ? SPLASH_TIMEOUT_MS : 1000)
+  const revealTimeoutMs = splashWindow ? SPLASH_TIMEOUT_MS : 1000
+  revealTimer = setTimeout(() => {
+    if (revealed) return
+    console.warn(`[main] The workbench did not report ready within ${revealTimeoutMs} ms; showing it anyway. Renderer errors, if any, are logged above.`)
+    reveal()
+  }, revealTimeoutMs)
   // `splashShownAt === null`, NOT `!splashWindow`. The difference is the whole
   // bug this once caused: the old guard asked whether a splash OBJECT existed,
   // so a splash that was constructed but never became visible suppressed the
@@ -404,6 +573,7 @@ function createWindow() {
   // that floor: if it is, it covers the gap and the workbench waits its turn; if
   // it is not, the skeleton goes up immediately, exactly as it used to.
   window.once('ready-to-show', () => { if (splashShownAt === null) reveal() })
+  window.once('ready-to-show', () => recordLaunchPhase('painted'))
 
   window.webContents.once('dom-ready', () => { tracePhase('renderer dom-ready'); splashStage('renderer') })
   window.webContents.once('did-finish-load', () => { tracePhase('renderer loaded'); splashStage('workbench') })
@@ -429,8 +599,11 @@ function createWindow() {
   const load = useDevServer
     ? window.loadURL(DEV_ORIGIN)
     : window.loadFile(path.join(__dirname, '../dist/index.html'))
+  // Fatal and exiting: without a renderer the window can never show anything,
+  // and a hidden window left alive keeps 'window-all-closed' from ever firing --
+  // a process that lingers in Task Manager with nothing on screen.
   load.catch((error) => {
-    reportFatal(useDevServer ? `Could not load the dev server at ${DEV_ORIGIN}` : 'Could not load the packaged renderer', error)
+    reportFatal(useDevServer ? `Could not load the dev server at ${DEV_ORIGIN}` : 'Could not load the packaged renderer', error, { exit: true })
   })
   // Development only. A detached DevTools is a window of its own, so
   // test/electron-launch.ts turns it off to count only the app's windows.
@@ -465,11 +638,96 @@ function createWindow() {
     }
   })
 
+  logWebContentsDiagnostics(window.webContents, 'workbench')
   window.webContents.on('render-process-gone', (_event, details) => {
-    reportFatal('The renderer process stopped', new Error(`${details.reason}${details.exitCode ? ` (exit ${details.exitCode})` : ''}`))
+    recoverFromRendererLoss(window, details)
   })
 
   return window
+}
+
+// Renderer-side failures, written to the launch log. None of these reached
+// any record before: a bundle that threw before React mounted, a chunk that
+// failed to load, or a renderer that stopped responding left nothing behind
+// but a window that never finished appearing.
+function logWebContentsDiagnostics(contents, label) {
+  contents.on('console-message', (...args) => {
+    // Electron 35+ passes one event carrying the fields; older versions passed
+    // them positionally, with a numeric level (2 warning, 3 error).
+    const [event, positionalLevel, positionalMessage, positionalLine, positionalSource] = args
+    const level = typeof event?.level === 'string' ? event.level : ['verbose', 'info', 'warning', 'error'][positionalLevel] ?? 'info'
+    if (level !== 'warning' && level !== 'error') return
+    const message = event?.message ?? positionalMessage
+    const source = event?.sourceId ?? positionalSource
+    const line = event?.lineNumber ?? positionalLine
+    launchLog[level === 'error' ? 'error' : 'warn'](`[${label} console] ${message}${source ? ` (${source}:${line})` : ''}`)
+  })
+  contents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
+    launchLog.error(`[${label}] ${isMainFrame ? 'Page' : 'Subframe'} failed to load: ${code} ${description} (${url})`)
+  })
+  contents.on('preload-error', (_event, preloadPath, error) => {
+    launchLog.error(`[${label}] Preload failed (${preloadPath}): ${error instanceof Error ? error.stack || error.message : String(error)}`)
+  })
+  contents.on('unresponsive', () => launchLog.warn(`[${label}] Renderer stopped responding`))
+  contents.on('responsive', () => launchLog.info(`[${label}] Renderer is responding again`))
+}
+
+// The workbench renderer died. This used to raise an error box and leave the
+// window in place with a dead renderer behind it -- before reveal, a hidden
+// window that kept the process alive in the background for good. Offer the
+// two things that can actually help instead, and never leave a hidden window.
+let rendererLosses = []
+function recoverFromRendererLoss(window, details) {
+  const detail = `${details.reason}${details.exitCode ? ` (exit code ${details.exitCode})` : ''}`
+  console.error(`[main] The workbench renderer stopped: ${detail}`)
+  if (window.isDestroyed()) return
+  // The project lived in that renderer; there is nothing left to protect.
+  hasUnsavedChanges = false
+  const now = Date.now()
+  rendererLosses = [...rendererLosses.filter((at) => now - at < 60_000), now]
+  dismissSplash()
+  if (!window.isVisible()) bringToFront(window)
+  const repeated = rendererLosses.length >= 3
+  dialog.showMessageBox(window, {
+    type: 'error',
+    buttons: ['Reload', 'Quit'],
+    defaultId: repeated ? 1 : 0,
+    cancelId: 1,
+    noLink: true,
+    title: 'Joint Domain Data Compiler stopped working',
+    message: 'The workbench stopped unexpectedly.',
+    detail: `Reason: ${detail}.${repeated ? ' This has happened several times in the last minute.' : ''}\n\nUnsaved changes since the last save are lost. Reloading starts a fresh workbench.\n\nA log of this session is at:\n${launchLog.path}`,
+  }).then(({ response }) => {
+    if (response === 0 && !window.isDestroyed()) {
+      launchLog.info('[main] Reloading the workbench after a renderer loss')
+      window.webContents.reload()
+    } else {
+      app.quit()
+    }
+  }).catch((error) => {
+    console.error(`[main] Could not show the renderer-loss dialog: ${error instanceof Error ? error.message : String(error)}`)
+    app.quit()
+  })
+}
+
+// What Chromium actually decided about the GPU on this machine. Logged after
+// startup so a slow or blank launch can be matched to "everything fell back to
+// software" or to a driver blocklist. getGPUInfo() is not awaited by anything:
+// on a wedged GPU process it may never settle, and must not hold anything up.
+function logGpuStatus() {
+  try {
+    launchLog.info(`GPU feature status: ${JSON.stringify(app.getGPUFeatureStatus())}`)
+  } catch (error) {
+    launchLog.warn(`GPU feature status unavailable: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  app.getGPUInfo('basic').then((info) => {
+    const devices = Array.isArray(info?.gpuDevice)
+      ? info.gpuDevice.map((device) => `${device.active ? '*' : ''}vendor 0x${Number(device.vendorId).toString(16)} device 0x${Number(device.deviceId).toString(16)}${device.driverVersion ? ` driver ${device.driverVersion}` : ''}`).join(', ')
+      : 'none reported'
+    launchLog.info(`GPU devices: ${devices}`)
+  }).catch((error) => {
+    launchLog.warn(`GPU info unavailable: ${error instanceof Error ? error.message : String(error)}`)
+  })
 }
 
 // Lets test/electron-launch.ts assert on a completed startup without having to
@@ -946,71 +1204,238 @@ function registerReportPdfIpc() {
 
 // A throw anywhere in startup used to surface only as an unhandled rejection on
 // a console no packaged user ever sees, leaving a process running with no
-// window. Show it and exit non-zero instead.
-function reportFatal(context, error) {
+// window. Show it, name the log, and -- for anything that leaves the app unable
+// to show a window -- exit non-zero rather than linger invisibly.
+let fatalDialogOpen = false
+function reportFatal(context, error, { exit = false } = {}) {
   const message = error instanceof Error ? (error.stack || error.message) : String(error)
   console.error(`[main] ${context}: ${message}`)
   // Before the dialog, always: the splash is alwaysOnTop, so leaving it up
   // would hide the one thing explaining why the app is not starting.
   dismissSplash()
+  // An error raised while the dialog is up (each one is modal and blocking)
+  // would stack another on top of it; the log already has it.
+  if (!fatalDialogOpen) {
+    fatalDialogOpen = true
+    try {
+      dialog.showErrorBox(
+        startupComplete ? 'Joint Domain Data Compiler error' : 'Joint Domain Data Compiler failed to start',
+        `${context}\n\n${message}\n\nA log of this launch is at:\n${launchLog.path}`,
+      )
+    } catch {
+      // The console and log lines above are the readout.
+    } finally {
+      fatalDialogOpen = false
+    }
+  }
+  if (exit) app.exit(1)
+}
+
+// The losing side of the single-instance lock. Normally the running copy
+// acknowledges within milliseconds, raises its window, and this process exits
+// unseen. If it does not, it is wedged -- the "running in the background"
+// report -- and quietly exiting would make every further double-click do
+// nothing at all. So say so, and offer to end it and start fresh.
+async function handOffToRunningInstance() {
+  launchLog.info(`Another instance holds the lock; handing off (nonce ${instanceNonce}).`)
+  const deadline = Date.now() + INSTANCE_ACK_TIMEOUT_MS
+  while (Date.now() < deadline) {
+    try {
+      const ack = JSON.parse(fs.readFileSync(INSTANCE_ACK_FILE, 'utf8'))
+      if (ack?.nonce === instanceNonce) {
+        launchLog.info(`Running instance (pid ${ack.pid}) acknowledged; exiting.`)
+        app.exit(0)
+        return
+      }
+    } catch {
+      // Not written yet.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+
+  let running = null
   try {
-    dialog.showErrorBox('Joint Domain Data Compiler failed to start', `${context}\n\n${message}`)
+    running = JSON.parse(fs.readFileSync(INSTANCE_FILE, 'utf8'))
   } catch {
-    // dialog is unavailable before `ready`; the console line above is the readout.
+    // No record: a copy older than this one, or one that could not write it.
+  }
+  const pid = Number.isInteger(running?.pid) && running.pid > 0 && running.pid !== process.pid ? running.pid : null
+  const alive = pid !== null && isProcessAlive(pid)
+  launchLog.warn(`Running instance did not acknowledge within ${INSTANCE_ACK_TIMEOUT_MS} ms (recorded pid ${running?.pid ?? 'none'}, alive ${alive}).`)
+
+  await app.whenReady()
+  const started = typeof running?.startedAt === 'string' ? new Date(running.startedAt).toLocaleString() : 'an unknown time'
+  if (!alive) {
+    dialog.showMessageBoxSync({
+      type: 'warning',
+      title: 'Joint Domain Data Compiler',
+      message: 'Joint Domain Data Compiler appears to be running already, but is not responding.',
+      detail: `End any "Joint Domain Data Compiler" process in Task Manager, then start it again.\n\nLog: ${launchLog.path}`,
+    })
+    app.exit(1)
+    return
+  }
+  const choice = dialog.showMessageBoxSync({
+    type: 'warning',
+    buttons: ['End it and start again', 'Cancel'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+    title: 'Joint Domain Data Compiler',
+    message: 'Joint Domain Data Compiler is already running, but it is not responding.',
+    detail: `The running copy (process ${pid}, started ${started}) did not answer within ${INSTANCE_ACK_TIMEOUT_MS / 1000} seconds. It may be stuck while starting.\n\nEnding it discards anything unsaved in it.\n\nLog: ${launchLog.path}`,
+  })
+  if (choice !== 0) {
+    app.exit(0)
+    return
+  }
+  launchLog.warn(`Ending unresponsive instance pid ${pid} at the user's request.`)
+  try {
+    process.kill(pid)
+  } catch (error) {
+    launchLog.error(`Could not end pid ${pid}: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  const killDeadline = Date.now() + 5000
+  while (isProcessAlive(pid) && Date.now() < killDeadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  app.relaunch()
+  app.exit(0)
+}
+
+function isProcessAlive(pid) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    // EPERM means it exists but belongs to someone else.
+    return Boolean(error && error.code === 'EPERM')
   }
 }
 
-app.whenReady().then(async () => {
-  tracePhase('app ready')
-  // The workbench owns its visible navigation and commands. Remove Electron's
-  // default File/Edit/View/Window menu in both development and packaged builds.
-  Menu.setApplicationMenu(null)
-  // First act of `ready`, ahead of every registration and filesystem touch
-  // below, so the launch is acknowledged on screen in well under a second and
-  // the rest of startup happens behind it. Caught rather than reported: the
-  // splash is decoration, and a window manager that refuses to give it a
-  // window must not turn a launch that would otherwise have worked into a
-  // fatal one. With `splashWindow` left null, createWindow() reveals on first
-  // paint exactly as it did before the splash existed.
-  try {
-    openSplash()
-  } catch (error) {
-    console.warn(`[splash] Could not open the launch splash: ${error instanceof Error ? error.message : String(error)}`)
-    dismissSplash()
-  }
-  registerKmlLibraryIpc()
-  registerFileArchiveIpc()
-  registerDiagnosticIpc()
-  registerWindowStateIpc()
-  registerUserGuideIpc()
-  registerReportPdfIpc()
-
-  tracePhase('startup services registered')
-  createWindow()
-  tracePhase('workbench window created')
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      try {
-        createWindow()
-      } catch (error) {
-        reportFatal('Could not reopen the window', error)
-      }
+// The winning side: acknowledge first (that is what tells the new process this
+// one is alive), then bring forward whatever is currently on screen -- or, if
+// the workbench is still hidden behind a splash that is gone, reveal it now.
+function registerSecondInstanceHandler() {
+  app.on('second-instance', (_event, _argv, _cwd, additionalData) => {
+    const nonce = typeof additionalData?.nonce === 'string' ? additionalData.nonce : null
+    launchLog.info(`A second launch was redirected here (nonce ${nonce ?? 'none'}).`)
+    try {
+      fs.writeFileSync(INSTANCE_ACK_FILE, JSON.stringify({ nonce, pid: process.pid, at: new Date().toISOString() }), 'utf8')
+    } catch (error) {
+      launchLog.warn(`Could not acknowledge the second launch: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    if (workbenchWindow && !workbenchWindow.isDestroyed() && workbenchWindow.isVisible()) {
+      bringToFront(workbenchWindow)
+    } else if (splashWindow && !splashWindow.isDestroyed()) {
+      splashWindow.focus()
+    } else if (revealCurrentWindow) {
+      revealCurrentWindow()
+    } else if (workbenchWindow && !workbenchWindow.isDestroyed()) {
+      bringToFront(workbenchWindow)
     }
   })
-}).catch((error) => {
-  reportFatal('Startup failed', error)
-  app.exit(1)
-})
+}
 
+// A GPU process that crashes is how a broken driver shows itself mid-session;
+// Chromium falls back on its own, but the next launch should not start by
+// repeating it. Utility and other helpers are logged for the record.
+function registerChildProcessDiagnostics() {
+  app.on('child-process-gone', (_event, details) => {
+    const summary = `${details.type}${details.name ? ` (${details.name})` : ''} ${details.reason}${details.exitCode ? `, exit code ${details.exitCode}` : ''}`
+    if (details.reason === 'clean-exit') {
+      launchLog.info(`Child process exited: ${summary}`)
+      return
+    }
+    console.warn(`[main] Child process gone: ${summary}`)
+    if (details.type === 'GPU' && details.reason !== 'killed') {
+      launchState.softwareRendering = true
+      launchState.softwareReason = `GPU process ${details.reason} at ${new Date().toISOString()}`
+      writeLaunchState(userDataDir, launchState)
+      launchLog.warn('Hardware rendering will be off from the next launch. Set JDDC_GPU=on to try it again.')
+    }
+  })
+}
+
+function startApplication() {
+  app.whenReady().then(async () => {
+    tracePhase('app ready')
+    // The workbench owns its visible navigation and commands. Remove Electron's
+    // default File/Edit/View/Window menu in both development and packaged builds.
+    Menu.setApplicationMenu(null)
+    // First act of `ready`, ahead of every registration and filesystem touch
+    // below, so the launch is acknowledged on screen in well under a second and
+    // the rest of startup happens behind it. Caught rather than reported: the
+    // splash is decoration, and a window manager that refuses to give it a
+    // window must not turn a launch that would otherwise have worked into a
+    // fatal one. With `splashWindow` left null, createWindow() reveals on first
+    // paint exactly as it did before the splash existed.
+    try {
+      openSplash()
+    } catch (error) {
+      console.warn(`[splash] Could not open the launch splash: ${error instanceof Error ? error.message : String(error)}`)
+      dismissSplash()
+    }
+    registerKmlLibraryIpc()
+    registerFileArchiveIpc()
+    registerDiagnosticIpc()
+    registerWindowStateIpc()
+    registerUserGuideIpc()
+    registerReportPdfIpc()
+
+    tracePhase('startup services registered')
+    createWindow()
+    tracePhase('workbench window created')
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        try {
+          createWindow()
+        } catch (error) {
+          reportFatal('Could not reopen the window', error)
+        }
+      }
+    })
+  }).catch((error) => {
+    reportFatal('Startup failed', error)
+    app.exit(1)
+  })
+}
+
+// A failure before the workbench is on screen is a failed launch: exit rather
+// than leave a windowless process behind. After it, the user may have work
+// open, so report and carry on, as Electron's own default would.
 process.on('uncaughtException', (error) => {
-  reportFatal('Unexpected main-process error', error)
+  reportFatal('Unexpected main-process error', error, { exit: !startupComplete })
 })
 
 process.on('unhandledRejection', (reason) => {
-  reportFatal('Unhandled main-process rejection', reason)
+  reportFatal('Unhandled main-process rejection', reason, { exit: !startupComplete })
 })
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
+
+app.on('will-quit', () => {
+  if (!isPrimaryInstance) return
+  launchLog.info('Quitting')
+  try {
+    fs.rmSync(INSTANCE_FILE, { force: true })
+  } catch {
+    // Harmless: the next primary overwrites it.
+  }
+})
+
+if (isPrimaryInstance) {
+  // Registered before `ready`, so a double-click that lands mid-startup is
+  // never emitted to a process with no listener yet.
+  registerSecondInstanceHandler()
+  registerChildProcessDiagnostics()
+  startApplication()
+} else {
+  handOffToRunningInstance().catch((error) => {
+    launchLog.error(`Second-launch hand-off failed: ${error instanceof Error ? error.stack || error.message : String(error)}`)
+    app.exit(1)
+  })
+}

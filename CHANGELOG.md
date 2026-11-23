@@ -3,9 +3,41 @@
 Notable user-facing and operational changes are recorded here. This project follows Semantic
 Versioning; release tags use the `vX.Y.Z` form.
 
-## Unreleased
+## 0.9.0 - 2026-11-23
 
 ### Fixed
+
+- **Desktop launches that showed nothing, hung, or died in the background could not be diagnosed,
+  and several left a process running with no window.** A packaged Windows build has no console, so
+  every warning and fatal error the main process printed went nowhere. Now:
+  - Every launch writes `logs/main.log` in the app's data folder
+    (`%APPDATA%\Joint Domain Data Compiler\logs\main.log` on Windows): versions, OS, executable and
+    arguments, how the previous launch ended, each startup phase with timings, every main-process
+    message, workbench console errors, load failures, unresponsive renderers, child-process and GPU
+    crashes, and the GPU status Chromium settled on. Every error dialog names the file. Crash dumps
+    are kept locally (never uploaded).
+  - A renderer that cannot load, or a main-process error before the workbench is shown, now reports
+    and **exits** instead of leaving a hidden window, and so a process, alive in the background. A
+    workbench renderer that dies later offers *Reload* or *Quit* instead of an error box over a dead
+    window.
+  - **Only one copy runs at a time.** A slow launch invited repeated double-clicks, each starting
+    another process on the same profile. A second launch now brings the running window forward; if
+    the running copy does not answer, it says so and offers to end it and start fresh.
+  - **Automatic software-rendering fallback.** If a launch never manages to draw a window — the
+    signature of a broken GPU driver, a VM, or a remote-desktop session — the next launch uses
+    software rendering and keeps it once that works; a GPU process crash is remembered the same way.
+    Nothing in the app uses WebGL, so nothing is lost. `JDDC_GPU=on` / `JDDC_GPU=off` override.
+  - The workbench window is sized to the screen (its 1100×700 minimum no longer exceeds small
+    laptop displays), and on Windows is raised above other windows when it appears, so a launch that
+    took long enough for the user to click elsewhere no longer opens behind them.
+
+### Changed
+
+- Only the `en-US` Chromium locale is packaged: about 46 MB less for the Windows portable build to
+  unpack, and for antivirus to scan, on every launch.
+- The Windows release gate now also launches the real Portable.exe and a GPU-enabled launch (every
+  earlier gate ran `win-unpacked` with `--disable-gpu` only), reports launch-to-workbench time, and
+  requires the launch log to have been written.
 
 - **The 3D view silently dropped most companion tracks.** It drew only tracks whose references
   were fully "compatible" and counted only "blocked" ones, so every track with an *unknown*

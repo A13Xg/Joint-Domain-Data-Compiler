@@ -1,15 +1,38 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { createServer } from 'node:net'
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import { readdir } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-const executable = resolve(process.argv[2] ?? await defaultExecutable())
+// Usage: smoke-packaged.mjs [executable] [--portable] [--gpu]
+//
+//   --portable  launch the Windows Portable.exe from release/ instead of
+//               win-unpacked. That is what users actually run, and it first
+//               extracts the whole app into %TEMP% -- a step the unpacked
+//               launch skips entirely, and the slowest part of a portable start.
+//   --gpu       leave hardware acceleration on. Every earlier gate passed
+//               --disable-gpu, so the GPU path users hit was never launched.
+const flags = new Set(process.argv.slice(2).filter((arg) => arg.startsWith('--')))
+const positional = process.argv.slice(2).find((arg) => !arg.startsWith('--'))
+const usePortable = flags.has('--portable')
+const useGpu = flags.has('--gpu')
+const executable = resolve(positional ?? (usePortable ? await portableExecutable() : await defaultExecutable()))
 const expectedTitle = 'Joint Domain Data Compiler'
 const expectedUrlFragment = 'app.asar/dist/index.html'
+// The portable launcher's extraction happens inside this window, so it gets
+// longer; the point is to measure it, not to fail on a slow runner.
+const readyTimeoutMs = usePortable ? 180_000 : 30_000
 const port = await availablePort()
 const output = []
 const inCiLinux = process.platform === 'linux' && (process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true')
-const electronArgs = ['--disable-gpu', `--remote-debugging-port=${port}`]
+const electronArgs = [...(useGpu ? [] : ['--disable-gpu']), `--remote-debugging-port=${port}`]
+// The launch log the app writes for every start, pointed somewhere this script
+// can find on any platform. Asserted below: a build whose log is silent is a
+// build whose next field failure cannot be diagnosed.
+const logDir = mkdtempSync(join(tmpdir(), 'jddc-smoke-log-'))
+console.log(`Launching ${executable}${usePortable ? ' (portable launcher)' : ''} with ${useGpu ? 'hardware acceleration' : '--disable-gpu'}`)
+const launchedAt = Date.now()
 if (inCiLinux || process.env.JDDC_SMOKE_NO_SANDBOX === '1') {
   electronArgs.push('--no-sandbox', '--disable-setuid-sandbox')
 }
@@ -22,7 +45,7 @@ const child = spawn(command, args, {
   // close. Printed below, it puts a real record of what a packaged launch puts
   // on screen into every release log -- including Windows, which cannot be
   // launched anywhere else in this project's tooling.
-  env: { ...process.env, JDDC_STARTUP_TRACE: '1' },
+  env: { ...process.env, JDDC_STARTUP_TRACE: '1', JDDC_LOG_DIR: logDir, ...(useGpu ? { JDDC_GPU: 'on' } : {}) },
 })
 
 child.stdout.on('data', (chunk) => output.push(String(chunk)))
@@ -32,6 +55,7 @@ try {
   const { page, sawSplash } = await waitForRenderer(port, child)
   await waitForWorkbenchMounted(page.webSocketDebuggerUrl)
   console.log(`Packaged ${process.platform} renderer launched: ${page.title}`)
+  console.log(`Launch to mounted workbench: ${Date.now() - launchedAt} ms${usePortable ? ' (includes the portable launcher extracting the app)' : ''}`)
   // Reported, not asserted. The splash is retired as soon as the workbench
   // mounts, so on a launch fast enough to beat this poller's 250 ms interval it
   // can legitimately never be sampled — failing on that would make this gate
@@ -43,9 +67,11 @@ try {
     : 'Launch splash was not sampled (startup may have outrun the 250 ms poll).')
   await openUserGuide(page.webSocketDebuggerUrl, port)
   printStartupTrace()
+  await checkLaunchLog()
 } catch (error) {
   const detail = output.join('').trim()
   if (detail) console.error(detail)
+  printLaunchLog(console.error)
   throw error
 } finally {
   stopPackagedApp(child)
@@ -82,6 +108,39 @@ function printStartupTrace() {
   console.log(`Windows created by the app: ${created} (splash, workbench, user guide expected).`)
 }
 
+function readLaunchLog() {
+  const file = join(logDir, 'main.log')
+  return existsSync(file) ? readFileSync(file, 'utf8') : null
+}
+
+function printLaunchLog(print) {
+  const text = readLaunchLog()
+  if (text === null) {
+    print(`No launch log was written to ${logDir}.`)
+    return
+  }
+  print(`Launch log (${join(logDir, 'main.log')}):`)
+  for (const line of text.trimEnd().split(/\r?\n/)) print(`  ${line}`)
+}
+
+// Polled: "startup complete" is written after the splash's outro, which can
+// land a moment after the DOM check above has already seen the workbench.
+async function checkLaunchLog() {
+  const expected = ['---- launch: Joint Domain Data Compiler', 'startup complete', useGpu ? 'Hardware rendering' : 'Software rendering']
+  const deadline = Date.now() + 15_000
+  let missing = expected
+  while (Date.now() < deadline) {
+    const text = readLaunchLog() ?? ''
+    missing = expected.filter((line) => !text.includes(line))
+    if (missing.length === 0) {
+      printLaunchLog(console.log)
+      return
+    }
+    await new Promise((resolveWait) => setTimeout(resolveWait, 250))
+  }
+  throw new Error(`The launch log in ${logDir} is missing: ${missing.map((line) => `"${line}"`).join(', ')}.`)
+}
+
 async function waitForWorkbenchMounted(webSocketDebuggerUrl) {
   if (typeof webSocketDebuggerUrl !== 'string') throw new Error('Packaged renderer did not expose a DevTools WebSocket endpoint.')
   const deadline = Date.now() + 30_000
@@ -114,6 +173,13 @@ function evaluateDevTools(url, expression, awaitPromise = false) {
   })
 }
 
+async function portableExecutable() {
+  if (process.platform !== 'win32') throw new Error('--portable is a Windows-only launch.')
+  const portable = (await readdir('release')).filter((name) => /Windows-x64-Portable\.exe$/.test(name))
+  if (portable.length !== 1) throw new Error(`Expected exactly one portable executable in release/, found ${portable.length}.`)
+  return join('release', portable[0])
+}
+
 async function defaultExecutable() {
   if (process.platform === 'win32') return 'release/win-unpacked/JointDomainDataCompiler.exe'
   if (process.platform === 'linux') return 'release/linux-unpacked/joint-domain-data-compiler'
@@ -140,7 +206,7 @@ function availablePort() {
 }
 
 async function waitForRenderer(port, processHandle) {
-  const deadline = Date.now() + 30_000
+  const deadline = Date.now() + readyTimeoutMs
   let lastPage = null
   // The splash was only ever filtered OUT here, so the one gate that runs a
   // packaged build never checked the thing four splash fixes were about. If it
@@ -174,7 +240,7 @@ async function waitForRenderer(port, processHandle) {
     await new Promise((resolveWait) => setTimeout(resolveWait, 250))
   }
   const observed = lastPage ? ` Last page was ${JSON.stringify({ title: lastPage.title, url: lastPage.url })}.` : ''
-  throw new Error(`Packaged renderer did not become ready within 30 seconds.${observed}`)
+  throw new Error(`Packaged renderer did not become ready within ${readyTimeoutMs / 1000} seconds.${observed}`)
 }
 
 function stopPackagedApp(processHandle) {

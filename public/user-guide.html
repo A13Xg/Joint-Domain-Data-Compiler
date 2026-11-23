@@ -928,12 +928,39 @@ footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 20px;
   because the runtime has not booted yet. On Windows it is usually antivirus scanning, or — for
   the <em>portable</em> build — the executable unpacking itself into a temporary folder on every
   single launch. If that line dominates, install the app with the regular installer instead of
-  running the portable build; an installed copy runs from disk and skips the unpacking entirely.</p>
+  running the portable build; an installed copy runs from disk and skips the unpacking entirely.
+  The portable build shows nothing while it unpacks, so give it time rather than starting it a
+  second time. The same timings are always written to the launch log described below, so the trace
+  is only needed to watch them live.</p>
 
   <p>The trace also names every window the app opens — the splash, the workbench, and the user
   guide when you open it — and each time one is shown or closed. If you see a window appear and
   vanish that is not in that list, it is not the app's: the portable build's unpacking step used to
   flash two of its own before the app started, and no longer does.</p>
+
+  <h3>The app does not appear, hangs, or closes on its own</h3>
+  <p>Every launch of the desktop app writes a log, whether or not anything reaches the screen:</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Platform</th><th>Launch log</th></tr></thead>
+    <tbody>
+      <tr><td>Windows</td><td><code>%APPDATA%\Joint Domain Data Compiler\logs\main.log</code></td></tr>
+      <tr><td>macOS</td><td><code>~/Library/Application Support/Joint Domain Data Compiler/logs/main.log</code></td></tr>
+      <tr><td>Linux</td><td><code>~/.config/Joint Domain Data Compiler/logs/main.log</code></td></tr>
+    </tbody>
+  </table></div>
+  <p>It records the app and system versions, each startup phase with its timing, how the previous
+  launch ended, whether graphics run on the GPU or in software, and any error from the app or its
+  windows. Every error dialog names this file. The previous log is kept beside it as
+  <code>main.previous.log</code>; crash dumps, if any, are in the <code>Crashpad</code> folder next to
+  <code>logs</code>. Attach both when reporting a launch problem.</p>
+  <p>Only one copy of the app runs at a time. Starting it again brings the running window forward; if
+  the running copy has stopped responding, you are offered the choice to end it and start fresh.</p>
+  <p>If a launch never draws a window, the next launch switches to software rendering automatically
+  and, once that works, keeps it — a broken graphics driver, a virtual machine, or a remote desktop
+  session is the usual cause. Nothing in the app needs the GPU, so this costs only some smoothness.
+  To try the GPU again (after a driver update, say), start the app once with
+  <code>JDDC_GPU=on</code> set; <code>JDDC_GPU=off</code> forces software rendering.</p>
+  <p>If the workbench itself stops, the app offers to reload it rather than leaving a blank window.</p>
 
   <h3>The <code>?</code> button did nothing</h3>
   <p>In desktop builds before 0.7.0 the guide was handed to the operating system to open, which
