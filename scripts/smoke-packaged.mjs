@@ -16,7 +16,7 @@ import { basename, join, resolve } from 'node:path'
 //   --portable  the Windows Portable.exe, which first extracts the whole app
 //               into %TEMP% -- the slowest part of a portable start.
 //   --zip       the Windows .zip (or the .zip given), extracted into a fresh
-//               folder the way a user would -- Expand-Archive on Windows -- and
+//               folder with .NET's zip extractor on Windows, and
 //               started from its top-level launcher.
 //   --gpu       leave hardware acceleration on. Every gate before 0.9.0 passed
 //               --disable-gpu, so the GPU path users hit was never launched.
@@ -322,12 +322,28 @@ async function onlyReleaseFile(pattern, label) {
  */
 function extractZip(zipPath) {
   const target = mkdtempSync(join(tmpdir(), 'jddc-smoke-zip-'))
+  // .NET's own zip extractor -- what Expand-Archive wraps -- called directly.
+  // Expand-Archive reports failures as non-terminating errors and still exits
+  // 0, which once left this check staring at an empty folder with no reason
+  // given; this throws, and its output is always shown.
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    'Add-Type -AssemblyName System.IO.Compression.FileSystem',
+    '[IO.Compression.ZipFile]::ExtractToDirectory($env:JDDC_ZIP, $env:JDDC_ZIP_TARGET)',
+    'Get-ChildItem -LiteralPath $env:JDDC_ZIP_TARGET -Recurse -File | Measure-Object | ForEach-Object { "Extracted $($_.Count) files" }',
+  ].join('; ')
   const extract = process.platform === 'win32'
-    ? spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', 'Expand-Archive -LiteralPath $env:JDDC_ZIP -DestinationPath $env:JDDC_ZIP_TARGET'], { env: { ...process.env, JDDC_ZIP: zipPath, JDDC_ZIP_TARGET: target }, encoding: 'utf8' })
+    ? spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', script], { env: { ...process.env, JDDC_ZIP: zipPath, JDDC_ZIP_TARGET: target }, encoding: 'utf8' })
     : spawnSync('unzip', ['-q', zipPath, '-d', target], { encoding: 'utf8' })
-  if (extract.status !== 0) throw new Error(`Could not extract ${zipPath}: ${extract.stderr || extract.stdout || `exit ${extract.status}`}`)
+  const said = `${extract.stdout ?? ''}${extract.stderr ?? ''}`.trim()
+  if (said) console.log(said)
   const top = readdirSync(target)
-  if (top.length !== 1) throw new Error(`The zip must hold exactly one top-level folder; found ${JSON.stringify(top)}.`)
+  if (extract.status !== 0 || top.length !== 1) {
+    if (process.platform === 'win32') console.log(describeZipForDotNet(zipPath))
+    throw new Error(extract.status !== 0
+      ? `Could not extract ${zipPath} (exit ${extract.status}).`
+      : `The zip must hold exactly one top-level folder; found ${JSON.stringify(top)}.`)
+  }
   const folder = join(target, top[0])
   if (!existsSync(join(folder, 'README.txt'))) throw new Error('The zip has no README.txt beside the executable.')
   const candidates = process.platform === 'win32'
@@ -344,6 +360,17 @@ function extractZip(zipPath) {
   }
   console.log(`Extracted ${zipPath} to ${folder}`)
   return exe
+}
+
+// What .NET's own zip reader (the one Expand-Archive uses) makes of the file,
+// for a failure report.
+function describeZipForDotNet(zipPath) {
+  const probe = spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', [
+    'Add-Type -AssemblyName System.IO.Compression.FileSystem',
+    'try { $z = [IO.Compression.ZipFile]::OpenRead($env:JDDC_ZIP); "ZipFile.OpenRead: $($z.Entries.Count) entries; first: $($z.Entries[0].FullName); last: $($z.Entries[$z.Entries.Count - 1].FullName)"; $z.Dispose() } catch { "ZipFile.OpenRead failed: $($_.Exception.ToString())" }',
+    '$PSVersionTable.PSVersion.ToString()',
+  ].join('; ')], { env: { ...process.env, JDDC_ZIP: zipPath }, encoding: 'utf8' })
+  return `${probe.stdout ?? ''}${probe.stderr ?? ''}`.trim()
 }
 
 async function defaultExecutable() {
