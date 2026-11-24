@@ -40,7 +40,9 @@ export function collectRuntimePackages(root = '.') {
           version: pkg.version,
           license,
           homepage: pkg.homepage ?? (typeof pkg.repository === 'string' ? pkg.repository : pkg.repository?.url) ?? '',
-          licenseText: licenseFile ? readFileSync(join(dir, licenseFile), 'utf8').trim() : null,
+          // LF only: some packages ship CRLF license files, which git normalises
+          // on checkout, so CI would see a file that no longer matched.
+          licenseText: licenseFile ? readFileSync(join(dir, licenseFile), 'utf8').replace(/\r\n?/g, '\n').trim() : null,
         })
       }
       walk(node.dependencies)
