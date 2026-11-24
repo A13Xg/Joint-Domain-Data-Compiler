@@ -1,7 +1,7 @@
 // Release-info popup, opened from the small version button in the header.
 //
 // Deliberately static data rather than reading package.json's full dependency
-// tree at runtime: the five libraries listed are the ones the product
+// tree at runtime: the libraries listed are the ones the product
 // actually depends on (see package.json `dependencies`), and that list
 // changes rarely enough that keeping it here, reviewed alongside the code
 // that uses it, is more trustworthy than deriving it from a lockfile that
@@ -18,11 +18,13 @@ interface LibraryCredit {
 // Ordered by how central each one is to what JDDC does, not alphabetically.
 const KEY_LIBRARIES: LibraryCredit[] = [
   { name: 'React', purpose: 'Application UI framework' },
-  { name: 'React Leaflet', purpose: 'Interactive map rendering' },
-  { name: 'Leaflet', purpose: 'Map tile and overlay engine' },
+  { name: 'Leaflet', purpose: 'Interactive map, tiles and overlays' },
   { name: 'PapaParse', purpose: 'CSV/TSV parsing' },
   { name: 'Electron', purpose: 'Desktop packaging and native integration' },
 ]
+
+const SOURCE_URL = 'https://github.com/A13Xg/Joint-Domain-Data-Compiler'
+const LICENSE_URL = 'https://www.gnu.org/licenses/agpl-3.0.html'
 
 interface Props {
   onClose: () => void
@@ -67,8 +69,16 @@ export function AboutDialog({ onClose }: Props) {
           </ul>
         </section>
 
+        {/* The source link is the offer AGPL-3.0 section 13 requires toward anyone
+            using the program over a network, which the browser build allows. */}
         <section className="about-section">
-          <p className="small">© {new Date().getFullYear()} A13Xg Industries. All rights reserved.</p>
+          <p className="small">© 2025–{new Date().getFullYear()} A13Xg Industries.</p>
+          <p className="small">
+            Free software, licensed under the{' '}
+            <a href={LICENSE_URL} target="_blank" rel="noreferrer">GNU Affero General Public License v3.0</a>.
+            It comes with no warranty. The complete{' '}
+            <a href={SOURCE_URL} target="_blank" rel="noreferrer">source code</a> is available.
+          </p>
         </section>
 
         <section className="about-section about-disclaimer" role="note">

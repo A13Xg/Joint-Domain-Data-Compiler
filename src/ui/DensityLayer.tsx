@@ -11,7 +11,7 @@
 // divergence heatmaps can reuse it.
 
 import { useEffect } from 'react'
-import { useMap } from 'react-leaflet'
+import { useMap } from './leaflet/context'
 import { canvas, layerGroup, rectangle } from 'leaflet'
 import type { TrackPoint } from '../core/model'
 import { binTrack } from '../core/metrics/spatialBins'

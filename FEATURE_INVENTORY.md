@@ -16,10 +16,12 @@ material behind `public/user-guide.html`, and stands on its own as a developer r
 - **Spinner** — displayed next to status light while async operations (import/analysis/build) are in progress; shows operation text ("Analyzing…", "Building dataset…", "Parsing…")
 - **StatusLight** — persistent indicator: `idle` ("No datasets loaded"), `busy` ("Working"), `ok` ("Ready", shows dataset count), `warn` (N warnings), `error` (N errors); precedence: errors > warnings > ok
 - **Release info button** (`v<version>`, next to the **?** help button) — opens a modal dialog
-  showing the running app version (from `package.json` via `__APP_VERSION__`), the five key
-  libraries JDDC is built on, "A13Xg Industries" copyright attribution, and a disclaimer that the
-  app is for notional data only and not a source of Truth/Evidentiary Data. Closes on Escape,
-  backdrop click, or the Close button.
+  showing the running app version (from `package.json` via `__APP_VERSION__`), the four key
+  libraries JDDC is built on, "A13Xg Industries" copyright attribution, the AGPL-3.0 license
+  notice with links to the license and the complete source code (the offer AGPL section 13
+  requires toward network users of the browser build), and a disclaimer that the app is for
+  notional data only and not a source of Truth/Evidentiary Data. Closes on Escape, backdrop
+  click, or the Close button.
 
 ### Sidebar
 - **"+ Load data" button** — opens hidden `<input type="file" multiple>` picker; accepts `.csv,.tsv,.txt,.gpx,.geojson,.json,.kml,.kmz,.nmea,.gps,.log,.gpb,.bin,.msnP5,.rpt,.teq`
@@ -307,7 +309,7 @@ All read-only by default; editable text inputs when unlocked:
 - **Other-visible-tracks legend** — "other visible:" + colored name chips; only shown when other tracks visible
 
 ### Interaction
-- **Pan/zoom** — react-leaflet MapContainer with `scrollWheelZoom` enabled
+- **Pan/zoom** — `MapContainer` (`src/ui/leaflet/`, in-house bindings over Leaflet that replaced react-leaflet in 0.9.2 for license compatibility) with `scrollWheelZoom` enabled
 - **Point click-to-select** — clicking CircleMarker toggles point selection (mode ≠ `path`)
 - **Point hover** — sets `hoverIndex`, shows cyan ring + "cursor #N" tooltip (mode ≠ `path`)
 - **Point tooltip** — mono block: index, lat/lon, notional warning, "selected range", elevation, ISO time, name, channel value

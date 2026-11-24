@@ -3,6 +3,37 @@
 Notable user-facing and operational changes are recorded here. This project follows Semantic
 Versioning; release tags use the `vX.Y.Z` form.
 
+## 0.9.3 - 2026-11-24
+
+### Changed
+
+- **Licensed under the GNU AGPL v3.0** (`AGPL-3.0-only`). `LICENSE`, `THIRD_PARTY_NOTICES.md` and
+  `PRIVACY.md` added; the About dialog states the license and links to the complete source code
+  (the offer AGPL section 13 requires toward users of the browser build), replacing "All rights
+  reserved". README gains License, Trademarks and Code signing policy sections.
+- **react-leaflet replaced by in-house map bindings** (`src/ui/leaflet/`). react-leaflet is under
+  the Hippocratic License 2.1, whose use restrictions cannot be combined with the AGPL. The nine
+  components the map used are reimplemented over Leaflet (BSD-2-Clause) with the same behaviour;
+  a 100,000-point map now appears faster than before (11–13 s against 15 s, on a 2-CPU
+  development machine), because tooltip contents render only while open.
+- **The map's credit line now follows the basemap.** react-leaflet kept the first basemap's
+  attribution after switching; OpenStreetMap's credit is a license requirement.
+- Every copy of the app now carries `LICENSE` and the third-party notices (the minified bundle had
+  stripped the libraries' own), and `test/third-party-notices.ts` fails the build if any runtime
+  dependency ever arrives under a license that is not AGPL-compatible.
+
+### Security
+
+- **Dependency updates consolidated from Dependabot PRs #46, #47 and #49–#53**, plus `npm audit
+  fix`: Electron 42.10.0 → 42.11.18 (Chromium security backports), Vite 8.0 → 8.3.8,
+  concurrently 10.0.7 with shell-quote 1.12.0 (critical), and undici, follow-redirects,
+  source-map-js, fast-uri, joi, zod, eslint and typescript-eslint. `npm audit` drops from 24 findings
+  (2 critical, 7 high) to 6 moderate. All 24 were in development or build tooling; the shipped app
+  had none before and has none now.
+- The remaining 6 are `minimatch` (ReDoS) inside electron-builder, which is deliberately pinned
+  (26.15.3). Even electron-builder 26.18 still depends on the affected `minimatch` 10.x, and npm's
+  suggested fix is a downgrade to 25.x, so they wait on an upstream release.
+
 ## 0.9.1 - 2026-11-23
 
 ### Fixed

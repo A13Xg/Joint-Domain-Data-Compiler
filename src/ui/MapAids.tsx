@@ -4,7 +4,8 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import L, { type LatLngTuple } from 'leaflet'
-import { CircleMarker, Marker, Polyline, Tooltip, useMap, useMapEvents } from 'react-leaflet'
+import { CircleMarker, Marker, Polyline, Tooltip } from './leaflet/components'
+import { useMap, useMapEvents } from './leaflet/context'
 import type { UnitSystem } from '../core/units'
 import { graticuleLines, graticuleStep, niceScale } from '../visualization/map/mapAids'
 
