@@ -4,7 +4,8 @@ import type { LatLngTuple } from 'leaflet'
 // so this splits into the same chunk instead of shipping in the entry bundle
 // for every session that never opens the Map tab.
 import 'leaflet/dist/leaflet.css'
-import { CircleMarker, MapContainer, Polygon, Polyline, TileLayer, Tooltip, useMap } from 'react-leaflet'
+import { CircleMarker, MapContainer, Polygon, Polyline, TileLayer, Tooltip } from './leaflet/components'
+import { useMap } from './leaflet/context'
 import type { TrackPoint } from '../core/model'
 import { isValidLat, isValidLon } from '../core/model'
 import { epochMsToIso } from '../core/format'

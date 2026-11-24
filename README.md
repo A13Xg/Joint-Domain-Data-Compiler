@@ -310,3 +310,42 @@ supports and across a midnight crossing.
 
 - `main` is the validated integration and release history.
 - Branch protection and GitHub rulesets are optional administration choices, not implementation or release requirements.
+
+## License
+
+Copyright © 2025–2026 A13Xg Industries.
+
+Joint Domain Data Compiler is free software: you can redistribute it and/or modify it under the
+terms of the **GNU Affero General Public License, version 3** (`AGPL-3.0-only`), as published by
+the Free Software Foundation. See [`LICENSE`](LICENSE).
+
+In short: anyone may use, study, change and share JDDC, including commercially. Anyone who
+distributes a modified version, **or lets others use one over a network**, must make its complete
+source code available under the same license. It comes with no warranty.
+
+Third-party software compiled into the app, and its notices, are listed in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), which ships with every build. Every runtime
+dependency must be under an AGPL-compatible license; `test/third-party-notices.ts` enforces this.
+
+## Trademarks
+
+"Joint Domain Data Compiler", "JDDC" and the JDDC logo and splash artwork identify this project.
+The AGPL grants rights to the code, not to these names or marks. You are welcome to fork JDDC, but
+please give a modified version a different name and do not imply it is endorsed by this project.
+
+## Code signing policy
+
+Windows releases are currently **unsigned**, so Windows SmartScreen may warn before the first
+launch. Free code signing through the [SignPath Foundation](https://signpath.org) open-source
+program is planned; once it is in place, Windows releases will carry:
+
+> Free code signing provided by [SignPath.io](https://signpath.io), certificate by
+> [SignPath Foundation](https://signpath.org).
+
+Policy for signed releases:
+
+- Only binaries built by this repository's release workflow on GitHub Actions, from the public
+  source, are signed. No locally built binary is ever signed.
+- **Committers and reviewers:** [A13Xg](https://github.com/A13Xg). **Approvers** (who approve
+  each signing request): [A13Xg](https://github.com/A13Xg).
+- See [`PRIVACY.md`](PRIVACY.md): the software transfers no information about its users.
