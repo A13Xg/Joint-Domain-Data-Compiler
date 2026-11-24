@@ -3,6 +3,20 @@
 Notable user-facing and operational changes are recorded here. This project follows Semantic
 Versioning; release tags use the `vX.Y.Z` form.
 
+## Unreleased
+
+### Security
+
+- **Dependency updates consolidated from Dependabot PRs #46, #47 and #49–#53**, plus `npm audit
+  fix`: Electron 42.10.0 → 42.11.18 (Chromium security backports), Vite 8.0 → 8.3.8,
+  concurrently 10.0.7 with shell-quote 1.12.0 (critical), and undici, follow-redirects,
+  source-map-js, fast-uri, joi, zod, eslint and typescript-eslint. `npm audit` drops from 24 findings
+  (2 critical, 7 high) to 6 moderate. All 24 were in development or build tooling; the shipped app
+  had none before and has none now.
+- The remaining 6 are `minimatch` (ReDoS) inside electron-builder, which is deliberately pinned
+  (26.15.3). Even electron-builder 26.18 still depends on the affected `minimatch` 10.x, and npm's
+  suggested fix is a downgrade to 25.x, so they wait on an upstream release.
+
 ## 0.9.1 - 2026-11-23
 
 ### Fixed

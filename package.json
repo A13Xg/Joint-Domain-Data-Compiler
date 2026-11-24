@@ -1,7 +1,7 @@
 {
   "name": "joint-domain-data-compiler",
   "private": true,
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "Local-first trajectory and TSPI workbench for importing, analyzing, transforming, comparing, visualizing, saving, and exporting track data.",
   "desktopName": "JointDomainDataCompiler",
   "author": {
@@ -169,8 +169,8 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
-    "concurrently": "^10.0.3",
-    "electron": "^42.10.0",
+    "concurrently": "^10.0.7",
+    "electron": "^42.11.18",
     "electron-builder": "26.15.3",
     "esbuild": "^0.28.1",
     "eslint": "^10.3.0",
@@ -180,7 +180,7 @@
     "linkedom": "^0.18.13",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
-    "vite": "^8.0.12",
+    "vite": "^8.3.8",
     "wait-on": "^9.0.10"
   },
   "homepage": "https://github.com/A13Xg/Joint-Domain-Data-Compiler",
